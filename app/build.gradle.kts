@@ -10,7 +10,7 @@ android {
         applicationId = "dev.unit.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 23  // o APK de teste do Laboratorio usa 22 (0.3.16-lab)
+        versionCode = 23  // o APK de teste do Laboratorio usa 24 (0.3.18-lab): a proxima normal precisa de 25+
         versionName = "0.3.17"  // 0.2.0: o balao sobre o jogo (3 tamanhos, teclado proprio, pausar)
     }
     // chave fixa: sem ela cada build do GitHub assina diferente e o Android nao deixa atualizar por cima
