@@ -59,6 +59,17 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
 
 ---
 
+## Próxima atualização (pedidos do usuário, anotados)
+
+- [ ] Abrir o Unit sem jogo escolhido também liga o balão "U" (hoje o balão só aparece depois de tocar num jogo).
+      Pelo balão dá para escolher o jogo (tela "Jogos" do painel).
+- [ ] Busca de **texto** (o Orecraft guarda os recursos como texto JSON): opção Número / Texto no Achar. Prévia antes.
+- [ ] Editar todos os resultados de uma vez quando sobram poucos.
+- [ ] Depois de editar, avisar se o número da tela mudou.
+
+Já feito na 0.3.1 (31/10): ícones dos jogos, painel arrastável, olho (segurar some), expandir (tela cheia),
+minimizar/fechar no app, lembra tamanho e lugar, trocar de jogo pelo painel, atualização automática (0.3.0).
+
 ## Fase 0: preparar o terreno (v0.0)
 | Peça | Você aprende | Pronto quando |
 |---|---|---|
