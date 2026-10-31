@@ -217,3 +217,8 @@ Lista de scripts `.lua`, **Rodar**, e as perguntas do script aparecem no própri
 | Memória (endereços em volta) | 2.6 |
 | Ferramentas | 5.x e 6.x |
 | Scripts | 4.x |
+
+
+## Nomes dos tipos
+
+Os do GameGuardian (Dword, Float, Qword, Double), não traduzidos: o usuário pediu (31/10) para servir em pesquisas e no aprendizado.

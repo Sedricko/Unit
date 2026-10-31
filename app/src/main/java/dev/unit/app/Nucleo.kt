@@ -17,7 +17,8 @@ data class Achado(val addr: String, val tipo: String, val valor: String)
 data class Salvo(val addr: String, val tipo: String, val nome: String, val valor: String, val congelado: Boolean)
 data class Jogo(val pid: Int, val pacote: String, val nome: String)
 
-val NOME_TIPO = mapOf("i32" to "Inteiro", "f32" to "Vírgula", "i64" to "Inteiro longo", "f64" to "Vírgula longa")
+// os nomes do GameGuardian (o usuário pediu: servem para pesquisar e aprender)
+val NOME_TIPO = mapOf("i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double")
 
 /**
  * O estado do Unit, um só para a tela do app e o balão sobre o jogo: o jogo escolhido, a busca, os salvos. Toda conversa
