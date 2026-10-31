@@ -43,18 +43,25 @@ resultados** com caixinhas, **lista salva** e **memória** (endereços próximos
 4. **O Unit se adapta ao jogo.** Ao escolher o jogo, ele reconhece o motor (Unity, Unreal, Lua, nativo) e mostra só as
    ferramentas que servem para ele.
 5. **Números grandes, pouco texto.** O que importa (o valor, quantos resultados) é o maior da tela.
-6. **Escuro e calmo.** Fundo escuro (não briga com o jogo), uma cor de destaque, verde = deu certo, vermelho = falhou.
+6. **Escuro e elegante.** O visual do Painel Tinker: azul-noite, cartões arredondados, um destaque em degradê azul.
 
-## Cores e tipografia
+## Visual: o do Painel Tinker (o que o usuário aprovou)
+Elegante e escuro, no estilo do Heroic Revival / Painel Tinker:
+- **Fundo azul-noite** com um degradê suave de azul (`#071026` com brilho `#1d4fb8` num canto).
+- **Cartões translúcidos**, cantos bem arredondados (22 px), borda fina (`#22366b`).
+- **Botão principal em degradê azul** (`#3b8cff` → `#67c6ff`), texto escuro; secundário com contorno.
+- **Selos** (pílulas) no topo para o estado: jogo, motor, versão — bolinha verde/amarela/vermelha.
+- Títulos de seção pequenos, em maiúsculas espaçadas (`BOT DO ORECRAFT`, `RODADA`).
+
 | Uso | Cor |
 |---|---|
-| Fundo | `#0E1220` (azul quase preto) |
-| Cartão | `#171D30` |
-| Texto | `#E8ECF7` · secundário `#8E98B3` |
-| Destaque (ação principal) | `#4FD1C5` (verde-água) |
-| Deu certo | `#3CCF7A` · Atenção `#FFC24A` · Falhou `#FF5D6C` |
+| Fundo | `#071026` + degradê `#1d4fb8` |
+| Cartão | `#0d1b3d` (translúcido) · borda `#22366b` |
+| Texto | `#e7eefc` · secundário `#93a4c8` |
+| Destaque | degradê `#3b8cff` → `#67c6ff` |
+| Deu certo | `#3ccf7a` · Atenção `#ffc24a` · Falhou `#ff5d6c` |
 
-Fonte do sistema (Roboto). Tamanhos: título 22, número em destaque 28, texto 15, detalhe 13.
+Fonte do sistema (Roboto no Android). Tamanhos: título 22, número em destaque 28, texto 15, detalhe 13.
 
 ## Estrutura
 ```
