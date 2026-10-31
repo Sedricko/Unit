@@ -75,7 +75,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Tela() {
         val scope = rememberCoroutineScope()
-        LaunchedEffect(Unit) { Nucleo.carregarJogos(this@MainActivity); Atualizador.verificar(this@MainActivity); if (Atualizador.nova != null) Atualizador.instalar(this@MainActivity) }
+        LaunchedEffect(Unit) { Nucleo.carregarJogos(this@MainActivity); Atualizador.preparar(this@MainActivity) }
         Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Cor.brilho, Cor.fundo), radius = 1400f)).systemBarsPadding()) {
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -89,10 +89,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 Atualizador.nova?.let { v ->
-                    Linha(Modifier.toque { scope.launch { Atualizador.instalar(this@MainActivity) } }) {
+                    Linha {
                         Column(Modifier.weight(1f)) {
-                            Text("Versão nova: $v", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                            Text(Atualizador.estado.ifEmpty { "Toque para tentar de novo." }, color = Cor.apagado, fontSize = 12.sp)
+                            Text("Versão $v pronta", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                            Text(Atualizador.estado.ifEmpty { if (Atualizador.adiado) "Instala quando você fechar o Unit (✕)." else "Atualizar agora ou quando fechar o Unit." },
+                                color = Cor.apagado, fontSize = 12.sp)
+                        }
+                        if (Atualizador.pronto && !Atualizador.adiado) {
+                            Botao("Ao fechar", false) { Atualizador.adiado = true }
+                            Box(Modifier.padding(start = 8.dp)) { Botao("Agora", true) { scope.launch { Atualizador.instalar() } } }
                         }
                     }
                 }

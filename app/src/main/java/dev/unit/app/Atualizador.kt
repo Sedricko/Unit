@@ -11,12 +11,18 @@ import java.io.File
 import java.io.IOException
 import java.net.URL
 
-/** Ao abrir, vê a última versão publicada no GitHub; com root, baixa e instala sozinho (pm install). */
+/**
+ * Ao abrir, pergunta ao GitHub a última versão (alguns KB). Se houver uma nova, baixa o APK uma vez, em segundo plano,
+ * e espera: a pessoa escolhe "Atualizar agora" ou ela entra quando o Unit for fechado (✕). Instala pelo root (pm install).
+ */
 object Atualizador {
     private const val API = "https://api.github.com/repos/Sedricko/Unit/releases/latest"
     var nova by mutableStateOf<String?>(null)
+    var pronto by mutableStateOf(false)   // o APK novo já está baixado
+    var adiado by mutableStateOf(false)   // escolheu "Ao fechar"
     var estado by mutableStateOf("")
     private var apk = ""
+    private var arquivo: File? = null
 
     /** "0.10.0" > "0.9.1": compara número por número. */
     fun maior(a: String, b: String): Boolean {
@@ -25,32 +31,42 @@ object Atualizador {
         return false
     }
 
-    suspend fun verificar(ctx: Context) = withContext(Dispatchers.IO) {
+    /** Vê se há versão nova e, se houver, já deixa o APK baixado (só uma vez por versão). */
+    suspend fun preparar(ctx: Context) = withContext(Dispatchers.IO) {
         runCatching {
             val atual = ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: return@runCatching
             val j = JSONObject(URL(API).readText())
             val v = j.getString("tag_name").removePrefix("v")
             val a = j.getJSONArray("assets")
             apk = (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.getString("name").endsWith(".apk") }?.getString("browser_download_url") ?: return@runCatching
-            if (maior(v, atual)) nova = v
-        }
+            if (!maior(v, atual)) return@runCatching
+            nova = v
+            val f = File(ctx.cacheDir, "unit-$v.apk")
+            if (!f.exists() || f.length() == 0L) {
+                estado = "Baixando em segundo plano…"
+                val tmp = File(ctx.cacheDir, "unit-$v.part")
+                URL(apk).openStream().use { i -> tmp.outputStream().use { i.copyTo(it) } }
+                if (!tmp.renameTo(f)) throw IOException("não consegui guardar o APK")
+            }
+            arquivo = f; pronto = true; estado = ""
+        }.onFailure { if (nova != null) estado = "Não deu para baixar: ${it.message}" }
     }
 
-    /** Baixa o APK e instala pelo root; o Android fecha o Unit no fim e a versão nova abre pelo ícone. */
-    suspend fun instalar(ctx: Context) = withContext(Dispatchers.IO) {
-        try {
-            estado = "Baixando a versão ${nova}…"
-            val f = File(ctx.cacheDir, "unit-novo.apk")
-            URL(apk).openStream().use { i -> f.outputStream().use { i.copyTo(it) } }
-            estado = "Instalando…"
-            // o pm não lê a pasta privada do app: passa pelo /data/local/tmp
-            val p = ProcessBuilder("su", "-c", "cat '${f.absolutePath}' > /data/local/tmp/unit-novo.apk && pm install -r /data/local/tmp/unit-novo.apk; rm -f /data/local/tmp/unit-novo.apk")
-                .redirectErrorStream(true).start()
-            val saida = p.inputStream.bufferedReader().readText()
-            if (p.waitFor() != 0 || "Success" !in saida) throw IOException(saida.trim().ifEmpty { "o pm install recusou" })
-            estado = "Atualizado. Abra o Unit de novo."
-        } catch (e: Exception) {
-            estado = "Não deu para atualizar: ${e.message}"
-        }
+    /** "Atualizar agora": instala o APK já baixado; o Android fecha o Unit no fim e a versão nova abre pelo ícone. */
+    suspend fun instalar() = withContext(Dispatchers.IO) {
+        val f = arquivo ?: return@withContext
+        try { estado = "Instalando…"; pm(f); estado = "Atualizado. Abra o Unit de novo." }
+        catch (e: Exception) { estado = "Não deu para atualizar: ${e.message}" }
+    }
+
+    /** O Unit foi fechado (✕) com uma versão pronta: instala sem esperar (o su segue sozinho). */
+    fun instalarAoFechar() { val f = arquivo ?: return; if (pronto) Thread { runCatching { pm(f) } }.start() }
+
+    // o pm não lê a pasta privada do app: passa pelo /data/local/tmp
+    private fun pm(f: File) {
+        val p = ProcessBuilder("su", "-c", "cat '${f.absolutePath}' > /data/local/tmp/unit-novo.apk && pm install -r /data/local/tmp/unit-novo.apk; rm -f /data/local/tmp/unit-novo.apk")
+            .redirectErrorStream(true).start()
+        val saida = p.inputStream.bufferedReader().readText()
+        if (p.waitFor() != 0 || "Success" !in saida) throw IOException(saida.trim().ifEmpty { "o pm install recusou" })
     }
 }

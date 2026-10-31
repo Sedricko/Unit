@@ -104,7 +104,7 @@ class Balao : Service() {
         return START_NOT_STICKY
     }
 
-    override fun onDestroy() { ativo = false; vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
+    override fun onDestroy() { ativo = false; Atualizador.instalarAoFechar(); vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
 
     override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
 
