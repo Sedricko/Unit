@@ -10,8 +10,8 @@ android {
         applicationId = "dev.unit.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 16
-        versionName = "0.3.11"  // 0.2.0: o balao sobre o jogo (3 tamanhos, teclado proprio, pausar)
+        versionCode = 18
+        versionName = "0.3.12"  // 0.2.0: o balao sobre o jogo (3 tamanhos, teclado proprio, pausar)
     }
     // chave fixa: sem ela cada build do GitHub assina diferente e o Android nao deixa atualizar por cima
     // shortcut: chave de estudo no repositorio, trocar por uma nos Secrets do GitHub se o app um dia for distribuido

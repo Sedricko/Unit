@@ -21,9 +21,8 @@ data class Jogo(val pid: Int, val pacote: String, val nome: String)
 /** Apps que não são jogo (o root, o próprio GameGuardian, o Tinker…): fora da lista de jogos. */
 val FERRAMENTAS = setOf("com.topjohnwu.magisk", "dev.tinker.app", "moe.shizuku.privileged.api", "catch_.me_.if_.you_.can_", "io.github.vvb2060.magisk")
 
-/** O Float que tem um Dword/Qword com o mesmo número ao lado costuma ser o valor de verdade (o inteiro é cópia da tela). */
-fun provavelReal(a: Achado, todos: List<Achado>) = a.tipo.startsWith("f") &&
-    todos.any { it.tipo.startsWith("i") && it.valor.toDoubleOrNull() != null && it.valor.toDoubleOrNull() == a.valor.toDoubleOrNull() }
+/** O tipo que já funcionou neste jogo vem primeiro; sem nada aprendido, a ordem do motor fica como está. */
+fun ordenar(l: List<Achado>, aprendido: String?) = if (aprendido == null) l else l.sortedBy { if (it.tipo == aprendido) 0 else 1 }
 
 val NOME_TIPO = mapOf("i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double")
 
@@ -34,6 +33,11 @@ val NOME_TIPO = mapOf("i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64
 object Nucleo {
     private var motor: Motor? = null
     private var lib = ""
+    private var prefs: android.content.SharedPreferences? = null
+    /** O tipo (i32/f32…) do último valor que você editou ou congelou neste jogo: vira a preferência dele. O último vale (se
+     *  editou um Dword que não mudava a tela e depois o Float que mudou, fica o Float). */
+    val aprendido get() = jogo?.let { prefs?.getString("tipo-${it.pacote}", null) }
+    private fun aprender(tipo: String) { val j = jogo ?: return; prefs?.edit()?.putString("tipo-${j.pacote}", tipo)?.apply() }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     var jogo by mutableStateOf<Jogo?>(null)
@@ -46,7 +50,7 @@ object Nucleo {
     var aviso by mutableStateOf("")
     var ocupado by mutableStateOf(false)
 
-    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so" }
+    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE) }
 
     private suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) { f(motor ?: Motor(lib).also { motor = it }) }
 
@@ -90,13 +94,13 @@ object Nucleo {
         val r = cmd { it.cmd("list 50") }
         total = r.status.toLongOrNull()
         achados.clear()
-        // Float/Double primeiro: no Orecraft o Dword com o mesmo número era só a cópia da tela (31/10)
-        if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.sortedBy { if (it.tipo.startsWith("f")) 0 else 1 }
+        if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.let { ordenar(it, aprendido) }
         escolhido = achados.singleOrNull()
     }
 
     /** Escreve o valor novo; com congelar, o motor segura ele. Fica nos salvos para o mini painel. */
     fun editar(addr: String, tipo: String, texto: String, congelar: Boolean) = rodar {
+        aprender(tipo)
         val v = texto.trim().replace(',', '.')
         val i = salvos.indexOfFirst { it.addr == addr }
         if (congelar) cmd { it.cmd("freeze $addr $tipo $v") }
@@ -110,7 +114,7 @@ object Nucleo {
     }
 
     fun alternarCongelado(s: Salvo) = rodar {
-        if (s.congelado) cmd { it.cmd("unfreeze ${s.addr}") } else cmd { it.cmd("freeze ${s.addr} ${s.tipo} ${s.valor}") }
+        if (s.congelado) cmd { it.cmd("unfreeze ${s.addr}") } else { cmd { it.cmd("freeze ${s.addr} ${s.tipo} ${s.valor}") }; aprender(s.tipo) }
         val i = salvos.indexOfFirst { it.addr == s.addr }
         if (i >= 0) salvos[i] = salvos[i].copy(congelado = !s.congelado)
     }
