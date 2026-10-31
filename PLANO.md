@@ -6,6 +6,29 @@
 Aprender, construindo peça por peça, como funciona um editor de memória de jogos (como o GameGuardian): da leitura da
 memória de um processo até scripts, regras do jogo e save.
 
+## Visão: aonde queremos chegar
+O Unit é uma **ferramenta universal**: escolhe qualquer jogo offline e **modifica o jogo por completo**, em todas as camadas.
+
+| Camada | O que dá para mudar | Fase |
+|---|---|---|
+| Memória | Qualquer número ao vivo: recursos, vida, XP, nível; congelar | 1–3 |
+| Valores escondidos | Cifrados, em texto, em objetos que mudam de lugar | 3 |
+| Scripts | Qualquer script do GameGuardian, e os nossos | 4 |
+| Regras (código) | Preços em moeda do jogo, custos, esperas, dano, chances: pelo nome do método | 5 |
+| Save | O progresso guardado, com backup | 6 |
+| Tempo | Velocidade do jogo, cronômetros | 6 |
+
+**Universal** quer dizer que o Unit reconhece o motor do jogo e usa o caminho certo para cada um:
+- **Unity IL2CPP / Mono:** nomes de classes e métodos;
+- **Unreal:** a tabela de objetos;
+- **jogos com Lua:** as tabelas do Lua;
+- **nativo:** símbolos e assinaturas.
+
+Começamos pelo que é comum a todos (memória) e somamos um motor por vez.
+
+O caminho é o mesmo do Tinker, mas **peça por peça e com prova em cada uma**, para chegar lá sem as metades que não
+funcionavam.
+
 ## Regras do projeto (fixas)
 1. Só jogos **offline**, de um jogador.
 2. Nada que é pago com **dinheiro de verdade** (compras, VIP, premium, tirar anúncio pago).

@@ -1,6 +1,7 @@
 # Unit
 
-Editor de memória para Android (como o GameGuardian), feito **do zero** e **para aprender**: cada peça é pequena, tem
+Ferramenta **universal** para modificar jogos offline no Android **por completo** (memória, scripts, regras, save, tempo),
+feita **do zero** e **para aprender**: cada peça é pequena, tem
 teste e só seguimos para a próxima quando ela funciona.
 
 ## Regras (fixas)
