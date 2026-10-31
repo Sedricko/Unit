@@ -8,12 +8,15 @@ import org.junit.Test
 class ArrumarTest {
     @Test
     fun soltarOOlhoNaBarraDeBaixo() {
-        Arrumar.cima.clear(); Arrumar.cima += Arrumar.PADRAO; Arrumar.baixo.clear()
-        Arrumar.areaCima = Rect(100f, 0f, 340f, 48f); Arrumar.areaBaixo = Rect(0f, 600f, 340f, 650f)
+        Arrumar.cima.clear(); Arrumar.cima += Arrumar.PADRAO; Arrumar.baixo.clear(); Arrumar.livre.clear()
+        Arrumar.areaCima = Rect(100f, 0f, 340f, 48f); Arrumar.areaBaixo = Rect(0f, 600f, 340f, 650f); Arrumar.areaPainel = Rect(0f, 0f, 340f, 700f)
         Arrumar.soltar("olho", Offset(20f, 620f), 48f)
         assertEquals(listOf("pausa", "expandir", "minimizar", "fechar"), Arrumar.cima.toList())
         assertEquals(listOf("olho"), Arrumar.baixo.toList())
-        Arrumar.soltar("pausa", Offset(20f, 900f), 48f)  // fora das barras: volta para onde estava
+        Arrumar.soltar("pausa", Offset(20f, 900f), 48f)  // fora do painel: volta para onde estava
         assertEquals(listOf("pausa", "expandir", "minimizar", "fechar"), Arrumar.cima.toList())
+        Arrumar.soltar("pausa", Offset(200f, 300f), 48f, 40f)  // no meio do painel: fica solto ali
+        assertEquals(Offset(180f, 280f), Arrumar.livre["pausa"])
+        assertEquals(listOf("expandir", "minimizar", "fechar"), Arrumar.cima.toList())
     }
 }

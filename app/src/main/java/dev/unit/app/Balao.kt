@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -208,7 +209,7 @@ class Balao : Service() {
             androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(110), androidx.compose.animation.core.RepeatMode.Reverse), label = "giro").value else 0f
         val gesto = when {
             Arrumar.editando -> Modifier.pointerInput(id, true) {
-                detectDragGestures(onDragEnd = { Arrumar.soltar(id, pos + androidx.compose.ui.geometry.Offset(tam.width / 2f, tam.height / 2f) + arr, passo); arr = androidx.compose.ui.geometry.Offset.Zero },
+                detectDragGestures(onDragEnd = { Arrumar.soltar(id, pos + androidx.compose.ui.geometry.Offset(tam.width / 2f, tam.height / 2f) + arr, passo, tam.width.toFloat()); arr = androidx.compose.ui.geometry.Offset.Zero },
                     onDragCancel = { arr = androidx.compose.ui.geometry.Offset.Zero }) { ch, d -> ch.consume(); arr += d }
             }
             id == "olho" -> Modifier.pointerInput(id, false) { detectTapGestures(onPress = { vibrar(this@Balao); espiar = true; tryAwaitRelease(); espiar = false }) }
@@ -330,8 +331,15 @@ class Balao : Service() {
     private var tela by mutableStateOf("inicio")   // inicio | achar | editar | salvos
 
     @Composable
-    private fun Painel() = Column(
-        Modifier.fillMaxSize().alpha(if (espiar) 0f else 1f).background(Cor.vidro, RoundedCornerShape(28.dp)).border(1.dp, Cor.linha, RoundedCornerShape(28.dp)).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+    private fun Painel() = Box(Modifier.fillMaxSize().alpha(if (espiar) 0f else 1f).onGloballyPositioned { Arrumar.areaPainel = it.boundsInRoot() }) {
+        PainelConteudo()
+        // os botões soltos onde a pessoa deixou (arrastados para fora das barras)
+        Arrumar.livre.forEach { (id, p) -> Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(p.x.toInt(), p.y.toInt()) }) { Controle(id) } }
+    }
+
+    @Composable
+    private fun PainelConteudo() = Column(
+        Modifier.fillMaxSize().background(Cor.vidro, RoundedCornerShape(28.dp)).border(1.dp, Cor.linha, RoundedCornerShape(28.dp)).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // a barrinha de cima: segure e arraste para mudar o painel de lugar
