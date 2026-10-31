@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -216,7 +217,7 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; else -> "" },
+            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             Olho()
             BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
@@ -239,6 +240,7 @@ class Balao : Service() {
             "editar" -> Editar()
             "salvos" -> Salvos()
             "jogos" -> Jogos()
+            "nome" -> Nome()
             else -> Inicio()
         }
     }
@@ -312,6 +314,13 @@ class Balao : Service() {
             Teclado("Aplicar", (campo.isNotBlank() || congelar) && !Nucleo.ocupado, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
                 confirmou = { Nucleo.editar(e.addr, e.tipo, campo.ifBlank { atual }, congelar); campo = ""; tela = "inicio" })
         }) {
+            Linha(Modifier.toque { tela = "nome" }) {
+                Column(Modifier.weight(1f)) {
+                    Rotulo("Nome")
+                    Text(Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome ?: "sem nome", color = Cor.texto, fontSize = 17.sp)
+                }
+                Icone(Ic.EDITAR, 18.dp)
+            }
             Text("agora: $atual · ${NOME_TIPO[e.tipo]}", color = Cor.apagado, fontSize = 13.sp)
             CampoGrande(campo, "valor novo")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -338,6 +347,41 @@ class Balao : Service() {
             conteudo()
             Spacer(Modifier.weight(1f))
             teclado()
+        }
+    }
+
+    /** Só nesta tela a janela pega o foco: o teclado do Android aparece para digitar o nome; ao sair, volta a não pegar. */
+    private fun tecladoDoAndroid(ligar: Boolean) {
+        params.flags = if (ligar) params.flags and LayoutParams.FLAG_NOT_FOCUSABLE.inv() else params.flags or LayoutParams.FLAG_NOT_FOCUSABLE
+        params.softInputMode = if (ligar) LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or LayoutParams.SOFT_INPUT_ADJUST_RESIZE else LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
+        vista?.let { wm.updateViewLayout(it, params) }
+    }
+
+    @Composable
+    private fun Nome() {
+        val e = Nucleo.escolhido ?: run { tela = "inicio"; return }
+        var campo by remember(e.addr) { mutableStateOf(Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome?.takeUnless { it.startsWith("Valor ") } ?: "") }
+        val foco = remember { androidx.compose.ui.focus.FocusRequester() }
+        androidx.compose.runtime.DisposableEffect(Unit) { tecladoDoAndroid(true); onDispose { tecladoDoAndroid(false) } }
+        LaunchedEffect(Unit) { delay(150); runCatching { foco.requestFocus() } }
+        fun pronto() { Nucleo.renomear(e, campo); tela = "editar" }
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            androidx.compose.foundation.text.BasicTextField(
+                campo, { campo = it.take(24) }, singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = Cor.texto, fontSize = 20.sp, fontWeight = FontWeight.Bold),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(Cor.a2),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { pronto() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(foco).background(Color(0x40000000), RoundedCornerShape(16.dp))
+                    .border(1.dp, Color(0x9967C6FF), RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            listOf("Ouro", "Joias", "Cobre", "Ferro", "Vida", "Moedas").chunked(4).forEach { linha ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { linha.forEach { n -> Selo(n, campo == n) { campo = n } } }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Botao("Cancelar", false, Modifier.weight(1f)) { tela = "editar" }
+                Botao("Salvar nome", true, Modifier.weight(1f), ligado = campo.isNotBlank()) { pronto() }
+            }
         }
     }
 

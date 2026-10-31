@@ -105,6 +105,13 @@ object Nucleo {
         if (i >= 0) salvos[i] = salvos[i].copy(congelado = !s.congelado)
     }
 
+    /** Dá nome a um valor (Ouro, Cobre…); se ainda não estava nos salvos, entra com o nome. */
+    fun renomear(a: Achado, nome: String) {
+        val n = nome.trim().ifEmpty { return }
+        val i = salvos.indexOfFirst { it.addr == a.addr }
+        if (i >= 0) salvos[i] = salvos[i].copy(nome = n) else salvos += Salvo(a.addr, a.tipo, n, a.valor, false)
+    }
+
     fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }
 
     fun pausar() = rodar { cmd { it.cmd(if (pausado) "resume" else "pause") }; pausado = !pausado }
