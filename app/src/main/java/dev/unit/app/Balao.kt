@@ -71,6 +71,7 @@ class Balao : Service() {
         LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT,  // teclado próprio: a janela nunca pega o foco do jogo
     )
     private var bx = 24; private var by = 360   // onde o balão estava (volta para lá ao minimizar)
+    private var my = 0                          // altura do mini painel, contada de baixo (arrastável)
     private var px = -1; private var py = -1    // onde o painel foi arrastado (-1: ainda no lugar de começo)
     private var cheio by mutableStateOf(false)   // painel em tela cheia (botão expandir)
     private var espiar by mutableStateOf(false)  // segurando o olho: o painel some para ver o jogo
@@ -115,7 +116,7 @@ class Balao : Service() {
         val (w, h) = tela()
         when (modo) {
             "balao" -> { params.width = LayoutParams.WRAP_CONTENT; params.height = LayoutParams.WRAP_CONTENT; params.gravity = Gravity.TOP or Gravity.START; params.x = bx; params.y = by }
-            "mini" -> { params.width = LayoutParams.MATCH_PARENT; params.height = LayoutParams.WRAP_CONTENT; params.gravity = Gravity.BOTTOM; params.x = 0; params.y = 0 }
+            "mini" -> { my = my.coerceIn(0, (h * .8f).toInt()); params.width = LayoutParams.MATCH_PARENT; params.height = LayoutParams.WRAP_CONTENT; params.gravity = Gravity.BOTTOM; params.x = 0; params.y = my }
             else -> if (cheio) { params.width = LayoutParams.MATCH_PARENT; params.height = LayoutParams.MATCH_PARENT; params.gravity = Gravity.TOP or Gravity.START; params.x = 0; params.y = 0 }
             else {
                 // janela solta: começa embaixo (em pé) ou na direita (deitado) e vai para onde for arrastada pela barra de cima
@@ -135,10 +136,10 @@ class Balao : Service() {
     private val prefs by lazy { getSharedPreferences("balao", MODE_PRIVATE) }
     private fun lembrar() {
         modo = (prefs.getString("modo", "balao") ?: "balao").let { if (it == "mini" && Nucleo.salvos.isEmpty()) "balao" else it }; cheio = prefs.getBoolean("cheio", false)
-        px = prefs.getInt("px", -1); py = prefs.getInt("py", -1); bx = prefs.getInt("bx", bx); by = prefs.getInt("by", by)
+        px = prefs.getInt("px", -1); py = prefs.getInt("py", -1); my = prefs.getInt("my", 0); bx = prefs.getInt("bx", bx); by = prefs.getInt("by", by)
     }
     private fun guardar() = prefs.edit().putString("modo", modo).putBoolean("cheio", cheio)
-        .putInt("px", px).putInt("py", py).putInt("bx", bx).putInt("by", by).apply()
+        .putInt("px", px).putInt("py", py).putInt("my", my).putInt("bx", bx).putInt("by", by).apply()
 
     /** O olho: enquanto o dedo segura, o painel fica invisível (como no GameGuardian). */
     @Composable
@@ -173,9 +174,15 @@ class Balao : Service() {
 
     @Composable
     private fun Mini() = Column(
-        Modifier.fillMaxWidth().alpha(if (espiar) 0f else 1f).padding(10.dp).background(Cor.vidro, RoundedCornerShape(22.dp)).border(1.dp, Cor.linha, RoundedCornerShape(22.dp)).padding(12.dp),
+        Modifier.fillMaxWidth().alpha(if (espiar) 0f else 1f).padding(10.dp).background(Cor.vidro, RoundedCornerShape(22.dp)).border(1.dp, Cor.linha, RoundedCornerShape(22.dp))
+            // arrastar em qualquer parte do mini (os toques nos botões continuam valendo): sobe e desce
+            .pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); my -= d.y.toInt(); posicionar(); vista?.let { wm.updateViewLayout(it, params) }; guardar() } }
+            .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp, 4.dp).background(Cor.linha, RoundedCornerShape(2.dp)))
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Nucleo.salvos.take(3).forEach { s ->
                 Column(Modifier.weight(1f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp))
