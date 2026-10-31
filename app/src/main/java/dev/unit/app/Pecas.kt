@@ -191,7 +191,7 @@ fun CampoGrande(valor: String, dica: String) = Row(
 
 /** O teclado próprio do Unit (vidro, sempre no mesmo lugar): números, vírgula, negativo, apagar e o botão de ação. */
 @Composable
-fun Teclado(acao: String, ligado: Boolean, digitou: (String) -> Unit, apagou: () -> Unit, confirmou: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+fun Teclado(acao: String, ligado: Boolean, digitou: (String) -> Unit, apagou: () -> Unit, confirmou: () -> Unit, faixa: Boolean = false) = Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     @Composable fun Tecla(t: String, mod: Modifier, f: () -> Unit) = Box(
         mod.toque(clique = f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).padding(vertical = 11.dp),
         contentAlignment = Alignment.Center
@@ -207,7 +207,8 @@ fun Teclado(acao: String, ligado: Boolean, digitou: (String) -> Unit, apagou: ()
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.weight(1f))
+        // "~" = faixa (10~20), só onde se busca
+        if (faixa) Tecla("~", Modifier.weight(1f)) { digitou("~") } else Box(Modifier.weight(1f))
         Tecla("0", Modifier.weight(1f)) { digitou("0") }
         Botao(acao, true, Modifier.weight(2f), ligado, confirmou)
     }

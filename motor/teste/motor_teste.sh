@@ -25,6 +25,8 @@ search 87.5
 list 50
 write $avida f32 99.25
 read $avida f32
+search 87~88 f32
+search 123456780~123456800 i32
 search 9876543210 i64
 search 4321 f64
 freeze $aouro i32 555
@@ -55,4 +57,5 @@ confere "congelar segura o valor" "ok 555"
 confere "bytes: 16 bytes do xp em hex" "ok ea16b04c02000000"
 confere "aob acha o xp pelo desenho" "$axp"
 confere "bytes recusa mais de 4096" "err quantidade de 1 a 4096"
+confere "faixa Float 87~88 acha a vida 87.5" "$avida f32"
 exit $falhou

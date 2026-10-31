@@ -99,8 +99,38 @@ class Balao : Service() {
         lembrar()
         Arrumar.carregar(prefs)
         posicionar()
+        // o escudo entra antes do painel: fica embaixo dele e por cima do jogo
+        val esc = android.view.View(this).apply {
+            setOnTouchListener { _, e -> if (e.action == android.view.MotionEvent.ACTION_DOWN) soltarPausa(); true }
+            isFocusable = true; isFocusableInTouchMode = true
+            setOnKeyListener { _, _, e -> if (e.action == android.view.KeyEvent.ACTION_UP) soltarPausa(); true }
+        }
+        escudo = esc
+        wm.addView(esc, pEscudo)
         wm.addView(v, params)
     }
+
+    /**
+     * Escudo: com o jogo pausado, uma camada transparente sobre o jogo segura os toques e o "voltar". O jogo congelado não
+     * recebe nada, então o Android não mostra "não está respondendo" (com o botão de fechar o jogo, fácil de tocar sem
+     * querer). Tocar no escudo continua o jogo.
+     */
+    private var escudo: android.view.View? = null
+    private val pEscudo = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT, LayoutParams.TYPE_APPLICATION_OVERLAY,
+        LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT)
+    private fun ligarEscudo(on: Boolean) {
+        pEscudo.flags = if (on) LayoutParams.FLAG_LAYOUT_IN_SCREEN else LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        escudo?.let { runCatching { wm.updateViewLayout(it, pEscudo) } }
+    }
+    private fun soltarPausa() {
+        if (!Nucleo.pausado) return
+        pausaAuto = false; Nucleo.pausar()
+        android.widget.Toast.makeText(this, "Jogo continuou", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    /** Pausa automática (Opções): nunca | digitar (Achar e Editar) | painel (painel aberto). Nunca desfaz uma pausa sua. */
+    private var pausaAuto by mutableStateOf(false)
+    private var opcaoPausa by mutableStateOf("nunca")
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -111,7 +141,7 @@ class Balao : Service() {
         return START_NOT_STICKY
     }
 
-    override fun onDestroy() { ativo = false; Atualizador.instalarAoFechar(); vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
+    override fun onDestroy() { ativo = false; Nucleo.soltarAoFechar(); Atualizador.instalarAoFechar(); escudo?.let { runCatching { wm.removeView(it) } }; vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
 
     override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
 
@@ -144,6 +174,7 @@ class Balao : Service() {
     private val prefs by lazy { getSharedPreferences("balao", MODE_PRIVATE) }
     private fun lembrar() {
         modo = (prefs.getString("modo", "balao") ?: "balao").let { if (it == "mini" && Nucleo.salvos.isEmpty()) "balao" else it }; cheio = prefs.getBoolean("cheio", false)
+        opcaoPausa = prefs.getString("pausa", "nunca") ?: "nunca"
         px = prefs.getInt("px", -1); py = prefs.getInt("py", -1); my = prefs.getInt("my", 0); bx = prefs.getInt("bx", bx); by = prefs.getInt("by", by)
     }
     private fun guardar() = prefs.edit().putString("modo", modo).putBoolean("cheio", cheio)
@@ -167,7 +198,7 @@ class Balao : Service() {
         val icone = when (id) { "olho" -> Ic.OLHO; "pausa" -> if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR; "expandir" -> Ic.EXPANDIR; "minimizar" -> Ic.MINIMIZAR; else -> Ic.FECHAR }
         fun acao() {
             when (id) {
-                "pausa" -> Nucleo.pausar()
+                "pausa" -> { pausaAuto = false; Nucleo.pausar() }
                 "expandir" -> { cheio = !cheio; mudar("painel") }
                 "minimizar" -> mudar(if (Nucleo.salvos.isEmpty()) "balao" else "mini")
                 else -> confirmar = true
@@ -186,7 +217,10 @@ class Balao : Service() {
         Box(Modifier.onGloballyPositioned { pos = it.positionInRoot(); tam = it.size }
             .graphicsLayer { translationX = arr.x; translationY = arr.y; rotationZ = giro }
             .size(40.dp).background(Cor.bloco, RoundedCornerShape(12.dp)).border(1.dp, if (Arrumar.editando) Cor.a2 else Cor.linha, RoundedCornerShape(12.dp))
-            .then(gesto), contentAlignment = Alignment.Center) { Icone(icone, 18.dp) }
+            .then(gesto), contentAlignment = Alignment.Center) {
+            Icone(icone, 18.dp)
+            if (id == "pausa" && pausaAuto && Nucleo.pausado) Text("A", color = Cor.a2, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 4.dp))
+        }
     }
 
     /** A barra de baixo (perto do teclado): os botões que a pessoa trouxe para cá; arrumando, aparece vazia com o "Pronto". */
@@ -203,6 +237,33 @@ class Balao : Service() {
                 Botao("Pronto", true) { Arrumar.editando = false; Arrumar.guardar(prefs) }
             }
         }
+
+    /** O ⏸: toque é sempre seu (tira o "automático"); o "A" mostra que quem pausou foi a pausa automática. */
+    @Composable
+    private fun BotaoPausa() = Box {
+        BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { pausaAuto = false; Nucleo.pausar() }
+        if (pausaAuto && Nucleo.pausado) Text("A", color = Cor.a2, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 4.dp))
+    }
+
+    /** Opções (a primeira): a pausa automática. */
+    @Composable
+    private fun Opcoes() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Rotulo("Pausa automática")
+        listOf(
+            Triple("nunca", "Desligada", "Só o ⏸ na mão (como hoje)."),
+            Triple("digitar", "Ao digitar", "Pausa no Achar e no Editar; saiu ou minimizou, o jogo volta. Início, Salvos e Em volta ficam ao vivo."),
+            Triple("painel", "Ao abrir o painel", "Painel aberto = jogo pausado (como o Autopause do GameGuardian)."),
+        ).forEach { (id, nome, txt) ->
+            Linha(Modifier.toque { opcaoPausa = id; prefs.edit().putString("pausa", id).apply() }) {
+                Column(Modifier.weight(1f)) {
+                    Text(nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                    Text(txt, color = Cor.apagado, fontSize = 12.sp)
+                }
+                if (opcaoPausa == id) Selo("escolhida", true)
+            }
+        }
+        Text("Com o jogo pausado, um escudo invisível segura os toques no jogo: assim o Android não mostra \"não está respondendo\". Tocar no jogo continua ele.",
+            color = Cor.apagado, fontSize = 12.sp)
     }
 
     private fun mudar(m: String, lembrar: Boolean = true) { modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) }; if (lembrar) guardar() }
@@ -211,6 +272,14 @@ class Balao : Service() {
     private fun Conteudo() {
         // os salvos ao vivo enquanto o mini ou o painel está à vista
         LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
+        LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }
+        // pausa automática: entra ao digitar (ou com o painel aberto) e sai ao sair dessas telas / minimizar
+        LaunchedEffect(modo, tela, opcaoPausa) {
+            if (Nucleo.jogo == null) return@LaunchedEffect
+            val quer = when (opcaoPausa) { "digitar" -> modo == "painel" && (tela == "achar" || tela == "editar"); "painel" -> modo == "painel"; else -> false }
+            if (quer && !Nucleo.pausado) { Nucleo.pausar(); pausaAuto = true }
+            else if (!quer && pausaAuto && Nucleo.pausado) { pausaAuto = false; Nucleo.pausar() }
+        }
         when (modo) {
             "balao" -> Box(
                 Modifier.size(52.dp).background(Color(0xD90E162C), CircleShape).border(1.dp, Cor.linha, CircleShape)
@@ -252,7 +321,7 @@ class Balao : Service() {
             Botao("Achar", true) { tela = "achar"; mudar("painel") }
             Spacer(Modifier.weight(1f))
             Olho()
-            BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
+            BotaoPausa()
             BotaoIcone(Ic.EXPANDIR) { mudar("painel") }
             BotaoIcone(Ic.MINIMIZAR) { mudar("balao") }
         }
@@ -272,7 +341,7 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "lab" -> "Laboratório"; "volta" -> "Em volta"; else -> "" },
+            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             // os controles na ordem que a pessoa arrumou (Laboratório: Arrumar.kt)
             Row(Modifier.onGloballyPositioned { Arrumar.areaCima = it.boundsInRoot() }.then(if (Arrumar.editando) Modifier.border(1.dp, Color(0x6667C6FF), RoundedCornerShape(12.dp)).padding(2.dp) else Modifier),
@@ -298,6 +367,7 @@ class Balao : Service() {
             "nome" -> Nome()
             "lab" -> Laboratorio.Tela(this@Balao)
             "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
+            "opcoes" -> Opcoes()
             else -> Inicio()
         }
         // telas sem o teclado do Unit: a barra de baixo fica no pé do painel
@@ -322,6 +392,12 @@ class Balao : Service() {
             Rotulo("Salvos")
             Nucleo.salvos.take(4).forEach { s -> LinhaSalvo(s) }
         } else Text("Toque em Achar e digite um número que o jogo mostra.", color = Cor.apagado, fontSize = 13.sp)
+        Linha(Modifier.toque { tela = "opcoes" }) {
+            Column(Modifier.weight(1f)) {
+                Text("Opções", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("pausa automática: " + mapOf("nunca" to "desligada", "digitar" to "ao digitar", "painel" to "ao abrir o painel")[opcaoPausa], color = Cor.apagado, fontSize = 12.sp)
+            }
+        }
     }
 
     @Composable
@@ -339,7 +415,7 @@ class Balao : Service() {
         var campo by remember { mutableStateOf("") }
         ComTeclado({
             Teclado(if (Nucleo.total == null) "Buscar" else "Refinar", campo.isNotBlank() && !Nucleo.ocupado,
-                digitou = { campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" })
+                digitou = { if (it != "~" || "~" !in campo) campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" }, faixa = true)
         }) {
             CampoGrande(campo, if (Nucleo.total == null) "número na tela" else "número novo")
             Nucleo.total?.let { n ->
