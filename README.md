@@ -29,4 +29,5 @@ Cada mudança na `main` gera o APK sozinho (GitHub Actions) na página **Release
 A versão segue o plano: `0.0.2` = Fase 0, peça 0.2.
 
 ## Onde estamos
-**Fase 0, peça 0.2:** compilação automática. O app ainda só mostra o nome e a versão.
+**v0.1.0, o primeiro funcional:** escolher o jogo, **achar** o valor (buscar e refinar, tipo automático), **editar** e
+**congelar**. Precisa de root (Magisk). Ainda sem ícone flutuante: troque entre o jogo e o Unit.

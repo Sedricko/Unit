@@ -17,6 +17,16 @@ jobs:
       contents: write  # para publicar o APK na pagina de releases
     steps:
       - uses: actions/checkout@v7
+      - name: Testa o motor (contra um processo de verdade)
+        run: sudo motor/teste/motor_teste.sh
+      # arm64 para o celular; x86_64 para o emulador do PC
+      - name: Compila o motor para o Android
+        run: |
+          bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          for abi in arm64-v8a:aarch64 x86_64:x86_64; do
+            dir=app/src/main/jniLibs/${abi%%:*}; mkdir -p "$dir"
+            "$bin/${abi##*:}-linux-android26-clang" -O2 -Wall -Werror -pthread -o "$dir/libunitd.so" motor/unitd.c -lm
+          done
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

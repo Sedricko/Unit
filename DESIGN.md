@@ -43,7 +43,9 @@ resultados** com caixinhas, **lista salva** e **memória** (endereços próximos
 4. **O Unit se adapta ao jogo.** Ao escolher o jogo, ele reconhece o motor (Unity, Unreal, Lua, nativo) e mostra só as
    ferramentas que servem para ele.
 5. **Números grandes, pouco texto.** O que importa (o valor, quantos resultados) é o maior da tela.
-6. **Escuro e elegante.** O visual do Painel Tinker: azul-noite, cartões arredondados, um destaque em degradê azul.
+6. **Profissional, sem ícones coloridos.** Nada de emojis na interface: texto, um ícone de linha quando ajudar, e o azul do
+   destaque. Tudo combinando.
+7. **Escuro e elegante.** O visual do Painel Tinker: azul-noite, cartões arredondados, um destaque em degradê azul.
 
 ## Tudo recolhível (o padrão é recolhido)
 | O que | Recolhido (padrão) | Aberto |

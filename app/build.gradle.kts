@@ -10,8 +10,8 @@ android {
         applicationId = "dev.unit.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.0.2"  // fase.peca: 0.0.2 = Fase 0, peca 0.2
+        versionCode = 2
+        versionName = "0.1.0"  // 0.1.0: o primeiro funcional (achar, editar, congelar)
     }
     // chave fixa: sem ela cada build do GitHub assina diferente e o Android nao deixa atualizar por cima
     // shortcut: chave de estudo no repositorio, trocar por uma nos Secrets do GitHub se o app um dia for distribuido
@@ -34,6 +34,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+    // o motor vai como lib*.so para ser extraido em nativeLibraryDir, onde o Android deixa executar
+    packaging { jniLibs { useLegacyPackaging = true } }
+    defaultConfig { ndk { abiFilters += listOf("arm64-v8a", "x86_64") } }
 }
 
 dependencies {
