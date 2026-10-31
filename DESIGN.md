@@ -8,7 +8,8 @@
 
 ## Princípios do Unit
 1. **O jogo primeiro.** O Unit vive numa **bolinha flutuante** sobre o jogo; a tela cheia é só para configurar.
-2. **Uma coisa por tela.** Cada tela tem um objetivo e um botão principal.
+2. **Uma coisa por tela, um campo por tela.** Cada tela tem um objetivo, no máximo um campo para digitar e um botão
+   principal.
 3. **Só aparece o que funciona.** Uma função entra na tela quando a peça dela passou nas 3 provas.
 4. **O Unit se adapta ao jogo.** Ao escolher o jogo, ele reconhece o motor (Unity, Unreal, Lua, nativo) e mostra só as
    ferramentas que servem para ele.
@@ -60,23 +61,25 @@ Tela cheia (abrir o app)
 O motor aparece ao lado do nome (Unity, Unreal, Lua, Nativo): o Unit descobre sozinho.
 
 ### 2. Buscar (painel flutuante)
+**Um campo e um botão.** O tipo (inteiro, com vírgula, texto...) o Unit descobre sozinho. O mesmo botão faz **Buscar** na
+primeira vez e vira **Refinar** depois; "começar de novo" é um link pequeno.
 ```
 ┌──────────────────────────────┐
-│ Orecraft · Unity       ─  ✕  │
-│ 🔎 Buscar   📌 Salvos   🧰    │
+│ Orecraft               ─  ✕  │
 ├──────────────────────────────┤
 │ Número na tela               │
-│ ┌──────────────┐ [Auto ▾]    │
-│ │ 250          │             │
-│ └──────────────┘             │
-│ [ Buscar ]   [ Refinar ]     │
+│ ┌──────────────────────────┐ │
+│ │ 250                      │ │
+│ └──────────────────────────┘ │
+│ [         Refinar          ] │
 │                              │
 │        2.797 resultados       │
-│  Mude o valor no jogo e       │
-│  toque em Refinar             │
+│  mude o valor no jogo e       │
+│  digite o novo                │
+│                começar de novo │
 └──────────────────────────────┘
 ```
-Com até 50 resultados aparece a lista; com 1 resultado aparecem **Mudar** e **Congelar** grandes.
+Com 1 resultado, a tela vira **o valor grande** com **Mudar** e **Congelar**.
 
 ### 3. Salvos
 ```
