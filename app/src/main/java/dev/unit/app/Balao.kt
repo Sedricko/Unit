@@ -238,6 +238,7 @@ class Balao : Service() {
                 Botao("Pronto", true) { Arrumar.editando = false; Arrumar.guardar(prefs) }
             }
         }
+    }
 
     /** O ⏸: toque é sempre seu (tira o "automático"); o "A" mostra que quem pausou foi a pausa automática. */
     @Composable
