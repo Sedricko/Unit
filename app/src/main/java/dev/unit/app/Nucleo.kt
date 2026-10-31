@@ -158,6 +158,9 @@ object Nucleo {
 
     fun pausar() = rodar { cmd { it.cmd(if (pausado) "resume" else "pause") }; pausado = !pausado }
 
+    /** O Unit está fechando: o jogo nunca pode ficar congelado sem ele (o Android mostraria "não está respondendo"). */
+    fun soltarAoFechar() { if (pausado) { pausado = false; Thread { runCatching { motor?.cmd("resume") } }.start() } }
+
     /** Os valores salvos de agora (o mini painel mostra ao vivo). Sem aviso: roda a cada segundo. */
     fun atualizarSalvos() = scope.launch {
         if (jogo == null || ocupado) return@launch
