@@ -22,5 +22,9 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
 - [PLANO.md](PLANO.md): as fases do Unit, peça por peça.
 - [JOGO.md](JOGO.md): a Mina de Treino e os níveis (cada nível é uma prova do Unit).
 
+## Baixar
+Cada mudança na `main` gera o APK sozinho (GitHub Actions) na página **Releases**: `Unit-<versão>.apk`.
+A versão segue o plano: `0.0.2` = Fase 0, peça 0.2.
+
 ## Onde estamos
-**Fase 0, peça 0.1:** estrutura e documentação. Ainda sem código.
+**Fase 0, peça 0.2:** compilação automática. O app ainda só mostra o nome e a versão.

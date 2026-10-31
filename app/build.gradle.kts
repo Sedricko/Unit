@@ -1,0 +1,44 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+android {
+    namespace = "dev.unit.app"
+    compileSdk = 37
+    defaultConfig {
+        applicationId = "dev.unit.app"
+        minSdk = 26
+        targetSdk = 37
+        versionCode = 1
+        versionName = "0.0.2"  // fase.peca: 0.0.2 = Fase 0, peca 0.2
+    }
+    // chave fixa: sem ela cada build do GitHub assina diferente e o Android nao deixa atualizar por cima
+    // shortcut: chave de estudo no repositorio, trocar por uma nos Secrets do GitHub se o app um dia for distribuido
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("unit-estudo.keystore")
+            storePassword = "android"
+            keyAlias = "unit"
+            keyPassword = "android"
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false  // app pequeno: sem R8 por enquanto, os erros ficam mais faceis de ler
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures { compose = true }
+}
+
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    testImplementation("junit:junit:4.13.2")
+}
