@@ -30,6 +30,14 @@ fun juntar(l: List<Achado>) = l.filterNot { q ->
 fun ordenar(l: List<Achado>, aprendido: String?) = if (aprendido == null) l else l.sortedBy { if (it.tipo == aprendido) 0 else 1 }
 
 val TIPOS = listOf("i32", "f32", "i64", "f64")
+val TAMANHO = mapOf("i32" to 4, "f32" to 4, "i64" to 8, "f64" to 8)
+
+/** O máximo do Dword (o jogo cortaria um número maior); Qword e Float aguentam muito mais. */
+const val MAX_DWORD = 2147483647L
+fun passaLimite(tipo: String, texto: String): Boolean {
+    val v = texto.replace(',', '.').toDoubleOrNull() ?: return false
+    return tipo == "i32" && (v > MAX_DWORD || v < -MAX_DWORD - 1) || tipo == "i64" && kotlin.math.abs(v) > 9.2e18
+}
 
 val NOME_TIPO = mapOf("i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double")
 
@@ -135,6 +143,15 @@ object Nucleo {
         val n = nome.trim().ifEmpty { return }
         val i = salvos.indexOfFirst { it.addr == a.addr }
         if (i >= 0) salvos[i] = salvos[i].copy(nome = n) else salvos += Salvo(a.addr, a.tipo, n, a.valor, false)
+    }
+
+    /** "Ver como": lê e escreve o mesmo endereço em outro tipo. Congelado no tipo antigo solta (o valor seria outro). */
+    fun trocarTipo(addr: String, novo: String) = rodar {
+        val i = salvos.indexOfFirst { it.addr == addr }
+        if (i >= 0 && salvos[i].congelado) cmd { it.cmd("unfreeze $addr") }
+        val v = cmd { it.cmd("read $addr $novo") }.status
+        if (i >= 0) salvos[i] = salvos[i].copy(tipo = novo, valor = v, congelado = false)
+        escolhido = escolhido?.takeIf { it.addr == addr }?.copy(tipo = novo, valor = v)
     }
 
     fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }

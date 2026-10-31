@@ -316,8 +316,16 @@ class Balao : Service() {
         var campo by remember(e.addr) { mutableStateOf("") }
         var congelar by remember(e.addr) { mutableStateOf(Nucleo.salvos.any { it.addr == e.addr && it.congelado }) }
         val atual = Nucleo.salvos.firstOrNull { it.addr == e.addr }?.valor ?: e.valor
+        val origem = remember(e.addr) { e.tipo }  // o tipo com que o valor foi achado
+        val acima = passaLimite(e.tipo, campo)
+        var vizinho by remember(e.addr, e.tipo) { mutableStateOf<String?>(null) }
+        // trocou para um tipo maior: os 4 bytes de depois (+0x4) também serão escritos; mostra quanto vale agora
+        LaunchedEffect(e.addr, e.tipo) {
+            vizinho = if (TAMANHO[e.tipo] == 8 && TAMANHO[origem] == 4)
+                runCatching { Nucleo.cmd { it.cmd("read ${(e.addr.toLong(16) + 4).toString(16)} i32") }.status }.getOrNull() else null
+        }
         ComTeclado({
-            Teclado("Aplicar", (campo.isNotBlank() || congelar) && !Nucleo.ocupado, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
+            Teclado("Aplicar", (campo.isNotBlank() || congelar) && !Nucleo.ocupado && !acima, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
                 confirmou = { Nucleo.editar(e.addr, e.tipo, campo.ifBlank { atual }, congelar); campo = ""; tela = "inicio" })
         }) {
             Linha(Modifier.toque { tela = "nome" }) {
@@ -327,12 +335,30 @@ class Balao : Service() {
                 }
                 Icone(Ic.EDITAR, 18.dp)
             }
+            Rotulo("Ver como")
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                TIPOS.forEach { t -> Selo(NOME_TIPO[t] ?: t, e.tipo == t) { if (t != e.tipo) { congelar = false; Nucleo.trocarTipo(e.addr, t) } } }
+            }
+            vizinho?.let { v ->
+                Aviso(Cor.atencao) {
+                    Text("${NOME_TIPO[e.tipo]} escreve 8 bytes: muda também o vizinho em +0x4 (agora: $v)." +
+                        if (v == "0") " Vizinho 0 costuma ser seguro." else " Confira no Em volta antes.", color = Cor.texto, fontSize = 12.sp)
+                }
+            }
             Text("agora: $atual · ${NOME_TIPO[e.tipo]}", color = Cor.apagado, fontSize = 13.sp)
             CampoGrande(campo, "valor novo")
+            if (acima) Aviso(Cor.atencao) {
+                Text("Passa do limite do ${NOME_TIPO[e.tipo]} (máximo ${"%,d".format(MAX_DWORD).replace(',', '.')}).", color = Cor.texto, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Botao("999.999.999", true, Modifier.weight(1f)) { campo = "999999999" }
+                    Botao("Máximo", false, Modifier.weight(1f)) { campo = MAX_DWORD.toString() }
+                }
+                Text("O máximo pode virar negativo se o jogo somar algo a ele.", color = Cor.apagado, fontSize = 11.sp)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val n = atual.replace(',', '.').toDoubleOrNull() ?: 0.0
                 fun num(d: Double) = if (e.tipo.startsWith("i")) d.toLong().toString() else d.toString()
-                listOf("999" to "999", "9.999" to "9999", "+100" to num(n + 100), "×2" to num(n * 2)).forEach { (t, v) -> Selo(t, campo == v) { campo = v } }
+                listOf("999" to "999", "999.999.999" to "999999999", "+100" to num(n + 100), "×2" to num(n * 2)).forEach { (t, v) -> Selo(t, campo == v) { campo = v } }
             }
             Row(Modifier.toque { congelar = !congelar }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.size(40.dp, 22.dp).background(if (congelar) Cor.a1 else Cor.bloco, RoundedCornerShape(50)).border(1.dp, Cor.linha, RoundedCornerShape(50)),
@@ -390,6 +416,12 @@ class Balao : Service() {
             }
         }
     }
+
+    @Composable
+    private fun Aviso(cor: Color, conteudo: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) = Column(
+        Modifier.fillMaxWidth().background(cor.copy(alpha = .13f), RoundedCornerShape(12.dp)).border(1.dp, cor, RoundedCornerShape(12.dp)).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp), content = conteudo
+    )
 
     @Composable
     private fun Salvos() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {

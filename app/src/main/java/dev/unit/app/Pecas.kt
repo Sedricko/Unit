@@ -48,6 +48,7 @@ object Cor {
     val tinta = Color(0xFF04122E)
     val ok = Color(0xFF3CCF7A)
     val ruim = Color(0xFFFF5D6C)
+    val atencao = Color(0xFFE8B04A)
     val destaque = Brush.linearGradient(listOf(a1, a2))
 }
 
