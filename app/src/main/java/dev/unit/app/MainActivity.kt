@@ -51,17 +51,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private var fechouBalao = false  // fechou no ✕ do app: sair do app não liga a bolha de novo
+    private var abrindoJogo = false  // tocou num jogo: o balão abre como estava (painel, mini…), não vira bolha
 
     // saiu do app (início, voltar, outro app), com ou sem jogo escolhido: o Unit fica como bolha na tela
     override fun onStop() {
         super.onStop()
-        if (Settings.canDrawOverlays(this) && !isChangingConfigurations && !fechouBalao) balao(Balao.MINIMIZAR)
+        if (Settings.canDrawOverlays(this) && !isChangingConfigurations && !fechouBalao && !abrindoJogo) balao(Balao.MINIMIZAR)
+        abrindoJogo = false
     }
 
     private fun balao(acao: String) = runCatching { startForegroundService(Intent(this, Balao::class.java).setAction(acao)) }
 
     private fun abrirBalao(j: Jogo) {
-        fechouBalao = false
+        fechouBalao = false; abrindoJogo = true
         if (!Settings.canDrawOverlays(this)) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             return
