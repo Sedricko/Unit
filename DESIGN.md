@@ -6,6 +6,12 @@
 - **Texto demais** explicando cada botão.
 - **O app cobria o jogo**: para mudar um número era preciso sair do jogo.
 
+## É uma tela de celular
+- **Em pé:** o painel sobe **de baixo** e ocupa ~60% da altura; o jogo fica visível em cima (e borrado atrás).
+- **Deitado** (muitos jogos): o painel fica na **lateral direita**, ~40% da largura; o jogo segue à esquerda.
+- **Toque:** nada menor que **48 dp**; blocos em **3 colunas**; botões principais **embaixo** (onde o polegar alcança).
+- **Ícone flutuante** arrastável para qualquer borda (não cobre botão do jogo).
+
 ## A pegada do GameGuardian, mais organizada
 Quem já usou o GG se sente em casa: **ícone flutuante** sobre o jogo, **barra de ícones** no topo do painel, **lista de
 resultados** com caixinhas, **lista salva** e **memória** (endereços próximos). O que muda é a organização:
