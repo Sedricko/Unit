@@ -12,11 +12,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,11 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -75,13 +69,14 @@ object EmVolta {
     }
 
     @Composable
-    fun Tela(base: Achado, teclado: (Boolean) -> Unit, abrir: (Achado) -> Unit) {
+    fun Tela(base: Achado, abrir: (Achado) -> Unit) {
         val b = base.addr.toLong(16)
         var tipo by remember { mutableStateOf("auto") }
-        var busca by remember { mutableStateOf("") }
+        var campo by remember { mutableStateOf("") }
+        var procura by remember { mutableStateOf<Double?>(null) }
+        var restam by remember { mutableStateOf<Set<String>?>(null) }  // depois de procurar: os que bateram (refinar corta daqui)
         var bytes by remember { mutableStateOf<ByteArray?>(null) }
         var erro by remember { mutableStateOf("") }
-        DisposableEffect(Unit) { teclado(true); onDispose { teclado(false) } }
         // relê a cada 2 s enquanto a tela está aberta (os vizinhos mudam com o jogo)
         LaunchedEffect(b) {
             while (true) {
@@ -91,24 +86,31 @@ object EmVolta {
                 delay(2000)
             }
         }
-        val procura = busca.replace(',', '.').toDoubleOrNull()
-        val lista = bytes?.let { ler(it, b, tipo, procura) }.orEmpty()
+        fun chave(v: Vizinho) = "${v.desloc}${v.tipo}"
+        val lista = bytes?.let { m -> ler(m, b, tipo, procura).filter { restam == null || chave(it) in restam!! } }.orEmpty()
+        fun confirmar() {
+            val n = campo.replace(',', '.').toDoubleOrNull() ?: return
+            val m = bytes ?: return
+            val novos = ler(m, b, tipo, n).map(::chave).toSet()
+            restam = if (restam == null) novos else restam!! intersect novos
+            procura = n; campo = ""
+        }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf("auto" to "Auto", "i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double").forEach { (t, n) -> Selo(n, tipo == t) { tipo = t } }
+                listOf("auto" to "Auto", "i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double").forEach { (t, n) ->
+                    Selo(n, tipo == t) { tipo = t; restam = null; procura = null }
+                }
             }
-            BasicTextField(busca, { busca = it.filter { c -> c.isDigit() || c == ',' || c == '.' || c == '-' }.take(16) }, singleLine = true,
-                textStyle = TextStyle(color = Cor.texto, fontSize = 18.sp, fontWeight = FontWeight.Bold), cursorBrush = SolidColor(Cor.a2),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth().background(Color(0x40000000), RoundedCornerShape(14.dp))
-                    .border(1.dp, Color(0x9967C6FF), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
-                decorationBox = { campo -> Box { if (busca.isEmpty()) Text("procurar número", color = Cor.apagado, fontSize = 14.sp); campo() } })
+            CampoGrande(campo, if (restam == null) "procurar número" else "número novo")
             if (erro.isNotBlank()) Text(erro, color = Cor.ruim, fontSize = 12.sp)
-            Text(if (procura != null) "${lista.size} vizinho(s) com $busca" else "100 campos acima e 100 abaixo de ${base.addr} · role para ver mais",
-                color = if (procura != null) Cor.texto else Cor.apagado, fontSize = if (procura != null) 15.sp else 12.sp,
-                fontWeight = if (procura != null) FontWeight.Bold else FontWeight.Normal)
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                items(lista, key = { "${it.desloc}${it.tipo}" }) { v ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (restam != null) "${lista.size} vizinho(s)" else "100 campos acima e 100 abaixo · role para ver mais",
+                    color = if (restam != null) Cor.texto else Cor.apagado, fontSize = if (restam != null) 15.sp else 12.sp,
+                    fontWeight = if (restam != null) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
+                if (restam != null) Text("ver todos", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.toque { restam = null; procura = null })
+            }
+            LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                items(lista, key = { chave(it) }) { v ->
                     val eu = v.desloc == 0
                     val a = Achado(v.addr.toString(16), v.tipo, v.valor)
                     Row(Modifier.fillMaxWidth().then(if (eu) Modifier.background(Color(0x333B8CFF), RoundedCornerShape(10.dp)).border(1.dp, Color(0x8867C6FF), RoundedCornerShape(10.dp)) else Modifier)
@@ -122,6 +124,8 @@ object EmVolta {
                     }
                 }
             }
+            Teclado(if (restam == null) "Procurar" else "Refinar", campo.isNotBlank() && bytes != null,
+                digitou = { campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { confirmar() })
         }
     }
 }

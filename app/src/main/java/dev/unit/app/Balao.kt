@@ -245,7 +245,7 @@ class Balao : Service() {
             "jogos" -> Jogos()
             "nome" -> Nome()
             "lab" -> Laboratorio.Tela(this@Balao)
-            "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e, { tecladoDoAndroid(it, mostrar = false) }) { a -> Nucleo.escolhido = a; tela = "editar" } }
+            "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
             else -> Inicio()
         }
     }
