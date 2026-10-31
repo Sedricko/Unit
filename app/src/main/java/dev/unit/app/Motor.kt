@@ -4,7 +4,8 @@ import java.io.IOException
 
 /** Conversa com o unitd (motor em C) rodando como root pelo su. Cada comando devolve as linhas antes do "ok"/"err". */
 class Motor(caminho: String) {
-    private val proc = ProcessBuilder("su").redirectErrorStream(true).start()
+    private val proc = try { ProcessBuilder("su").redirectErrorStream(true).start() }
+        catch (e: IOException) { throw IOException("Este Android não tem root (não existe o su). Instale o Unit dentro do vPhoneOS, como o Tinker.") }
     private val entrada = proc.outputStream.bufferedWriter()
     private val saida = proc.inputStream.bufferedReader()
     val ola: String
