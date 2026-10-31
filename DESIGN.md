@@ -45,6 +45,19 @@ resultados** com caixinhas, **lista salva** e **memória** (endereços próximos
 5. **Números grandes, pouco texto.** O que importa (o valor, quantos resultados) é o maior da tela.
 6. **Escuro e elegante.** O visual do Painel Tinker: azul-noite, cartões arredondados, um destaque em degradê azul.
 
+## Tudo recolhível (o padrão é recolhido)
+| O que | Recolhido (padrão) | Aberto |
+|---|---|---|
+| Painel inteiro | Só o ícone **U** sobre o jogo | Toque no U; **─** recolhe |
+| Teclado | Escondido | Só ao tocar no campo |
+| Tipo do número | Selo **"Auto ▾"** | Toque: Inteiro, Vírgula, Texto… |
+| Filtros dos resultados | Escondidos | Só se houver tipos misturados |
+| Mudar · Congelar · Salvar | Escondidos | Só com algo marcado |
+| Ferramentas do jogo | Linha **"🧰 Ferramentas ▾"** | Toque: os cartões |
+| Detalhes de um resultado | Valor e tipo | Toque: endereço, região, dono |
+
+Assim a busca normalmente mostra só **o campo, o botão e o número de resultados**.
+
 ## Visual: o do Painel Tinker (o que o usuário aprovou)
 Elegante e escuro, no estilo do Heroic Revival / Painel Tinker:
 - **Fundo azul-noite** com um degradê suave de azul (`#071026` com brilho `#1d4fb8` num canto).
