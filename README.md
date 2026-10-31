@@ -19,6 +19,10 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
 | [`mina/`](mina/) | A **Mina de Treino**, o nosso jogo de teste |
 | [`docs/`](docs/) | Anotações: o que aprendemos em cada jogo real |
 
+## Como trabalhamos
+- Uma peça por vez, cada uma com teste.
+- **Design: prévia antes de compilar.** Toda mudança de tela é mostrada como imagem e aprovada antes de virar código.
+
 ## Planos
 - [PLANO.md](PLANO.md): as fases do Unit, peça por peça.
 - [JOGO.md](JOGO.md): a Mina de Treino e os níveis (cada nível é uma prova do Unit).
