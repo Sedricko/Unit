@@ -151,6 +151,7 @@ O coração do projeto: um programa em C que roda como root e lê/escreve a mem�
 | 6.4 **Prova no jogo real** | Save e velocidade de verdade | Save do Orecraft editado com backup; Orecraft em 2x |
 
 ## Depois (só se fizer sentido)
+Espaço virtual (rodar o jogo dentro de um app, sem root): projeto separado; ver `docs/ideias/espaco-virtual.md`.
 Bot de testes automáticos, painel no PC, assistente de IA. Cada um como peça separada, com o mesmo cuidado.
 
 ---
