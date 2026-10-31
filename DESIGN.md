@@ -12,6 +12,20 @@
 - **Toque:** nada menor que **48 dp**; blocos em **3 colunas**; botões principais **embaixo** (onde o polegar alcança).
 - **Ícone flutuante** arrastável para qualquer borda (não cobre botão do jogo).
 
+## Três tamanhos: ícone, mini painel, painel completo
+```
+1. Ícone           2. Mini painel                     3. Painel completo
+   (U)             ┌────────────────────────────┐     ┌ vidro, blocos em grade ┐
+                   │ Ouro  1.250  ❄   Vida 87,5 │     │ Achar · Congelar · ... │
+                   │ [ Achar ]            ▢  ─  │     │                        │
+                   └────────────────────────────┘     └────────────────────────┘
+```
+- **Ícone:** só o U, arrastável para qualquer borda.
+- **Mini painel:** faixa fina (em cima ou embaixo) com os **valores salvos ao vivo**; toque = editar, segurar = congelar;
+  um **Achar** rápido. Mexer nos valores sem sair do jogo.
+- **Painel completo:** o de vidro com os blocos.
+- **─** minimiza (completo → mini → ícone) · **▢** expande. O Unit lembra o último tamanho por jogo.
+
 ## A pegada do GameGuardian, mais organizada
 Quem já usou o GG se sente em casa: **ícone flutuante** sobre o jogo, **barra de ícones** no topo do painel, **lista de
 resultados** com caixinhas, **lista salva** e **memória** (endereços próximos). O que muda é a organização:
@@ -199,6 +213,7 @@ Lista de scripts `.lua`, **Rodar**, e as perguntas do script aparecem no própri
 | Buscar | 2.1 – 2.4 |
 | Salvos | 2.5 |
 | Ícone flutuante + painel com a barra | 2.6 |
+| Mini painel (valores ao vivo) | 2.6 |
 | Memória (endereços em volta) | 2.6 |
 | Ferramentas | 5.x e 6.x |
 | Scripts | 4.x |
