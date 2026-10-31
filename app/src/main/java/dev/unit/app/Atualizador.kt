@@ -34,6 +34,7 @@ object Atualizador {
     suspend fun preparar(ctx: Context) = withContext(Dispatchers.IO) {
         runCatching {
             val atual = ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: return@runCatching
+            if (atual.endsWith("-lab")) return@runCatching  // APK de teste do Laboratório: não se troca sozinho pela versão normal
             val j = JSONObject(URL(API).readText())
             val v = j.getString("tag_name").removePrefix("v")
             val a = j.getJSONArray("assets")
