@@ -283,7 +283,7 @@ class Balao : Service() {
                 }
                 if (n > 1) Text("Mude o valor no jogo (ganhe ou gaste), digite o novo e refine.", color = Cor.apagado, fontSize = 12.sp)
             }
-            if (Nucleo.achados.size in 2..50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (Nucleo.achados.size in 1..50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Nucleo.achados.take(20).forEach { a ->
                     Linha(Modifier.toque { Nucleo.escolhido = a; tela = "editar" }) {
                         Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
