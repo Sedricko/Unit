@@ -10,6 +10,7 @@
 //   read ENDEREÇO TIPO         -> ok VALOR
 //   write ENDEREÇO TIPO VALOR  -> ok
 //   freeze ENDEREÇO TIPO VALOR / unfreeze ENDEREÇO|all / frozen
+//   pause / resume             para e continua o jogo (SIGSTOP/SIGCONT)
 //   sleep MS                   espera (testes e scripts: dá tempo ao congelador)
 //   quit
 #define _GNU_SOURCE
@@ -20,6 +21,7 @@
 #include <inttypes.h>
 #include <math.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -223,6 +225,8 @@ int main(void) {
             }
             puts("ok");
         }
+        else if (!strcmp(c, "pause")) puts(kill(target, SIGSTOP) ? "err não pausou" : "ok");
+        else if (!strcmp(c, "resume")) puts(kill(target, SIGCONT) ? "err não continuou" : "ok");
         else if (!strcmp(c, "unfreeze")) {
             uint64_t a = strtoull(a1, NULL, 16); int n = 0;
             pthread_mutex_lock(&fzm);

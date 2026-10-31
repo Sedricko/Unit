@@ -33,5 +33,6 @@ Cada mudança na `main` gera o APK sozinho (GitHub Actions) na página **Release
 A versão segue o plano: `0.0.2` = Fase 0, peça 0.2.
 
 ## Onde estamos
-**v0.1.0, o primeiro funcional:** escolher o jogo, **achar** o valor (buscar e refinar, tipo automático), **editar** e
-**congelar**. Precisa de root (Magisk). Ainda sem ícone flutuante: troque entre o jogo e o Unit.
+**v0.2.0:** o **balão sobre o jogo** em 3 tamanhos (balão "U", mini painel com os valores ao vivo, painel de vidro com
+blocos), **teclado próprio**, **achar** (buscar e refinar, tipo automático), **editar** (atalhos 999, 9.999, +100, ×2),
+**congelar** e **pausar o jogo**. Precisa de root (Magisk) e da permissão "Sobrepor a outros apps".
