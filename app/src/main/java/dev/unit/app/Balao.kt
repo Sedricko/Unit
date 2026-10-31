@@ -15,7 +15,6 @@ import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -145,7 +144,7 @@ class Balao : Service() {
     @Composable
     private fun Olho() = Box(
         Modifier.size(40.dp).background(Cor.bloco, RoundedCornerShape(12.dp)).border(1.dp, Cor.linha, RoundedCornerShape(12.dp))
-            .pointerInput(Unit) { detectTapGestures(onPress = { espiar = true; tryAwaitRelease(); espiar = false }) },
+            .pointerInput(Unit) { detectTapGestures(onPress = { vibrar(this@Balao); espiar = true; tryAwaitRelease(); espiar = false }) },
         contentAlignment = Alignment.Center
     ) { Icone(Ic.OLHO, 18.dp) }
 
@@ -164,7 +163,7 @@ class Balao : Service() {
                             vista?.let { wm.updateViewLayout(it, params) }; guardar()
                         }
                     }
-                    .pointerInput(Unit) { detectTapGestures(onTap = { mudar(if (Nucleo.salvos.isEmpty()) "painel" else "mini") }, onLongPress = { mudar("painel") }) },
+                    .pointerInput(Unit) { detectTapGestures(onTap = { vibrar(this@Balao); mudar(if (Nucleo.salvos.isEmpty()) "painel" else "mini") }, onLongPress = { mudar("painel") }) },
                 contentAlignment = Alignment.Center
             ) { Text("U", color = Cor.a2, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp) }
             "mini" -> Mini()
@@ -180,7 +179,7 @@ class Balao : Service() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Nucleo.salvos.take(3).forEach { s ->
                 Column(Modifier.weight(1f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp))
-                    .clickable { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar"; mudar("painel") }.padding(8.dp)) {
+                    .toque { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar"; mudar("painel") }.padding(8.dp)) {
                     Text(s.nome + if (s.congelado) " · congelado" else "", color = Cor.apagado, fontSize = 11.sp, maxLines = 1)
                     Text(s.valor, color = if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 }
@@ -209,7 +208,7 @@ class Balao : Service() {
         }
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
-            if (tela != "inicio") Box(Modifier.clickable { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
+            if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
             Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             Olho()
@@ -219,7 +218,7 @@ class Balao : Service() {
             BotaoIcone(Ic.FECHAR) { stopSelf() }
         }
         // o jogo ligado: tocar abre a lista para trocar de processo
-        if (tela == "inicio") Linha(Modifier.clickable { tela = "jogos" }) {
+        if (tela == "inicio") Linha(Modifier.toque { tela = "jogos" }) {
             Nucleo.jogo?.let { IconeJogo(it, 36.dp) } ?: Icone(Ic.JOGO)
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(Nucleo.jogo?.nome ?: "Escolher jogo", color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -251,13 +250,13 @@ class Balao : Service() {
     }
 
     @Composable
-    private fun LinhaSalvo(s: Salvo) = Linha(Modifier.clickable { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" }) {
+    private fun LinhaSalvo(s: Salvo) = Linha(Modifier.toque { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" }) {
         Column(Modifier.weight(1f)) {
             Text(s.nome, color = Cor.texto, fontSize = 15.sp)
             Text((NOME_TIPO[s.tipo] ?: s.tipo) + if (s.congelado) " · congelado" else "", color = Cor.apagado, fontSize = 11.sp)
         }
         Text(s.valor, color = if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-        Box(Modifier.padding(start = 8.dp).clickable { Nucleo.alternarCongelado(s) }) { Icone(Ic.CONGELAR, 20.dp, if (s.congelado) Cor.a2 else Cor.apagado) }
+        Box(Modifier.padding(start = 8.dp).toque { Nucleo.alternarCongelado(s) }) { Icone(Ic.CONGELAR, 20.dp, if (s.congelado) Cor.a2 else Cor.apagado) }
     }
 
     @Composable
@@ -271,13 +270,13 @@ class Balao : Service() {
             Nucleo.total?.let { n ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("${"%,d".format(n).replace(',', '.')} resultado${if (n == 1L) "" else "s"}", color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("começar de novo", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.clickable { Nucleo.zerar(); campo = "" })
+                    Text("começar de novo", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.toque { Nucleo.zerar(); campo = "" })
                 }
                 if (n > 1) Text("Mude o valor no jogo (ganhe ou gaste), digite o novo e refine.", color = Cor.apagado, fontSize = 12.sp)
             }
             if (Nucleo.achados.size in 2..50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Nucleo.achados.take(20).forEach { a ->
-                    Linha(Modifier.clickable { Nucleo.escolhido = a; tela = "editar" }) {
+                    Linha(Modifier.toque { Nucleo.escolhido = a; tela = "editar" }) {
                         Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
                         Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp)
                     }
@@ -304,7 +303,7 @@ class Balao : Service() {
                 fun num(d: Double) = if (e.tipo.startsWith("i")) d.toLong().toString() else d.toString()
                 listOf("999" to "999", "9.999" to "9999", "+100" to num(n + 100), "×2" to num(n * 2)).forEach { (t, v) -> Selo(t, campo == v) { campo = v } }
             }
-            Row(Modifier.clickable { congelar = !congelar }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.toque { congelar = !congelar }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.size(40.dp, 22.dp).background(if (congelar) Cor.a1 else Cor.bloco, RoundedCornerShape(50)).border(1.dp, Cor.linha, RoundedCornerShape(50)),
                     contentAlignment = if (congelar) Alignment.CenterEnd else Alignment.CenterStart) { Box(Modifier.padding(3.dp).size(16.dp).background(Color.White, CircleShape)) }
                 Text("Congelar neste valor", color = Cor.texto, fontSize = 14.sp)
@@ -338,7 +337,7 @@ class Balao : Service() {
         LaunchedEffect(Unit) { Nucleo.carregarJogos(this@Balao) }
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Nucleo.jogos.forEach { j ->
-                Linha(Modifier.clickable { Nucleo.escolher(j); tela = "inicio" }) {
+                Linha(Modifier.toque { Nucleo.escolher(j); tela = "inicio" }) {
                     IconeJogo(j, 40.dp)
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text(j.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)

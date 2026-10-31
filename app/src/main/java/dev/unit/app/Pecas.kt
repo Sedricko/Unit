@@ -4,6 +4,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -97,18 +100,40 @@ fun IconeJogo(j: Jogo, tam: Dp = 44.dp) {
 @Composable
 fun Rotulo(t: String) = Text(t.uppercase(), color = Cor.apagado, fontSize = 11.sp, letterSpacing = 1.5.sp)
 
+/** Um tique curto de vibração no toque (como um teclado). Sem vibrador ou sem permissão: só não vibra. */
+fun vibrar(ctx: android.content.Context) = runCatching {
+    val v = if (android.os.Build.VERSION.SDK_INT >= 31) ctx.getSystemService(android.os.VibratorManager::class.java).defaultVibrator
+        else ctx.getSystemService(android.os.Vibrator::class.java)
+    v.vibrate(if (android.os.Build.VERSION.SDK_INT >= 29) android.os.VibrationEffect.createPredefined(android.os.VibrationEffect.EFFECT_TICK)
+        else android.os.VibrationEffect.createOneShot(12, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+}
+
+/**
+ * O toque de todos os botões: enquanto o dedo segura, encolhe e escurece um pouco; no clique, vibra.
+ * Vai no começo da cadeia (antes do fundo) para o botão inteiro encolher junto.
+ */
+@Composable
+fun Modifier.toque(ligado: Boolean = true, clique: () -> Unit): Modifier {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val fonte = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val apertado by fonte.collectIsPressedAsState()
+    val escala by androidx.compose.animation.core.animateFloatAsState(if (apertado) .93f else 1f, label = "toque")
+    return graphicsLayer { scaleX = escala; scaleY = escala; alpha = if (apertado) .75f else 1f }
+        .clickable(fonte, indication = null, enabled = ligado) { vibrar(ctx); clique() }
+}
+
 /** Botão quadrado de ícone (minimizar, fechar, pausar). */
 @Composable
 fun BotaoIcone(i: Ic, clique: () -> Unit) = Box(
-    Modifier.size(40.dp).background(Cor.bloco, RoundedCornerShape(12.dp)).border(1.dp, Cor.linha, RoundedCornerShape(12.dp)).clickable(onClick = clique),
+    Modifier.toque(clique = clique).size(40.dp).background(Cor.bloco, RoundedCornerShape(12.dp)).border(1.dp, Cor.linha, RoundedCornerShape(12.dp)),
     contentAlignment = Alignment.Center
 ) { Icone(i, 18.dp) }
 
 /** Bloco da grade: ícone de linha e um nome curto. Desligado = ainda não funciona (fica apagado). */
 @Composable
 fun Bloco(i: Ic, nome: String, ligado: Boolean = true, modifier: Modifier = Modifier, clique: () -> Unit) = Column(
-    modifier.alpha(if (ligado) 1f else .35f).background(Cor.bloco, RoundedCornerShape(18.dp)).border(1.dp, Cor.linha, RoundedCornerShape(18.dp))
-        .clickable(enabled = ligado, onClick = clique).padding(vertical = 14.dp),
+    modifier.toque(ligado, clique).alpha(if (ligado) 1f else .35f).background(Cor.bloco, RoundedCornerShape(18.dp)).border(1.dp, Cor.linha, RoundedCornerShape(18.dp))
+        .padding(vertical = 14.dp),
     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)
 ) { Icone(i); Text(nome, color = Cor.texto, fontSize = 13.sp) }
 
@@ -120,15 +145,15 @@ fun Linha(modifier: Modifier = Modifier, conteudo: @Composable RowScope.() -> Un
 
 @Composable
 fun Botao(t: String, principal: Boolean, modifier: Modifier = Modifier, ligado: Boolean = true, clique: () -> Unit) = Box(
-    modifier.alpha(if (ligado) 1f else .45f)
+    modifier.toque(ligado, clique).alpha(if (ligado) 1f else .45f)
         .then(if (principal) Modifier.background(Cor.destaque, RoundedCornerShape(14.dp)) else Modifier.background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)))
-        .clickable(enabled = ligado, onClick = clique).padding(vertical = 12.dp, horizontal = 14.dp),
+        .padding(vertical = 12.dp, horizontal = 14.dp),
     contentAlignment = Alignment.Center
 ) { Text(t, color = if (principal) Cor.tinta else Cor.texto, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
 
 @Composable
 fun Selo(t: String, ligado: Boolean, clique: (() -> Unit)? = null) = Row(
-    Modifier.border(1.dp, if (ligado) Color(0xCC67C6FF) else Cor.linha, RoundedCornerShape(50)).then(if (clique != null) Modifier.clickable(onClick = clique) else Modifier)
+    Modifier.then(if (clique != null) Modifier.toque(clique = clique) else Modifier).border(1.dp, if (ligado) Color(0xCC67C6FF) else Cor.linha, RoundedCornerShape(50))
         .padding(horizontal = 12.dp, vertical = 6.dp),
     verticalAlignment = Alignment.CenterVertically
 ) { Text(t, color = if (ligado) Cor.texto else Cor.apagado, fontSize = 13.sp) }
@@ -150,14 +175,14 @@ fun CampoGrande(valor: String, dica: String) = Row(
 @Composable
 fun Teclado(acao: String, ligado: Boolean, digitou: (String) -> Unit, apagou: () -> Unit, confirmou: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     @Composable fun Tecla(t: String, mod: Modifier, f: () -> Unit) = Box(
-        mod.background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).clickable(onClick = f).padding(vertical = 11.dp),
+        mod.toque(clique = f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).padding(vertical = 11.dp),
         contentAlignment = Alignment.Center
     ) { Text(t, color = Cor.texto, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
     listOf(listOf("7", "8", "9"), listOf("4", "5", "6"), listOf("1", "2", "3")).forEachIndexed { r, linha ->
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             linha.forEach { d -> Tecla(d, Modifier.weight(1f)) { digitou(d) } }
             when (r) {
-                0 -> Box(Modifier.weight(1f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).clickable(onClick = apagou).padding(vertical = 13.dp), contentAlignment = Alignment.Center) { Icone(Ic.APAGAR, 20.dp) }
+                0 -> Box(Modifier.weight(1f).toque(clique = apagou).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).padding(vertical = 13.dp), contentAlignment = Alignment.Center) { Icone(Ic.APAGAR, 20.dp) }
                 1 -> Tecla(",", Modifier.weight(1f)) { digitou(",") }
                 else -> Tecla("−", Modifier.weight(1f)) { digitou("-") }
             }

@@ -7,7 +7,6 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,14 +71,14 @@ class MainActivity : ComponentActivity() {
                     Text("Unit", color = Cor.texto, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Selo(Nucleo.jogo?.nome ?: "nenhum jogo", Nucleo.jogo != null)
                 }
-                if (!podeBalao) Linha(Modifier.clickable { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }) {
+                if (!podeBalao) Linha(Modifier.toque { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }) {
                     Column(Modifier.weight(1f)) {
                         Text("Permitir o balão sobre os jogos", color = Cor.texto, fontWeight = FontWeight.SemiBold)
                         Text("Uma vez só: toque aqui e ligue \"Sobrepor a outros apps\" para o Unit.", color = Cor.apagado, fontSize = 12.sp)
                     }
                 }
                 Atualizador.nova?.let { v ->
-                    Linha(Modifier.clickable { scope.launch { Atualizador.instalar(this@MainActivity) } }) {
+                    Linha(Modifier.toque { scope.launch { Atualizador.instalar(this@MainActivity) } }) {
                         Column(Modifier.weight(1f)) {
                             Text("Versão nova: $v", color = Cor.texto, fontWeight = FontWeight.SemiBold)
                             Text(Atualizador.estado.ifEmpty { "Toque para tentar de novo." }, color = Cor.apagado, fontSize = 12.sp)
@@ -99,7 +98,7 @@ class MainActivity : ComponentActivity() {
                 Rotulo("Jogos abertos")
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(Nucleo.jogos) { j ->
-                        Linha(Modifier.clickable { Nucleo.escolher(j); abrirBalao(j) }) {
+                        Linha(Modifier.toque { Nucleo.escolher(j); abrirBalao(j) }) {
                             IconeJogo(j)
                             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                                 Text(j.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
