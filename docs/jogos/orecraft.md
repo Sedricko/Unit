@@ -13,3 +13,10 @@ Jogo offline em **Unity IL2CPP** (arm64). O que já sabemos, do projeto anterior
 - **Janela da nuvem** (Google Play Games) ao abrir: escolher sempre carregar da nuvem; manter o do emulador pode mandar
   progresso velho para a nuvem.
 - O tutorial ("Construa a Fundição", "Tenha 250 de Ferro") trava a loja até ser concluído.
+
+## Recursos: Vírgula (31/10, Unit 0.3.1, provado na tela)
+
+- O minério (Cobre) é guardado como **Vírgula** (número com casas decimais). Achado pelo usuário com o Unit: busca
+  automática (os 4 tipos), refinada vendendo Cobre; editado para 999 e congelado; o jogo mostrou "Cobre 999/400".
+- A primeira tentativa achou um **Inteiro** com o mesmo número: era uma cópia para a tela (editar não mudava nada).
+- Lição: quando sobra um Inteiro e um Vírgula com o mesmo valor, o Vírgula é o de verdade neste jogo.
