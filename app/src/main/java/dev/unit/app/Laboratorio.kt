@@ -39,8 +39,8 @@ object Laboratorio {
         var i = ((8 - (ini % 8)) % 8).toInt()
         while (i + 8 <= a.size) {
             var w = 0L; for (k in 7 downTo 0) w = (w shl 8) or (a[i + k].toLong() and 0xff)
-            val alto = (w ushr 32) and 0xffffff
-            if (alto in 0x70L..0x7fffffL || (w ushr 56) == 0xb4L) for (k in 0 until 8) livre[i + k] = true
+            val alto = w ushr 32  // 0x0000007x… (arm64), 0x00007x… (x86_64), 0xb4… (etiqueta do Android)
+            if (alto in 0x70L..0x7fL || alto in 0x7000L..0x7fffL || (alto ushr 24) == 0xb4L) for (k in 0 until 8) livre[i + k] = true
             i += 8
         }
         return a.indices.joinToString("") { if (livre[it]) "??" else "%02x".format(a[it]) }
