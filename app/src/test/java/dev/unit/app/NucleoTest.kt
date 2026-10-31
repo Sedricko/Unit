@@ -14,4 +14,12 @@ class NucleoTest {
         assertEquals(listOf(f, d, q), ordenar(listOf(d, f, q), "f32"))
         assertEquals(listOf(d, f, q), ordenar(listOf(d, f, q), "i32"))
     }
+
+    @Test
+    fun dwordEQwordIguaisNoMesmoEnderecoViramUm() {
+        val dw = Achado("6f306fc0c8", "i32", "67"); val qw = Achado("6f306fc0c8", "i64", "67"); val outro = Achado("6f307019a8", "i64", "67")
+        assertEquals(listOf(dw, outro), juntar(listOf(dw, qw, outro)))
+        val qwDiferente = Achado("6f306fc0c8", "i64", "4294967363")
+        assertEquals(listOf(dw, qwDiferente), juntar(listOf(dw, qwDiferente)))
+    }
 }
