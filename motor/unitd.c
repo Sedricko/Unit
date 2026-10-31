@@ -184,14 +184,56 @@ static void cmd_ps(void) {
     printf("ok %d\n", n);
 }
 
+// bytes ADDR N: os N bytes (até 512) a partir de ADDR em hex, para montar a assinatura (o "desenho" em volta do valor)
+static void cmd_bytes(const char *addr, const char *qtd) {
+    uint64_t a = strtoull(addr, NULL, 16); int n = atoi(qtd);
+    if (n <= 0 || n > 512) { puts("err quantidade de 1 a 512"); return; }
+    unsigned char b[512];
+    if (ler(a, b, (size_t)n)) { printf("err não li %s\n", addr); return; }
+    printf("ok ");
+    for (int i = 0; i < n; i++) printf("%02x", b[i]);
+    putchar('\n');
+}
+
+// aob PADRAO: procura o desenho de bytes em hex ("??" = qualquer byte) na memória do jogo; mostra até 20 endereços
+static void cmd_aob(const char *hex) {
+    size_t L = strlen(hex);
+    if (L < 8 || L % 2 || L > 1024) { puts("err padrão em hex, de 4 a 512 bytes"); return; }
+    size_t m = L / 2; unsigned char pat[512], msk[512]; size_t ancora = m;
+    for (size_t i = 0; i < m; i++) {
+        if (hex[2 * i] == '?') { msk[i] = 0; pat[i] = 0; continue; }
+        unsigned v; if (sscanf(hex + 2 * i, "%2x", &v) != 1) { puts("err padrão inválido"); return; }
+        pat[i] = (unsigned char)v; msk[i] = 1; if (ancora == m) ancora = i;
+    }
+    if (ancora == m) { puts("err padrão só com ??"); return; }
+    uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
+    if (nr < 0) { puts("err não li o mapa de memória do jogo"); return; }
+    enum { BLOCO = 1 << 20 };
+    unsigned char *buf = malloc(BLOCO + 512);
+    uint64_t achados[20]; size_t na = 0, total = 0;
+    for (int r = 0; r < nr; r++)
+        for (uint64_t a = ini[r]; a < fim[r]; a += BLOCO) {
+            size_t n = fim[r] - a < BLOCO + m ? fim[r] - a : BLOCO + m - 1;  // sobra m-1 para o padrão que cruza o bloco
+            if (ler(a, buf, n)) continue;
+            for (size_t o = 0; o + m <= n && o < BLOCO; o++) {
+                if (buf[o + ancora] != pat[ancora]) continue;
+                size_t i = 0; while (i < m && (!msk[i] || buf[o + i] == pat[i])) i++;
+                if (i == m) { if (na < 20) achados[na++] = a + o; total++; }
+            }
+        }
+    free(buf); free(ini); free(fim);
+    printf("ok %zu\n", total);
+    for (size_t i = 0; i < na; i++) printf("%" PRIx64 "\n", achados[i]);
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     pthread_t th; pthread_create(&th, NULL, congelador, NULL);
     printf("ok unitd 0.1 uid=%d\n", getuid());
-    char line[512], c[32], a1[128], a2[128], a3[128];
+    char line[1600], c[32], a1[1100], a2[128], a3[128];  // a1 grande: o padrão do aob
     while (fgets(line, sizeof line, stdin)) {
         c[0] = a1[0] = a2[0] = a3[0] = 0;
-        sscanf(line, "%31s %127s %127s %127s", c, a1, a2, a3);
+        sscanf(line, "%31s %1099s %127s %127s", c, a1, a2, a3);
         if (!c[0]) continue;
         if (!strcmp(c, "quit")) break;
         if (!strcmp(c, "ps")) { cmd_ps(); continue; }
@@ -208,6 +250,8 @@ int main(void) {
         if (!strcmp(c, "search")) cmd_search(a1, a2);
         else if (!strcmp(c, "refine")) cmd_refine(a1);
         else if (!strcmp(c, "list")) cmd_list(strtoul(a1, NULL, 10));
+        else if (!strcmp(c, "bytes")) cmd_bytes(a1, a2);
+        else if (!strcmp(c, "aob")) cmd_aob(a1);
         else if (!strcmp(c, "read") || !strcmp(c, "write") || !strcmp(c, "freeze")) {
             int t = tipo(a2); uint64_t a = strtoull(a1, NULL, 16); unsigned char b[8]; char v[64];
             if (t < 0) { printf("err tipo inválido: %s\n", a2); continue; }

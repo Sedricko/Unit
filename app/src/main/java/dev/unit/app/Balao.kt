@@ -218,7 +218,7 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; else -> "" },
+            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "lab" -> "Laboratório"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             Olho()
             BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
@@ -244,6 +244,7 @@ class Balao : Service() {
             "salvos" -> Salvos()
             "jogos" -> Jogos()
             "nome" -> Nome()
+            "lab" -> Laboratorio.Tela(this@Balao)
             else -> Inicio()
         }
     }
@@ -254,6 +255,13 @@ class Balao : Service() {
             Bloco(Ic.ACHAR, "Achar", Nucleo.jogo != null, Modifier.weight(1f)) { tela = "achar" }
             Bloco(Ic.EDITAR, "Editar", Nucleo.escolhido != null, Modifier.weight(1f)) { tela = "editar" }
             Bloco(Ic.SALVOS, "Salvos", Nucleo.salvos.isNotEmpty(), Modifier.weight(1f)) { tela = "salvos" }
+        }
+        // LABORATÓRIO (teste: assinaturas). Some junto com o Laboratorio.kt se não der certo
+        if (Nucleo.jogo != null) Linha(Modifier.toque { tela = "lab" }) {
+            Column(Modifier.weight(1f)) {
+                Text("Laboratório", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("teste: achar os salvos de novo depois de reabrir o jogo", color = Cor.apagado, fontSize = 12.sp)
+            }
         }
         if (Nucleo.salvos.isNotEmpty()) {
             Rotulo("Salvos")

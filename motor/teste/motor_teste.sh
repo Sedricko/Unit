@@ -32,10 +32,17 @@ write $aouro i32 1
 sleep 400
 read $aouro i32
 unfreeze all
+bytes $axp 16
 CMDS
 } | "$out/unitd")
 echo "$got"
 echo "----"
+# assinatura: o desenho de 16 bytes do xp (com os 8 do valor como ??) acha o xp de novo
+hexxp=$(grep -A0 -m1 -E '^ok [0-9a-f]{32}$' <<<"$got" | cut -c4-)
+got2=$(printf 'attach %s\naob %s\naob %s\nbytes %s 600\n' "$pid" "${hexxp:0:16}????????????????" "$hexxp" "$axp" | "$out/unitd")
+echo "$got2"
+got="$got
+$got2"
 confere "sem jogo, recusa" "err escolha o jogo primeiro"
 confere "attach" "ok $pid"
 confere "acha o ouro (Dword)" "$aouro i32 987654321"
@@ -45,4 +52,7 @@ confere "escreve Float" "ok 99.25"
 confere "acha Qword" "ok 1"
 confere "Double arredondado da tela (4321 acha 4321.25)" "ok 1"
 confere "congelar segura o valor" "ok 555"
+confere "bytes: 16 bytes do xp em hex" "ok ea16b04c02000000"
+confere "aob acha o xp pelo desenho" "$axp"
+confere "bytes recusa mais de 512" "err quantidade de 1 a 512"
 exit $falhou
