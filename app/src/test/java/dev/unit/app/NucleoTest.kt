@@ -22,4 +22,13 @@ class NucleoTest {
         val qwDiferente = Achado("6f306fc0c8", "i64", "4294967363")
         assertEquals(listOf(dw, qwDiferente), juntar(listOf(dw, qwDiferente)))
     }
+
+    @Test
+    fun limiteDoDword() {
+        org.junit.Assert.assertTrue(passaLimite("i32", "5000000000"))
+        org.junit.Assert.assertFalse(passaLimite("i32", "999999999"))
+        org.junit.Assert.assertFalse(passaLimite("i32", "2147483647"))
+        org.junit.Assert.assertFalse(passaLimite("i64", "5000000000"))
+        org.junit.Assert.assertFalse(passaLimite("f32", "5000000000"))
+    }
 }
