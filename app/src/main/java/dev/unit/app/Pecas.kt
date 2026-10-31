@@ -47,7 +47,7 @@ object Cor {
 }
 
 /** Ícones de linha desenhados (uma cor só), como na prévia. */
-enum class Ic { ACHAR, EDITAR, CONGELAR, SALVOS, PAUSAR, CONTINUAR, MINIMIZAR, EXPANDIR, FECHAR, APAGAR, JOGO }
+enum class Ic { ACHAR, EDITAR, CONGELAR, SALVOS, PAUSAR, CONTINUAR, MINIMIZAR, EXPANDIR, FECHAR, APAGAR, JOGO, OLHO }
 
 @Composable
 fun Icone(i: Ic, tam: Dp = 22.dp, cor: Color = Cor.icone) = Canvas(Modifier.size(tam)) {
@@ -65,6 +65,12 @@ fun Icone(i: Ic, tam: Dp = 22.dp, cor: Color = Cor.icone) = Canvas(Modifier.size
         Ic.EXPANDIR -> drawRoundRect(cor, Offset(s * .22f, s * .22f), androidx.compose.ui.geometry.Size(s * .56f, s * .56f), androidx.compose.ui.geometry.CornerRadius(s * .1f), style = st)
         Ic.FECHAR -> { l(.26f, .26f, .74f, .74f); l(.74f, .26f, .26f, .74f) }
         Ic.APAGAR -> { l(.38f, .25f, .88f, .25f); l(.88f, .25f, .88f, .75f); l(.88f, .75f, .38f, .75f); l(.38f, .75f, .12f, .5f); l(.12f, .5f, .38f, .25f); l(.5f, .38f, .74f, .62f); l(.74f, .38f, .5f, .62f) }
+        Ic.OLHO -> {
+            val olho = androidx.compose.ui.graphics.Path().apply {
+                moveTo(s * .08f, s * .5f); quadraticTo(s * .5f, s * .1f, s * .92f, s * .5f); quadraticTo(s * .5f, s * .9f, s * .08f, s * .5f); close()
+            }
+            drawPath(olho, cor, style = st); drawCircle(cor, s * .13f, Offset(s * .5f, s * .5f), style = st)
+        }
         Ic.JOGO -> { drawRoundRect(cor, Offset(s * .12f, s * .3f), androidx.compose.ui.geometry.Size(s * .76f, s * .42f), androidx.compose.ui.geometry.CornerRadius(s * .18f), style = st); l(.3f, .43f, .3f, .59f); l(.22f, .51f, .38f, .51f) }
     }
 }

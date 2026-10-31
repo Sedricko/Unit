@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
@@ -70,6 +71,9 @@ class Balao : Service() {
         LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT,  // teclado próprio: a janela nunca pega o foco do jogo
     )
     private var bx = 24; private var by = 360   // onde o balão estava (volta para lá ao minimizar)
+    private var px = -1; private var py = -1    // onde o painel foi arrastado (-1: ainda no lugar de começo)
+    private var cheio by mutableStateOf(false)   // painel em tela cheia (botão expandir)
+    private var espiar by mutableStateOf(false)  // segurando o olho: o painel some para ver o jogo
 
     override fun onBind(intent: Intent?) = null
 
@@ -83,16 +87,22 @@ class Balao : Service() {
             setContent { Conteudo() }
         }
         vista = v
+        ativo = true
+        lembrar()
         posicionar()
         wm.addView(v, params)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == FECHAR) stopSelf()
+        when (intent?.action) {
+            FECHAR -> stopSelf()
+            MINIMIZAR -> if (modo != "balao") mudar("balao", lembrar = false)  // voltou ao app: não esquece como estava
+            EXPANDIR -> mudar("painel")
+        }
         return START_NOT_STICKY
     }
 
-    override fun onDestroy() { vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
+    override fun onDestroy() { ativo = false; vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
 
     override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
 
@@ -106,12 +116,39 @@ class Balao : Service() {
         when (modo) {
             "balao" -> { params.width = LayoutParams.WRAP_CONTENT; params.height = LayoutParams.WRAP_CONTENT; params.gravity = Gravity.TOP or Gravity.START; params.x = bx; params.y = by }
             "mini" -> { params.width = LayoutParams.MATCH_PARENT; params.height = LayoutParams.WRAP_CONTENT; params.gravity = Gravity.BOTTOM; params.x = 0; params.y = 0 }
-            else -> if (w > h) { params.width = (w * .45f).toInt(); params.height = LayoutParams.MATCH_PARENT; params.gravity = Gravity.END or Gravity.TOP; params.x = 0; params.y = 0 }
-                    else { params.width = LayoutParams.MATCH_PARENT; params.height = (h * .62f).toInt(); params.gravity = Gravity.BOTTOM; params.x = 0; params.y = 0 }
+            else -> if (cheio) { params.width = LayoutParams.MATCH_PARENT; params.height = LayoutParams.MATCH_PARENT; params.gravity = Gravity.TOP or Gravity.START; params.x = 0; params.y = 0 }
+            else {
+                // janela solta: começa embaixo (em pé) ou na direita (deitado) e vai para onde for arrastada pela barra de cima
+                params.width = if (w > h) (w * .45f).toInt() else (w * .94f).toInt()
+                params.height = if (w > h) (h * .9f).toInt() else (h * .62f).toInt()
+                params.gravity = Gravity.TOP or Gravity.START
+                if (px < 0) { px = if (w > h) w - params.width - w / 40 else (w - params.width) / 2; py = h - params.height - h / 40 }
+                px = px.coerceIn(0, (w - params.width).coerceAtLeast(0)); py = py.coerceIn(0, (h - params.height).coerceAtLeast(0))
+                params.x = px; params.y = py
+            }
         }
     }
 
-    private fun mudar(m: String) { modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
+    private fun arrastar(dx: Float, dy: Float) { px += dx.toInt(); py += dy.toInt(); posicionar(); vista?.let { wm.updateViewLayout(it, params) }; guardar() }
+
+    /** Como o usuário deixou (tamanho, tela cheia, lugar do painel e do balão) fica guardado para a próxima vez. */
+    private val prefs by lazy { getSharedPreferences("balao", MODE_PRIVATE) }
+    private fun lembrar() {
+        modo = (prefs.getString("modo", "balao") ?: "balao").let { if (it == "mini" && Nucleo.salvos.isEmpty()) "balao" else it }; cheio = prefs.getBoolean("cheio", false)
+        px = prefs.getInt("px", -1); py = prefs.getInt("py", -1); bx = prefs.getInt("bx", bx); by = prefs.getInt("by", by)
+    }
+    private fun guardar() = prefs.edit().putString("modo", modo).putBoolean("cheio", cheio)
+        .putInt("px", px).putInt("py", py).putInt("bx", bx).putInt("by", by).apply()
+
+    /** O olho: enquanto o dedo segura, o painel fica invisível (como no GameGuardian). */
+    @Composable
+    private fun Olho() = Box(
+        Modifier.size(40.dp).background(Cor.bloco, RoundedCornerShape(12.dp)).border(1.dp, Cor.linha, RoundedCornerShape(12.dp))
+            .pointerInput(Unit) { detectTapGestures(onPress = { espiar = true; tryAwaitRelease(); espiar = false }) },
+        contentAlignment = Alignment.Center
+    ) { Icone(Ic.OLHO, 18.dp) }
+
+    private fun mudar(m: String, lembrar: Boolean = true) { modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) }; if (lembrar) guardar() }
 
     @Composable
     private fun Conteudo() {
@@ -123,7 +160,7 @@ class Balao : Service() {
                     .pointerInput(Unit) {
                         detectDragGestures { ch, d ->
                             ch.consume(); bx += d.x.toInt(); by += d.y.toInt(); params.x = bx; params.y = by
-                            vista?.let { wm.updateViewLayout(it, params) }
+                            vista?.let { wm.updateViewLayout(it, params) }; guardar()
                         }
                     }
                     .pointerInput(Unit) { detectTapGestures(onTap = { mudar(if (Nucleo.salvos.isEmpty()) "painel" else "mini") }, onLongPress = { mudar("painel") }) },
@@ -136,7 +173,7 @@ class Balao : Service() {
 
     @Composable
     private fun Mini() = Column(
-        Modifier.fillMaxWidth().padding(10.dp).background(Cor.vidro, RoundedCornerShape(22.dp)).border(1.dp, Cor.linha, RoundedCornerShape(22.dp)).padding(12.dp),
+        Modifier.fillMaxWidth().alpha(if (espiar) 0f else 1f).padding(10.dp).background(Cor.vidro, RoundedCornerShape(22.dp)).border(1.dp, Cor.linha, RoundedCornerShape(22.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -151,6 +188,7 @@ class Balao : Service() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Botao("Achar", true) { tela = "achar"; mudar("painel") }
             Spacer(Modifier.weight(1f))
+            Olho()
             BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
             BotaoIcone(Ic.EXPANDIR) { mudar("painel") }
             BotaoIcone(Ic.MINIMIZAR) { mudar("balao") }
@@ -161,16 +199,22 @@ class Balao : Service() {
 
     @Composable
     private fun Painel() = Column(
-        Modifier.fillMaxSize().background(Cor.vidro, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).border(1.dp, Cor.linha, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).padding(16.dp),
+        Modifier.fillMaxSize().alpha(if (espiar) 0f else 1f).background(Cor.vidro, RoundedCornerShape(28.dp)).border(1.dp, Cor.linha, RoundedCornerShape(28.dp)).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // a barrinha de cima: segure e arraste para mudar o painel de lugar
+        Box(Modifier.fillMaxWidth().pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }.padding(top = 8.dp, bottom = 2.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp, 4.dp).background(Cor.linha, RoundedCornerShape(2.dp)))
+        }
+        Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (tela == "inicio") Icone(Ic.JOGO) else Box(Modifier.clickable { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
             Column(Modifier.weight(1f)) {
                 Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; else -> Nucleo.jogo?.nome ?: "Unit" }, color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(if (Nucleo.pausado) "jogo pausado" else Nucleo.jogo?.pacote ?: "escolha o jogo no app", color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
             }
+            Olho()
             BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
+            BotaoIcone(Ic.EXPANDIR) { cheio = !cheio; mudar("painel") }
             BotaoIcone(Ic.MINIMIZAR) { mudar(if (Nucleo.salvos.isEmpty()) "balao" else "mini") }
             BotaoIcone(Ic.FECHAR) { stopSelf() }
         }
@@ -273,9 +317,13 @@ class Balao : Service() {
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(1, n)
     }
 
-    private companion object {
-        const val CANAL = "balao"
+    companion object {
+        private const val CANAL = "balao"
         const val FECHAR = "dev.unit.app.FECHAR"
+        const val MINIMIZAR = "dev.unit.app.MINIMIZAR"
+        const val EXPANDIR = "dev.unit.app.EXPANDIR"
+        /** O balão está ligado (a tela do app mostra minimizar e fechar). */
+        var ativo by mutableStateOf(false)
     }
 }
 
