@@ -10,7 +10,8 @@
 
     <application
         android:label="Unit"
-        android:icon="@drawable/ic_unit"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".MainActivity"
