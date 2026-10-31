@@ -60,6 +60,30 @@ resultados** com caixinhas, **lista salva** e **memória** (endereços próximos
 
 Assim a busca normalmente mostra só **o campo, o botão e o número de resultados**.
 
+## Inspiração: os conceitos do Windows 12/13 (enviados pelo usuário)
+- **Vidro (acrylic):** o painel é translúcido e **desfoca o jogo atrás** (Android 12+: blur de verdade; antes disso,
+  translúcido sem blur). O jogo nunca some.
+- **Blocos em grade** (como o "About Windows"): cada ferramenta é um bloco com **um ícone de linha** e um nome curto, em
+  grade de 3 colunas. Nada de lista comprida.
+- **Ícones de linha, de uma cor só** (cinza-azulado); **um** azul de destaque, só no botão principal.
+- **Cantos bem arredondados, muito espaço**, pouca coisa por tela.
+- Do menu do Tinker antigo fica o que funcionava: o **ícone flutuante que abre um painel sobre o jogo**.
+
+```
+┌ Unit ─────────────────── ─ ✕ ┐   ← vidro sobre o jogo
+│ Orecraft · Unity     ✎       │
+│ ┌────────┐┌────────┐┌────────┐│
+│ │  ⌕     ││  ❄     ││  ✎     ││
+│ │ Achar  ││Congelar││ Editar ││   ← blocos com ícone de linha
+│ └────────┘└────────┘└────────┘│
+│ ┌────────┐┌────────┐┌────────┐│
+│ │  ⏱     ││  ⏩     ││  ▤     ││
+│ │Cronôm. ││Velocid.││ Salvos ││   (só aparecem quando funcionam)
+│ └────────┘└────────┘└────────┘│
+│                        [ OK ] │
+└───────────────────────────────┘
+```
+
 ## Visual: o do Painel Tinker (o que o usuário aprovou)
 Elegante e escuro, no estilo do Heroic Revival / Painel Tinker:
 - **Fundo azul-noite** com um degradê suave de azul (`#071026` com brilho `#1d4fb8` num canto).
