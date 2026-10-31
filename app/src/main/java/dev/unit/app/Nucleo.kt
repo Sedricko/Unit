@@ -24,6 +24,8 @@ val FERRAMENTAS = setOf("com.topjohnwu.magisk", "dev.tinker.app", "moe.shizuku.p
 /** O tipo que já funcionou neste jogo vem primeiro; sem nada aprendido, a ordem do motor fica como está. */
 fun ordenar(l: List<Achado>, aprendido: String?) = if (aprendido == null) l else l.sortedBy { if (it.tipo == aprendido) 0 else 1 }
 
+val TIPOS = listOf("i32", "f32", "i64", "f64")
+
 val NOME_TIPO = mapOf("i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double")
 
 /**
@@ -34,10 +36,14 @@ object Nucleo {
     private var motor: Motor? = null
     private var lib = ""
     private var prefs: android.content.SharedPreferences? = null
-    /** O tipo (i32/f32…) do último valor que você editou ou congelou neste jogo: vira a preferência dele. O último vale (se
-     *  editou um Dword que não mudava a tela e depois o Float que mudou, fica o Float). */
-    val aprendido get() = jogo?.let { prefs?.getString("tipo-${it.pacote}", null) }
-    private fun aprender(tipo: String) { val j = jogo ?: return; prefs?.edit()?.putString("tipo-${j.pacote}", tipo)?.apply() }
+    /** Histórico por jogo: cada edição soma 1 ao tipo, cada congelar soma 2. O tipo com mais pontos vem primeiro nas buscas
+     *  daquele jogo (um erro aqui e ali perde para o tipo que você usa de verdade). */
+    val aprendido get() = jogo?.let { j -> TIPOS.maxByOrNull { prefs?.getInt("pontos-${j.pacote}-$it", 0) ?: 0 }
+        ?.takeIf { (prefs?.getInt("pontos-${j.pacote}-$it", 0) ?: 0) > 0 } }
+    private fun aprender(tipo: String, pontos: Int) {
+        val j = jogo ?: return; val k = "pontos-${j.pacote}-$tipo"
+        prefs?.edit()?.putInt(k, (prefs?.getInt(k, 0) ?: 0) + pontos)?.apply()
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     var jogo by mutableStateOf<Jogo?>(null)
@@ -100,7 +106,7 @@ object Nucleo {
 
     /** Escreve o valor novo; com congelar, o motor segura ele. Fica nos salvos para o mini painel. */
     fun editar(addr: String, tipo: String, texto: String, congelar: Boolean) = rodar {
-        aprender(tipo)
+        aprender(tipo, if (congelar) 2 else 1)
         val v = texto.trim().replace(',', '.')
         val i = salvos.indexOfFirst { it.addr == addr }
         if (congelar) cmd { it.cmd("freeze $addr $tipo $v") }
@@ -114,7 +120,7 @@ object Nucleo {
     }
 
     fun alternarCongelado(s: Salvo) = rodar {
-        if (s.congelado) cmd { it.cmd("unfreeze ${s.addr}") } else { cmd { it.cmd("freeze ${s.addr} ${s.tipo} ${s.valor}") }; aprender(s.tipo) }
+        if (s.congelado) cmd { it.cmd("unfreeze ${s.addr}") } else { cmd { it.cmd("freeze ${s.addr} ${s.tipo} ${s.valor}") }; aprender(s.tipo, 2) }
         val i = salvos.indexOfFirst { it.addr == s.addr }
         if (i >= 0) salvos[i] = salvos[i].copy(congelado = !s.congelado)
     }
