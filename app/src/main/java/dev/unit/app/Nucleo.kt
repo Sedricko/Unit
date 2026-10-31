@@ -21,6 +21,11 @@ data class Jogo(val pid: Int, val pacote: String, val nome: String)
 /** Apps que não são jogo (o root, o próprio GameGuardian, o Tinker…): fora da lista de jogos. */
 val FERRAMENTAS = setOf("com.topjohnwu.magisk", "dev.tinker.app", "moe.shizuku.privileged.api", "catch_.me_.if_.you_.can_", "io.github.vvb2060.magisk")
 
+/** Mesmo endereço como Dword e Qword com o mesmo número (os 4 bytes de cima são zero): é um valor só; fica o Dword. */
+fun juntar(l: List<Achado>) = l.filterNot { q ->
+    q.tipo == "i64" && l.any { it.addr == q.addr && it.tipo == "i32" && it.valor.toDoubleOrNull() == q.valor.toDoubleOrNull() }
+}
+
 /** O tipo que já funcionou neste jogo vem primeiro; sem nada aprendido, a ordem do motor fica como está. */
 fun ordenar(l: List<Achado>, aprendido: String?) = if (aprendido == null) l else l.sortedBy { if (it.tipo == aprendido) 0 else 1 }
 
@@ -100,7 +105,7 @@ object Nucleo {
         val r = cmd { it.cmd("list 50") }
         total = r.status.toLongOrNull()
         achados.clear()
-        if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.let { ordenar(it, aprendido) }
+        if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.let { ordenar(juntar(it), aprendido) }
         escolhido = achados.singleOrNull()
     }
 
