@@ -39,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
@@ -172,7 +173,7 @@ class Balao : Service() {
                 else -> confirmar = true
             }
         }
-        val giro = if (Arrumar.editando) androidx.compose.animation.core.rememberInfiniteTransition(label = "tremer").animateFloat(-2.5f, 2.5f,
+        val giro = if (Arrumar.editando) androidx.compose.animation.core.rememberInfiniteTransition(label = "tremer").animateFloat(initialValue = -2.5f, targetValue = 2.5f, animationSpec =
             androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(110), androidx.compose.animation.core.RepeatMode.Reverse), label = "giro").value else 0f
         val gesto = when {
             Arrumar.editando -> Modifier.pointerInput(id, true) {
