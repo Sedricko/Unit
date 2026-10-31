@@ -218,7 +218,7 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "lab" -> "Laboratório"; else -> "" },
+            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "lab" -> "Laboratório"; "volta" -> "Em volta"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             Olho()
             BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
@@ -245,6 +245,7 @@ class Balao : Service() {
             "jogos" -> Jogos()
             "nome" -> Nome()
             "lab" -> Laboratorio.Tela(this@Balao)
+            "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e, { tecladoDoAndroid(it, mostrar = false) }) { a -> Nucleo.escolhido = a; tela = "editar" } }
             else -> Inicio()
         }
     }
@@ -336,6 +337,8 @@ class Balao : Service() {
                 Icone(Ic.EDITAR, 18.dp)
             }
             Text("agora: $atual · ${NOME_TIPO[e.tipo]}", color = Cor.apagado, fontSize = 13.sp)
+            // LABORATÓRIO (teste): os vizinhos deste valor; sai junto com o EmVolta.kt se não der certo
+            Botao("Em volta (100 campos acima e abaixo)", false, Modifier.fillMaxWidth()) { tela = "volta" }
             CampoGrande(campo, "valor novo")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val n = atual.replace(',', '.').toDoubleOrNull() ?: 0.0
@@ -365,9 +368,10 @@ class Balao : Service() {
     }
 
     /** Só nesta tela a janela pega o foco: o teclado do Android aparece para digitar o nome; ao sair, volta a não pegar. */
-    private fun tecladoDoAndroid(ligar: Boolean) {
+    private fun tecladoDoAndroid(ligar: Boolean, mostrar: Boolean = true) {
         params.flags = if (ligar) params.flags and LayoutParams.FLAG_NOT_FOCUSABLE.inv() else params.flags or LayoutParams.FLAG_NOT_FOCUSABLE
-        params.softInputMode = if (ligar) LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or LayoutParams.SOFT_INPUT_ADJUST_RESIZE else LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
+        params.softInputMode = if (ligar && mostrar) LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            else if (ligar) LayoutParams.SOFT_INPUT_STATE_HIDDEN or LayoutParams.SOFT_INPUT_ADJUST_RESIZE else LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
         vista?.let { wm.updateViewLayout(it, params) }
     }
 

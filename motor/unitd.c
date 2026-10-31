@@ -184,11 +184,11 @@ static void cmd_ps(void) {
     printf("ok %d\n", n);
 }
 
-// bytes ADDR N: os N bytes (até 512) a partir de ADDR em hex, para montar a assinatura (o "desenho" em volta do valor)
+// bytes ADDR N: os N bytes (até 4096) a partir de ADDR em hex, para montar a assinatura (o "desenho" em volta do valor)
 static void cmd_bytes(const char *addr, const char *qtd) {
     uint64_t a = strtoull(addr, NULL, 16); int n = atoi(qtd);
-    if (n <= 0 || n > 512) { puts("err quantidade de 1 a 512"); return; }
-    unsigned char b[512];
+    if (n <= 0 || n > 4096) { puts("err quantidade de 1 a 4096"); return; }
+    static unsigned char b[4096];  // o "Em volta" lê 100 campos para cada lado
     if (ler(a, b, (size_t)n)) { printf("err não li %s\n", addr); return; }
     printf("ok ");
     for (int i = 0; i < n; i++) printf("%02x", b[i]);
