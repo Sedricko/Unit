@@ -59,6 +59,15 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
 
 ---
 
+## Onde estamos (31/10)
+
+- Fase 0: 0.1 ✅ · 0.2 ✅ · **0.3 jogo de teste ❌ (pulada)**
+- Fase 1: 1.1 a 1.6 ✅ (prova no Orecraft)
+- Fase 2: 2.1 ✅ · 2.2 ✅ · **2.3 ✅ um / ❌ editar todos** · 2.4 ✅ · **2.5 ✅ nome / ❌ continuar ao reabrir o app** · 2.6 ✅ · **2.7 ✅ Orecraft / ❌ DYSMANTLE**
+- Fase 3: 3.2 assinatura adiantada **só no ramo `lab-assinatura`** (Laboratório), fora da versão normal até chegar a vez dela
+- **Próximo, em ordem:** 2.3 editar todos → 2.5 lista que continua → 2.7 DYSMANTLE → 0.3 jogo de teste → **Unit 1.0**
+- Regra: peça fora de ordem só entra como Laboratório, num ramo separado
+
 ## Próxima atualização (pedidos do usuário, anotados)
 
 - [x] (0.3.5) Abrir o Unit sem jogo escolhido também liga o balão "U" (hoje o balão só aparece depois de tocar num jogo).
