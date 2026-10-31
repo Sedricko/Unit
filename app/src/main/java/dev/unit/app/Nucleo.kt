@@ -66,6 +66,7 @@ object Nucleo {
     }
 
     fun escolher(j: Jogo) = rodar {
+        if (pausado) runCatching { cmd { it.cmd("resume") } }  // não deixa o jogo de antes parado
         cmd { it.cmd("attach ${j.pid}") }
         jogo = j; pausado = false; zerar(); salvos.clear()
     }

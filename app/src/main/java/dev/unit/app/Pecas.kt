@@ -18,6 +18,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -72,6 +74,23 @@ fun Icone(i: Ic, tam: Dp = 22.dp, cor: Color = Cor.icone) = Canvas(Modifier.size
             drawPath(olho, cor, style = st); drawCircle(cor, s * .13f, Offset(s * .5f, s * .5f), style = st)
         }
         Ic.JOGO -> { drawRoundRect(cor, Offset(s * .12f, s * .3f), androidx.compose.ui.geometry.Size(s * .76f, s * .42f), androidx.compose.ui.geometry.CornerRadius(s * .18f), style = st); l(.3f, .43f, .3f, .59f); l(.22f, .51f, .38f, .51f) }
+    }
+}
+
+/** O ícone do próprio jogo; sem ícone, a primeira letra num quadrado de vidro. */
+@Composable
+fun IconeJogo(j: Jogo, tam: Dp = 44.dp) {
+    val pm = androidx.compose.ui.platform.LocalContext.current.packageManager
+    val img = androidx.compose.runtime.remember(j.pacote) {
+        runCatching {
+            val d = pm.getApplicationIcon(j.pacote)
+            android.graphics.Bitmap.createBitmap(144, 144, android.graphics.Bitmap.Config.ARGB_8888).also { b -> d.setBounds(0, 0, 144, 144); d.draw(android.graphics.Canvas(b)) }
+        }.getOrNull()?.asImageBitmap()
+    }
+    val forma = RoundedCornerShape(tam / 3.6f)
+    if (img != null) androidx.compose.foundation.Image(img, j.nome, Modifier.size(tam).clip(forma))
+    else Box(Modifier.size(tam).background(Cor.bloco, forma).border(1.dp, Cor.linha, forma), contentAlignment = Alignment.Center) {
+        Text(j.nome.take(1).uppercase(), color = Cor.texto, fontWeight = FontWeight.Bold)
     }
 }
 

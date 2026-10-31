@@ -28,13 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -66,19 +60,6 @@ class MainActivity : ComponentActivity() {
         }
         startForegroundService(Intent(this, Balao::class.java))
         packageManager.getLaunchIntentForPackage(j.pacote)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let(::startActivity)
-    }
-
-    /** O ícone do próprio jogo; sem ícone, a primeira letra num quadrado de vidro. */
-    @Composable
-    private fun IconeJogo(j: Jogo) {
-        val img = remember(j.pacote) { runCatching { packageManager.getApplicationIcon(j.pacote).let { d ->
-            android.graphics.Bitmap.createBitmap(144, 144, android.graphics.Bitmap.Config.ARGB_8888).also { b -> d.setBounds(0, 0, 144, 144); d.draw(android.graphics.Canvas(b)) }
-        }.asImageBitmap() }.getOrNull() }
-        val forma = RoundedCornerShape(12.dp)
-        if (img != null) Image(img, j.nome, Modifier.size(44.dp).clip(forma))
-        else Box(Modifier.size(44.dp).background(Cor.bloco, forma).border(1.dp, Cor.linha, forma), contentAlignment = Alignment.Center) {
-            Text(j.nome.take(1).uppercase(), color = Cor.texto, fontWeight = FontWeight.Bold)
-        }
     }
 
     @Composable

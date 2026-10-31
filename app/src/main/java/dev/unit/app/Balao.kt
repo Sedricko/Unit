@@ -207,9 +207,11 @@ class Balao : Service() {
             Box(Modifier.size(40.dp, 4.dp).background(Cor.linha, RoundedCornerShape(2.dp)))
         }
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (tela == "inicio") Icone(Ic.JOGO) else Box(Modifier.clickable { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Column(Modifier.weight(1f)) {
-                Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; else -> Nucleo.jogo?.nome ?: "Unit" }, color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            if (tela == "inicio") Nucleo.jogo?.let { IconeJogo(it, 36.dp) } ?: Icone(Ic.JOGO)
+            else Box(Modifier.clickable { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
+            // no início, tocar no nome do jogo abre a lista para trocar de processo
+            Column(Modifier.weight(1f).then(if (tela == "inicio") Modifier.clickable { tela = "jogos" } else Modifier)) {
+                Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Trocar de jogo"; else -> (Nucleo.jogo?.nome ?: "Escolher jogo") + " ▾" }, color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(if (Nucleo.pausado) "jogo pausado" else Nucleo.jogo?.pacote ?: "escolha o jogo no app", color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
             }
             Olho()
@@ -223,6 +225,7 @@ class Balao : Service() {
             "achar" -> Achar()
             "editar" -> Editar()
             "salvos" -> Salvos()
+            "jogos" -> Jogos()
             else -> Inicio()
         }
     }
@@ -306,6 +309,25 @@ class Balao : Service() {
     private fun Salvos() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Nucleo.salvos.forEach { s -> LinhaSalvo(s) }
         Text("Toque num valor para editar; no floco, congela ou solta.", color = Cor.apagado, fontSize = 12.sp)
+    }
+
+    /** Os jogos abertos, dentro do painel: tocar troca o processo (o Unit solta o jogo de antes). */
+    @Composable
+    private fun Jogos() {
+        LaunchedEffect(Unit) { Nucleo.carregarJogos(this@Balao) }
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Nucleo.jogos.forEach { j ->
+                Linha(Modifier.clickable { Nucleo.escolher(j); tela = "inicio" }) {
+                    IconeJogo(j, 40.dp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(j.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(j.pacote, color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
+                    }
+                    if (Nucleo.jogo?.pacote == j.pacote) Selo("ligado", true)
+                }
+            }
+            Botao("Atualizar a lista", false, Modifier.fillMaxWidth()) { Nucleo.carregarJogos(this@Balao) }
+        }
     }
 
     private fun primeiroPlano() {
