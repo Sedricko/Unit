@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- ver os apps abertos (sem isso o Android 11+ esconde os outros apps e a lista de jogos fica vazia) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- ver se há versão nova no GitHub e baixar -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- o balão sobre o jogo -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

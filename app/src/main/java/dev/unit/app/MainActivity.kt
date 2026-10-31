@@ -24,6 +24,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,7 +57,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Tela() {
-        LaunchedEffect(Unit) { Nucleo.carregarJogos(this@MainActivity) }
+        val scope = rememberCoroutineScope()
+        LaunchedEffect(Unit) { Nucleo.carregarJogos(this@MainActivity); Atualizador.verificar(this@MainActivity); if (Atualizador.nova != null) Atualizador.instalar(this@MainActivity) }
         Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Cor.brilho, Cor.fundo), radius = 1400f)).systemBarsPadding()) {
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -66,6 +69,14 @@ class MainActivity : ComponentActivity() {
                     Column(Modifier.weight(1f)) {
                         Text("Permitir o balão sobre os jogos", color = Cor.texto, fontWeight = FontWeight.SemiBold)
                         Text("Uma vez só: toque aqui e ligue \"Sobrepor a outros apps\" para o Unit.", color = Cor.apagado, fontSize = 12.sp)
+                    }
+                }
+                Atualizador.nova?.let { v ->
+                    Linha(Modifier.clickable { scope.launch { Atualizador.instalar(this@MainActivity) } }) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Versão nova: $v", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                            Text(Atualizador.estado.ifEmpty { "Toque para tentar de novo." }, color = Cor.apagado, fontSize = 12.sp)
+                        }
                     }
                 }
                 if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
