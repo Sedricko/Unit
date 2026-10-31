@@ -66,10 +66,10 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
 - [ ] Busca de **texto** (o Orecraft guarda os recursos como texto JSON): opção Número / Texto no Achar. Prévia antes.
 - [ ] Editar todos os resultados de uma vez quando sobram poucos.
 - [ ] Depois de editar, avisar se o número da tela mudou.
-- [ ] Lista de jogos sem processos do sistema (android.process.acore, com.google.process.gapps, networkstack...):
+- [x] (0.3.11) Lista de jogos sem processos do sistema (android.process.acore, com.google.process.gapps, networkstack...):
       são nomes de processo, não de app; com QUERY_ALL_PACKAGES o pacote de verdade sempre é achado, então "sem app" = ignorar.
       Também esconder ferramentas (Magisk, o próprio Unit).
-- [ ] Resultado Inteiro e Vírgula com o mesmo número: mostrar o Vírgula primeiro como "provável valor real" (Orecraft).
+- [x] (0.3.11) Resultado Dword e Float com o mesmo número: mostrar o Vírgula primeiro como "provável valor real" (Orecraft).
 
 Já feito na 0.3.1 (31/10): ícones dos jogos, painel arrastável, olho (segurar some), expandir (tela cheia),
 minimizar/fechar no app, lembra tamanho e lugar, trocar de jogo pelo painel, atualização automática (0.3.0).

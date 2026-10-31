@@ -290,7 +290,10 @@ class Balao : Service() {
                 Nucleo.achados.take(20).forEach { a ->
                     Linha(Modifier.toque { Nucleo.escolhido = a; tela = "editar" }) {
                         Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
-                        Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp)
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp)
+                            if (provavelReal(a, Nucleo.achados)) Text("provável valor real", color = Cor.ok, fontSize = 11.sp)
+                        }
                         val ja = Nucleo.salvos.any { it.addr == a.addr }
                         Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(if (ja) Ic.SALVO else Ic.SALVAR, 20.dp, if (ja) Cor.a2 else Cor.icone) }
                     }

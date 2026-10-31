@@ -18,6 +18,13 @@ data class Salvo(val addr: String, val tipo: String, val nome: String, val valor
 data class Jogo(val pid: Int, val pacote: String, val nome: String)
 
 // os nomes do GameGuardian (o usuário pediu: servem para pesquisar e aprender)
+/** Apps que não são jogo (o root, o próprio GameGuardian, o Tinker…): fora da lista de jogos. */
+val FERRAMENTAS = setOf("com.topjohnwu.magisk", "dev.tinker.app", "moe.shizuku.privileged.api", "catch_.me_.if_.you_.can_", "io.github.vvb2060.magisk")
+
+/** O Float que tem um Dword/Qword com o mesmo número ao lado costuma ser o valor de verdade (o inteiro é cópia da tela). */
+fun provavelReal(a: Achado, todos: List<Achado>) = a.tipo.startsWith("f") &&
+    todos.any { it.tipo.startsWith("i") && it.valor.toDoubleOrNull() != null && it.valor.toDoubleOrNull() == a.valor.toDoubleOrNull() }
+
 val NOME_TIPO = mapOf("i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double")
 
 /**
@@ -57,10 +64,12 @@ object Nucleo {
             val p = l.split(' ', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
             val pac = p[1].substringBefore(':')  // processos extras do mesmo app: "pacote:servico"
             if (pac == ctx.packageName) return@mapNotNull null
-            val app = runCatching { pm.getApplicationInfo(pac, 0) }.getOrNull()
-            if (app != null && (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0) return@mapNotNull null
-            if (app != null && pm.getLaunchIntentForPackage(pac) == null) return@mapNotNull null
-            Jogo(p[0].toInt(), pac, app?.let { pm.getApplicationLabel(it).toString() } ?: pac)
+            if (pac in FERRAMENTAS) return@mapNotNull null
+            // sem app com esse nome = processo do sistema (android.process.acore…): com QUERY_ALL_PACKAGES todo app é achado
+            val app = runCatching { pm.getApplicationInfo(pac, 0) }.getOrNull() ?: return@mapNotNull null
+            if ((app.flags and ApplicationInfo.FLAG_SYSTEM) != 0) return@mapNotNull null
+            if (pm.getLaunchIntentForPackage(pac) == null) return@mapNotNull null
+            Jogo(p[0].toInt(), pac, pm.getApplicationLabel(app).toString())
         }.distinctBy { it.pacote }.sortedBy { it.nome.lowercase() }
         jogos.clear(); jogos += lista
         if (lista.isEmpty()) throw IllegalStateException("Nenhum jogo aberto. Abra o jogo e toque em Atualizar.")
@@ -81,7 +90,8 @@ object Nucleo {
         val r = cmd { it.cmd("list 50") }
         total = r.status.toLongOrNull()
         achados.clear()
-        if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }
+        // Float/Double primeiro: no Orecraft o Dword com o mesmo número era só a cópia da tela (31/10)
+        if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.sortedBy { if (it.tipo.startsWith("f")) 0 else 1 }
         escolhido = achados.singleOrNull()
     }
 
