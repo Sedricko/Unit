@@ -108,7 +108,7 @@ static void cmd_search(const char *valor, const char *tipos) {
     if (e == valor || *e) { printf("err valor inválido: %s\n", valor); return; }
     int usar[NT] = {0};
     if (!tipos || !*tipos || !strcmp(tipos, "auto")) for (int t = 0; t < NT; t++) usar[t] = 1;
-    else { char tmp[64]; snprintf(tmp, sizeof tmp, "%s", tipos); for (char *s = strtok(tmp, ","); s; s = strtok(NULL, ",")) { int t = tipo(s); if (t >= 0) usar[t] = 1; } }
+    else { char tmp[64]; snprintf(tmp, sizeof tmp, "%s", tipos); char *sv; for (char *s = strtok_r(tmp, ",", &sv); s; s = strtok_r(NULL, ",", &sv)) { int t = tipo(s); if (t >= 0) usar[t] = 1; } }
     // inteiro só se o número for inteiro (0,5 não está guardado em Dword)
     if (want != floor(want)) usar[T_I32] = usar[T_I64] = 0;
     uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
