@@ -72,6 +72,27 @@ static int bate(int t, double mem, double want) {
     if (isnan(mem) || isinf(mem)) return 0;
     return fabs(mem - want) <= fmax(1e-4, fabs(want) * 1e-6) || (want == floor(want) && mem >= want - 0.5 && mem < want + 0.5 && fabs(mem) > 1e-3);
 }
+// valor "N" ou faixa "A~B" (o ~ do GameGuardian). Na faixa os tipos com vírgula pensam como a tela: "100~100" pega
+// tudo que aparece como 100 (de 99,5 até antes de 100,5).
+typedef struct { double v, lo, hi; int faixa; } alvo_t;
+static int alvo(const char *s, alvo_t *a) {
+    char *e; a->faixa = 0;
+    const char *t = strchr(s, '~');
+    if (t) {
+        a->lo = strtod(s, &e); if (e != t) return -1;
+        a->hi = strtod(t + 1, &e); if (e == t + 1 || *e) return -1;
+        if (a->lo > a->hi) { double x = a->lo; a->lo = a->hi; a->hi = x; }
+        a->faixa = 1; a->v = a->lo; return 0;
+    }
+    a->v = strtod(s, &e); return (e == s || *e) ? -1 : 0;
+}
+static int confere(int t, double mem, const alvo_t *a) {
+    if (!a->faixa) return bate(t, mem, a->v);
+    if (t == T_I32 || t == T_I64) return mem >= a->lo && mem <= a->hi;
+    if (isnan(mem) || isinf(mem)) return 0;
+    return mem >= a->lo - 0.5 && mem < a->hi + 0.5;
+}
+
 static int codificar(int t, const char *s, unsigned char *b) {
     char *e; double d = strtod(s, &e);
     if (e == s || *e) return -1;
@@ -106,13 +127,13 @@ static int regioes(uint64_t **ini, uint64_t **fim) {
 }
 
 static void cmd_search(const char *valor, const char *tipos) {
-    char *e; double want = strtod(valor, &e);
-    if (e == valor || *e) { printf("err valor inválido: %s\n", valor); return; }
+    alvo_t al; if (alvo(valor, &al)) { printf("err valor inválido: %s\n", valor); return; }
+    double want = al.v;
     int usar[NT] = {0};
     if (!tipos || !*tipos || !strcmp(tipos, "auto")) for (int t = 0; t < NT; t++) usar[t] = 1;
     else { char tmp[64]; snprintf(tmp, sizeof tmp, "%s", tipos); char *sv; for (char *s = strtok_r(tmp, ",", &sv); s; s = strtok_r(NULL, ",", &sv)) { int t = tipo(s); if (t >= 0) usar[t] = 1; } }
     // inteiro só se o número for inteiro (0,5 não está guardado em Dword)
-    if (want != floor(want)) usar[T_I32] = usar[T_I64] = 0;
+    if (!al.faixa && want != floor(want)) usar[T_I32] = usar[T_I64] = 0;
     uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
     if (nr < 0) { puts("err não li o mapa de memória do jogo"); return; }
     nres = 0;
@@ -126,7 +147,7 @@ static void cmd_search(const char *valor, const char *tipos) {
                 if (!usar[t]) continue;
                 int sz = TSIZE[t];
                 for (size_t o = 0; o + sz <= n; o += sz)
-                    if (bate(t, numero(t, buf + o), want)) guardar(a + o, t);
+                    if (confere(t, numero(t, buf + o), &al)) guardar(a + o, t);
             }
         }
     free(buf); free(ini); free(fim);
@@ -134,11 +155,10 @@ static void cmd_search(const char *valor, const char *tipos) {
 }
 
 static void cmd_refine(const char *valor) {
-    char *e; double want = strtod(valor, &e);
-    if (e == valor || *e) { printf("err valor inválido: %s\n", valor); return; }
+    alvo_t al; if (alvo(valor, &al)) { printf("err valor inválido: %s\n", valor); return; }
     size_t k = 0; unsigned char b[8];
     for (size_t i = 0; i < nres; i++)
-        if (!ler(res[i].addr, b, TSIZE[res[i].type]) && bate(res[i].type, numero(res[i].type, b), want)) res[k++] = res[i];
+        if (!ler(res[i].addr, b, TSIZE[res[i].type]) && confere(res[i].type, numero(res[i].type, b), &al)) res[k++] = res[i];
     nres = k;
     printf("ok %zu\n", nres);
 }

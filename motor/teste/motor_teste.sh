@@ -25,6 +25,8 @@ search 87.5
 list 50
 write $avida f32 99.25
 read $avida f32
+search 87~88 f32
+search 123456780~123456800 i32
 search 9876543210 i64
 search 4321 f64
 freeze $aouro i32 555
@@ -45,4 +47,5 @@ confere "escreve Float" "ok 99.25"
 confere "acha Qword" "ok 1"
 confere "Double arredondado da tela (4321 acha 4321.25)" "ok 1"
 confere "congelar segura o valor" "ok 555"
+confere "faixa Float 87~88 acha a vida 87.5" "$avida f32"
 exit $falhou

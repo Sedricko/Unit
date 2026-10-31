@@ -350,7 +350,7 @@ class Balao : Service() {
         var campo by remember { mutableStateOf("") }
         ComTeclado({
             Teclado(if (Nucleo.total == null) "Buscar" else "Refinar", campo.isNotBlank() && !Nucleo.ocupado,
-                digitou = { campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" })
+                digitou = { if (it != "~" || "~" !in campo) campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" }, faixa = true)
         }) {
             CampoGrande(campo, if (Nucleo.total == null) "número na tela" else "número novo")
             Nucleo.total?.let { n ->
