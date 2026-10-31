@@ -207,18 +207,24 @@ class Balao : Service() {
             Box(Modifier.size(40.dp, 4.dp).background(Cor.linha, RoundedCornerShape(2.dp)))
         }
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (tela == "inicio") Nucleo.jogo?.let { IconeJogo(it, 36.dp) } ?: Icone(Ic.JOGO)
-            else Box(Modifier.clickable { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            // no início, tocar no nome do jogo abre a lista para trocar de processo
-            Column(Modifier.weight(1f).then(if (tela == "inicio") Modifier.clickable { tela = "jogos" } else Modifier)) {
-                Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Trocar de jogo"; else -> (Nucleo.jogo?.nome ?: "Escolher jogo") + " ▾" }, color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(if (Nucleo.pausado) "jogo pausado" else Nucleo.jogo?.pacote ?: "escolha o jogo no app", color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
-            }
+            // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
+            if (tela != "inicio") Box(Modifier.clickable { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
+            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; else -> "" },
+                color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             Olho()
             BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
             BotaoIcone(Ic.EXPANDIR) { cheio = !cheio; mudar("painel") }
             BotaoIcone(Ic.MINIMIZAR) { mudar(if (Nucleo.salvos.isEmpty()) "balao" else "mini") }
             BotaoIcone(Ic.FECHAR) { stopSelf() }
+        }
+        // o jogo ligado: tocar abre a lista para trocar de processo
+        if (tela == "inicio") Linha(Modifier.clickable { tela = "jogos" }) {
+            Nucleo.jogo?.let { IconeJogo(it, 36.dp) } ?: Icone(Ic.JOGO)
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(Nucleo.jogo?.nome ?: "Escolher jogo", color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(if (Nucleo.pausado) "jogo pausado" else Nucleo.jogo?.pacote ?: "toque para ver os jogos abertos", color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
+            }
+            Text("Trocar", color = Cor.a2, fontSize = 13.sp)
         }
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
         when (tela) {
