@@ -75,7 +75,8 @@ class Balao : Service() {
     private var my = 0                          // altura do mini painel, contada de baixo (arrastável)
     private var px = -1; private var py = -1    // onde o painel foi arrastado (-1: ainda no lugar de começo)
     private var cheio by mutableStateOf(false)   // painel em tela cheia (botão expandir)
-    private var espiar by mutableStateOf(false)  // segurando o olho: o painel some para ver o jogo
+    private var espiar by mutableStateOf(false)
+    private var confirmar by mutableStateOf(false)  // tocou no ✕: pergunta antes de fechar  // segurando o olho: o painel some para ver o jogo
 
     override fun onBind(intent: Intent?) = null
 
@@ -223,7 +224,7 @@ class Balao : Service() {
             BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
             BotaoIcone(Ic.EXPANDIR) { cheio = !cheio; mudar("painel") }
             BotaoIcone(Ic.MINIMIZAR) { mudar(if (Nucleo.salvos.isEmpty()) "balao" else "mini") }
-            BotaoIcone(Ic.FECHAR) { stopSelf() }
+            BotaoIcone(Ic.FECHAR) { confirmar = true }
         }
         // o jogo ligado: tocar abre a lista para trocar de processo
         if (tela == "inicio") Linha(Modifier.toque { tela = "jogos" }) {
@@ -234,6 +235,7 @@ class Balao : Service() {
             }
             Text("Trocar", color = Cor.a2, fontSize = 13.sp)
         }
+        if (confirmar) ConfirmarFechar({ confirmar = false }) { stopSelf() }
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
         when (tela) {

@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
         if (podeBalao && Nucleo.jogo != null) balao(Balao.MINIMIZAR)
     }
 
+    private var confirmar by mutableStateOf(false)
     private var fechouBalao = false  // fechou no ✕ do app: sair do app não liga a bolha de novo
     private var abrindoJogo = false  // tocou num jogo: o balão abre como estava (painel, mini…), não vira bolha
 
@@ -99,8 +100,9 @@ class MainActivity : ComponentActivity() {
                     }
                     BotaoIcone(Ic.EXPANDIR) { balao(Balao.EXPANDIR) }
                     Box(Modifier.padding(start = 8.dp)) { BotaoIcone(Ic.MINIMIZAR) { balao(Balao.MINIMIZAR) } }
-                    Box(Modifier.padding(start = 8.dp)) { BotaoIcone(Ic.FECHAR) { fechouBalao = true; balao(Balao.FECHAR) } }
+                    Box(Modifier.padding(start = 8.dp)) { BotaoIcone(Ic.FECHAR) { confirmar = true } }
                 }
+                if (confirmar && Balao.ativo) ConfirmarFechar({ confirmar = false }) { confirmar = false; fechouBalao = true; balao(Balao.FECHAR) }
                 if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
                 Rotulo("Jogos abertos")
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
