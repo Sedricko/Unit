@@ -40,6 +40,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -92,6 +96,7 @@ class Balao : Service() {
         vista = v
         ativo = true
         lembrar()
+        Arrumar.carregar(prefs)
         posicionar()
         wm.addView(v, params)
     }
@@ -150,6 +155,54 @@ class Balao : Service() {
             .pointerInput(Unit) { detectTapGestures(onPress = { vibrar(this@Balao); espiar = true; tryAwaitRelease(); espiar = false }) },
         contentAlignment = Alignment.Center
     ) { Icone(Ic.OLHO, 18.dp) }
+
+    /** Um botão de controle. Normal: toca e faz; segurando entra no modo arrumar (o olho: segurar é espiar). Arrumando: arrasta. */
+    @Composable
+    private fun Controle(id: String) {
+        val passo = with(androidx.compose.ui.platform.LocalDensity.current) { 48.dp.toPx() }
+        var pos by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        var tam by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+        var arr by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        val icone = when (id) { "olho" -> Ic.OLHO; "pausa" -> if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR; "expandir" -> Ic.EXPANDIR; "minimizar" -> Ic.MINIMIZAR; else -> Ic.FECHAR }
+        fun acao() {
+            when (id) {
+                "pausa" -> Nucleo.pausar()
+                "expandir" -> { cheio = !cheio; mudar("painel") }
+                "minimizar" -> mudar(if (Nucleo.salvos.isEmpty()) "balao" else "mini")
+                else -> confirmar = true
+            }
+        }
+        val giro = if (Arrumar.editando) androidx.compose.animation.core.rememberInfiniteTransition(label = "tremer").animateFloat(-2.5f, 2.5f,
+            androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(110), androidx.compose.animation.core.RepeatMode.Reverse), label = "giro").value else 0f
+        val gesto = when {
+            Arrumar.editando -> Modifier.pointerInput(id, true) {
+                detectDragGestures(onDragEnd = { Arrumar.soltar(id, pos + androidx.compose.ui.geometry.Offset(tam.width / 2f, tam.height / 2f) + arr, passo); arr = androidx.compose.ui.geometry.Offset.Zero },
+                    onDragCancel = { arr = androidx.compose.ui.geometry.Offset.Zero }) { ch, d -> ch.consume(); arr += d }
+            }
+            id == "olho" -> Modifier.pointerInput(id, false) { detectTapGestures(onPress = { vibrar(this@Balao); espiar = true; tryAwaitRelease(); espiar = false }) }
+            else -> Modifier.pointerInput(id, false) { detectTapGestures(onTap = { vibrar(this@Balao); acao() }, onLongPress = { vibrar(this@Balao); Arrumar.editando = true }) }
+        }
+        Box(Modifier.onGloballyPositioned { pos = it.positionInRoot(); tam = it.size }
+            .graphicsLayer { translationX = arr.x; translationY = arr.y; rotationZ = giro }
+            .size(40.dp).background(Cor.bloco, RoundedCornerShape(12.dp)).border(1.dp, if (Arrumar.editando) Cor.a2 else Cor.linha, RoundedCornerShape(12.dp))
+            .then(gesto), contentAlignment = Alignment.Center) { Icone(icone, 18.dp) }
+    }
+
+    /** A barra de baixo (perto do teclado): os botões que a pessoa trouxe para cá; arrumando, aparece vazia com o "Pronto". */
+    @Composable
+    private fun BarraBaixo() {
+        if (Arrumar.baixo.isEmpty() && !Arrumar.editando) return
+        Row(Modifier.fillMaxWidth().onGloballyPositioned { Arrumar.areaBaixo = it.boundsInRoot() }
+            .then(if (Arrumar.editando) Modifier.background(Color(0x1F3B8CFF), RoundedCornerShape(14.dp)).border(1.dp, Color(0x6667C6FF), RoundedCornerShape(14.dp)).padding(4.dp) else Modifier),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Arrumar.baixo.forEach { Controle(it) }
+            if (Arrumar.editando) {
+                if (Arrumar.baixo.isEmpty()) Text("solte aqui", color = Cor.apagado, fontSize = 12.sp)
+                Spacer(Modifier.weight(1f))
+                Botao("Pronto", true) { Arrumar.editando = false; Arrumar.guardar(prefs) }
+            }
+        }
+    }
 
     private fun mudar(m: String, lembrar: Boolean = true) { modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) }; if (lembrar) guardar() }
 
@@ -218,13 +271,11 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "lab" -> "Laboratório"; "volta" -> "Em volta"; else -> "" },
+            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "lab" -> "Laboratório"; "volta" -> "Em volta"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
-            Olho()
-            BotaoIcone(if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR) { Nucleo.pausar() }
-            BotaoIcone(Ic.EXPANDIR) { cheio = !cheio; mudar("painel") }
-            BotaoIcone(Ic.MINIMIZAR) { mudar(if (Nucleo.salvos.isEmpty()) "balao" else "mini") }
-            BotaoIcone(Ic.FECHAR) { confirmar = true }
+            // os controles na ordem que a pessoa arrumou (Laboratório: Arrumar.kt)
+            Row(Modifier.onGloballyPositioned { Arrumar.areaCima = it.boundsInRoot() }.then(if (Arrumar.editando) Modifier.border(1.dp, Color(0x6667C6FF), RoundedCornerShape(12.dp)).padding(2.dp) else Modifier),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) { Arrumar.cima.forEach { Controle(it) } }
         }
         // o jogo ligado: tocar abre a lista para trocar de processo
         if (tela == "inicio") Linha(Modifier.toque { tela = "jogos" }) {
@@ -248,6 +299,8 @@ class Balao : Service() {
             "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
             else -> Inicio()
         }
+        // telas sem o teclado do Unit: a barra de baixo fica no pé do painel
+        if (tela != "achar" && tela != "editar") { Spacer(Modifier.weight(1f)); BarraBaixo() }
     }
 
     @Composable
@@ -385,10 +438,11 @@ class Balao : Service() {
         val deitado = androidx.compose.ui.platform.LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
         if (deitado) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp), content = conteudo)
-            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) { teclado() }
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) { BarraBaixo(); teclado() }
         } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             conteudo()
             Spacer(Modifier.weight(1f))
+            BarraBaixo()
             teclado()
         }
     }
