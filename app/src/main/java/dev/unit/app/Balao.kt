@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -262,7 +263,10 @@ class Balao : Service() {
     @Composable
     private fun Achar() {
         var campo by remember { mutableStateOf("") }
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ComTeclado({
+            Teclado(if (Nucleo.total == null) "Buscar" else "Refinar", campo.isNotBlank() && !Nucleo.ocupado,
+                digitou = { campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" })
+        }) {
             CampoGrande(campo, if (Nucleo.total == null) "número na tela" else "número novo")
             Nucleo.total?.let { n ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -280,9 +284,6 @@ class Balao : Service() {
                 }
             }
             if (Nucleo.escolhido != null && Nucleo.total == 1L) Botao("Editar este valor", false, Modifier.fillMaxWidth()) { tela = "editar" }
-            Spacer(Modifier.weight(1f))
-            Teclado(if (Nucleo.total == null) "Buscar" else "Refinar", campo.isNotBlank() && !Nucleo.ocupado,
-                digitou = { campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" })
         }
     }
 
@@ -292,7 +293,10 @@ class Balao : Service() {
         var campo by remember(e.addr) { mutableStateOf("") }
         var congelar by remember(e.addr) { mutableStateOf(Nucleo.salvos.any { it.addr == e.addr && it.congelado }) }
         val atual = Nucleo.salvos.firstOrNull { it.addr == e.addr }?.valor ?: e.valor
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ComTeclado({
+            Teclado("Aplicar", (campo.isNotBlank() || congelar) && !Nucleo.ocupado, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
+                confirmou = { Nucleo.editar(e.addr, e.tipo, campo.ifBlank { atual }, congelar); campo = ""; tela = "inicio" })
+        }) {
             Text("agora: $atual · ${NOME_TIPO[e.tipo]}", color = Cor.apagado, fontSize = 13.sp)
             CampoGrande(campo, "valor novo")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -305,9 +309,20 @@ class Balao : Service() {
                     contentAlignment = if (congelar) Alignment.CenterEnd else Alignment.CenterStart) { Box(Modifier.padding(3.dp).size(16.dp).background(Color.White, CircleShape)) }
                 Text("Congelar neste valor", color = Cor.texto, fontSize = 14.sp)
             }
+        }
+    }
+
+    /** Em pé: o conteúdo em cima e o teclado embaixo. Deitado não cabe empilhado: o teclado vai para a direita. */
+    @Composable
+    private fun ComTeclado(teclado: @Composable () -> Unit, conteudo: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+        val deitado = androidx.compose.ui.platform.LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+        if (deitado) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp), content = conteudo)
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) { teclado() }
+        } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            conteudo()
             Spacer(Modifier.weight(1f))
-            Teclado("Aplicar", (campo.isNotBlank() || congelar) && !Nucleo.ocupado, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
-                confirmou = { Nucleo.editar(e.addr, e.tipo, campo.ifBlank { atual }, congelar); campo = ""; tela = "inicio" })
+            teclado()
         }
     }
 
