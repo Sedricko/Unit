@@ -234,6 +234,7 @@ class Balao : Service() {
             }
             Text("Trocar", color = Cor.a2, fontSize = 13.sp)
         }
+        if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
         when (tela) {
             "achar" -> Achar()

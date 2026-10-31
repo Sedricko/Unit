@@ -13,13 +13,12 @@ import java.net.URL
 
 /**
  * Ao abrir, pergunta ao GitHub a última versão (alguns KB). Se houver uma nova, baixa o APK uma vez, em segundo plano,
- * e espera: a pessoa escolhe "Atualizar agora" ou ela entra quando o Unit for fechado (✕). Instala pelo root (pm install).
+ * e avisa; ela entra quando o Unit for fechado (✕). Instala pelo root (pm install).
  */
 object Atualizador {
     private const val API = "https://api.github.com/repos/Sedricko/Unit/releases/latest"
     var nova by mutableStateOf<String?>(null)
     var pronto by mutableStateOf(false)   // o APK novo já está baixado
-    var adiado by mutableStateOf(false)   // escolheu "Ao fechar"
     var estado by mutableStateOf("")
     private var apk = ""
     private var arquivo: File? = null
@@ -50,13 +49,6 @@ object Atualizador {
             }
             arquivo = f; pronto = true; estado = ""
         }.onFailure { if (nova != null) estado = "Não deu para baixar: ${it.message}" }
-    }
-
-    /** "Atualizar agora": instala o APK já baixado; o Android fecha o Unit no fim e a versão nova abre pelo ícone. */
-    suspend fun instalar() = withContext(Dispatchers.IO) {
-        val f = arquivo ?: return@withContext
-        try { estado = "Instalando…"; pm(f); estado = "Atualizado. Abra o Unit de novo." }
-        catch (e: Exception) { estado = "Não deu para atualizar: ${e.message}" }
     }
 
     /** O Unit foi fechado (✕) com uma versão pronta: instala sem esperar (o su segue sozinho). */

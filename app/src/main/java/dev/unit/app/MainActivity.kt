@@ -23,8 +23,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,7 +72,6 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Tela() {
-        val scope = rememberCoroutineScope()
         LaunchedEffect(Unit) { Nucleo.carregarJogos(this@MainActivity); Atualizador.preparar(this@MainActivity) }
         Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Cor.brilho, Cor.fundo), radius = 1400f)).systemBarsPadding()) {
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -88,17 +85,11 @@ class MainActivity : ComponentActivity() {
                         Text("Uma vez só: toque aqui e ligue \"Sobrepor a outros apps\" para o Unit.", color = Cor.apagado, fontSize = 12.sp)
                     }
                 }
-                Atualizador.nova?.let { v ->
-                    Linha {
-                        Column(Modifier.weight(1f)) {
-                            Text("Versão $v pronta", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                            Text(Atualizador.estado.ifEmpty { if (Atualizador.adiado) "Instala quando você fechar o Unit (✕)." else "Atualizar agora ou quando fechar o Unit." },
-                                color = Cor.apagado, fontSize = 12.sp)
-                        }
-                        if (Atualizador.pronto && !Atualizador.adiado) {
-                            Botao("Ao fechar", false) { Atualizador.adiado = true }
-                            Box(Modifier.padding(start = 8.dp)) { Botao("Agora", true) { scope.launch { Atualizador.instalar() } } }
-                        }
+                // só aparece depois de baixada; sem botão: entra quando a pessoa fechar o Unit (✕)
+                if (Atualizador.pronto) Linha {
+                    Column(Modifier.weight(1f)) {
+                        Text("Atualização ${Atualizador.nova} baixada", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                        Text("Feche o Unit (✕) para atualizar.", color = Cor.apagado, fontSize = 12.sp)
                     }
                 }
                 if (Balao.ativo) Linha {
