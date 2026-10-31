@@ -61,7 +61,7 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
 
 ## Próxima atualização (pedidos do usuário, anotados)
 
-- [ ] Abrir o Unit sem jogo escolhido também liga o balão "U" (hoje o balão só aparece depois de tocar num jogo).
+- [x] (0.3.5) Abrir o Unit sem jogo escolhido também liga o balão "U" (hoje o balão só aparece depois de tocar num jogo).
       Pelo balão dá para escolher o jogo (tela "Jogos" do painel).
 - [ ] Busca de **texto** (o Orecraft guarda os recursos como texto JSON): opção Número / Texto no Achar. Prévia antes.
 - [ ] Editar todos os resultados de uma vez quando sobram poucos.

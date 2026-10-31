@@ -50,9 +50,18 @@ class MainActivity : ComponentActivity() {
         if (podeBalao && Nucleo.jogo != null) balao(Balao.MINIMIZAR)
     }
 
+    private var fechouBalao = false  // fechou no ✕ do app: sair do app não liga a bolha de novo
+
+    // saiu do app (início, voltar, outro app), com ou sem jogo escolhido: o Unit fica como bolha na tela
+    override fun onStop() {
+        super.onStop()
+        if (Settings.canDrawOverlays(this) && !isChangingConfigurations && !fechouBalao) balao(Balao.MINIMIZAR)
+    }
+
     private fun balao(acao: String) = runCatching { startForegroundService(Intent(this, Balao::class.java).setAction(acao)) }
 
     private fun abrirBalao(j: Jogo) {
+        fechouBalao = false
         if (!Settings.canDrawOverlays(this)) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             return
@@ -92,7 +101,7 @@ class MainActivity : ComponentActivity() {
                     }
                     BotaoIcone(Ic.EXPANDIR) { balao(Balao.EXPANDIR) }
                     Box(Modifier.padding(start = 8.dp)) { BotaoIcone(Ic.MINIMIZAR) { balao(Balao.MINIMIZAR) } }
-                    Box(Modifier.padding(start = 8.dp)) { BotaoIcone(Ic.FECHAR) { balao(Balao.FECHAR) } }
+                    Box(Modifier.padding(start = 8.dp)) { BotaoIcone(Ic.FECHAR) { fechouBalao = true; balao(Balao.FECHAR) } }
                 }
                 if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
                 Rotulo("Jogos abertos")
