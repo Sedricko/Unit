@@ -278,7 +278,6 @@ class Balao : Service() {
     private fun Conteudo() {
         // os salvos ao vivo enquanto o mini ou o painel está à vista
         LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
-        LaunchedEffect(tela) { if (tela != "nome") nomeDoPoder = false }  // saiu da tela de nome por outro caminho (‹)
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }
         // pausa automática: entra ao digitar (ou com o painel aberto) e sai ao sair dessas telas / minimizar
         LaunchedEffect(modo, tela, opcaoPausa) {
@@ -355,7 +354,7 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; "poder" -> "Observar"; "vigia" -> "Quem escreve aqui?"; else -> "" },
+            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; "mudanca" -> "Busca por mudança"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             // os controles na ordem que a pessoa arrumou (Laboratório: Arrumar.kt)
             Row(Modifier.onGloballyPositioned { Arrumar.areaCima = it.boundsInRoot() }.then(if (Arrumar.editando) Modifier.border(1.dp, Color(0x6667C6FF), RoundedCornerShape(12.dp)).padding(2.dp) else Modifier),
@@ -380,8 +379,7 @@ class Balao : Service() {
             "jogos" -> Jogos()
             "nome" -> Nome()
             "lab" -> Laboratorio.Tela(this@Balao)
-            "poder" -> Poder.Observar(this@Balao) { tela = "vigia" }
-            "vigia" -> Poder.TelaVigia { nomeDoPoder = true; tela = "nome" }
+            "mudanca" -> Mudanca.Tela(this@Balao) { a -> Nucleo.escolhido = a; tela = "editar" }
             "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
             "opcoes" -> Opcoes()
             else -> Inicio()
@@ -404,11 +402,11 @@ class Balao : Service() {
                 Text("teste: achar os salvos de novo depois de reabrir o jogo", color = Cor.apagado, fontSize = 12.sp)
             }
         }
-        // LABORATÓRIO (teste: congelar o estado de um poder). Some junto com o Poder.kt se não der certo
-        if (Nucleo.jogo != null) Linha(Modifier.toque { tela = "poder" }) {
+        // LABORATÓRIO (teste: busca por mudança). Some junto com o Mudanca.kt se não der certo
+        if (Nucleo.jogo != null) Linha(Modifier.toque { tela = "mudanca" }) {
             Column(Modifier.weight(1f)) {
-                Text("Observar (poder e recarga)", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                Text("teste: busca por mudança, quem escreve aqui e congelar o estado", color = Cor.apagado, fontSize = 12.sp)
+                Text("Busca por mudança", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("teste: valores que o jogo muda sozinho (foto, mudou, não mudou)", color = Cor.apagado, fontSize = 12.sp)
             }
         }
         if (Nucleo.salvos.isNotEmpty()) {
@@ -555,19 +553,14 @@ class Balao : Service() {
         vista?.let { wm.updateViewLayout(it, params) }
     }
 
-    private var nomeDoPoder by mutableStateOf(false)  // LABORATÓRIO: a tela de nome dando nome ao estado do Poder.kt
-
     @Composable
     private fun Nome() {
-        val poder = nomeDoPoder
-        val e = Nucleo.escolhido ?: Achado("", "", "")
-        if (!poder && e.addr.isEmpty()) { tela = "inicio"; return }
-        val volta = if (poder) "vigia" else "editar"
-        var campo by remember(e.addr, poder) { mutableStateOf(if (poder) Poder.nome.takeUnless { it == "Poder" } ?: "" else Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome?.takeUnless { it.startsWith("Valor ") } ?: "") }
+        val e = Nucleo.escolhido ?: run { tela = "inicio"; return }
+        var campo by remember(e.addr) { mutableStateOf(Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome?.takeUnless { it.startsWith("Valor ") } ?: "") }
         val foco = remember { androidx.compose.ui.focus.FocusRequester() }
         androidx.compose.runtime.DisposableEffect(Unit) { tecladoDoAndroid(true); onDispose { tecladoDoAndroid(false) } }
         LaunchedEffect(Unit) { delay(150); runCatching { foco.requestFocus() } }
-        fun pronto() { if (poder) Poder.renomear(campo) else Nucleo.renomear(e, campo); nomeDoPoder = false; tela = volta }
+        fun pronto() { Nucleo.renomear(e, campo); tela = "editar" }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             androidx.compose.foundation.text.BasicTextField(
                 campo, { campo = it.take(24) }, singleLine = true,
@@ -578,11 +571,11 @@ class Balao : Service() {
                 modifier = Modifier.fillMaxWidth().focusRequester(foco).background(Color(0x40000000), RoundedCornerShape(16.dp))
                     .border(1.dp, Color(0x9967C6FF), RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 12.dp)
             )
-            (if (poder) listOf("Recarga", "Escudo", "Especial", "Ataque", "Velocidade", "Cura") else listOf("Ouro", "Joias", "Cobre", "Ferro", "Vida", "Moedas")).chunked(4).forEach { linha ->
+            listOf("Ouro", "Joias", "Cobre", "Ferro", "Vida", "Moedas").chunked(4).forEach { linha ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { linha.forEach { n -> Selo(n, campo == n) { campo = n } } }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Botao("Cancelar", false, Modifier.weight(1f)) { nomeDoPoder = false; tela = volta }
+                Botao("Cancelar", false, Modifier.weight(1f)) { tela = "editar" }
                 Botao("Salvar nome", true, Modifier.weight(1f), ligado = campo.isNotBlank()) { pronto() }
             }
         }
