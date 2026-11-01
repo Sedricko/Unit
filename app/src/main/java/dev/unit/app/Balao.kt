@@ -455,8 +455,6 @@ class Balao : Service() {
             }
             // os que já estão nos Salvos não voltam na lista da busca (ficam na tela de Salvos)
             val novos = Nucleo.achados.filter { a -> Nucleo.salvos.none { it.addr == a.addr } }
-            val jaSalvos = Nucleo.achados.size - novos.size
-            if (jaSalvos > 0) Text("$jaSalvos já está${if (jaSalvos > 1) "ão" else ""} nos Salvos", color = Cor.apagado, fontSize = 12.sp)
             if (novos.isNotEmpty() && Nucleo.achados.size <= 50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 novos.take(20).forEach { a ->
                     Linha(Modifier.toque { Nucleo.escolhido = a; tela = "editar" }) {
@@ -471,7 +469,7 @@ class Balao : Service() {
                 }
             }
             if (novos.size in 2..20) Botao("Salvar todos (${novos.size})", false, Modifier.fillMaxWidth()) { novos.forEach(Nucleo::salvar) }
-            Nucleo.escolhido?.takeIf { Nucleo.total == 1L }?.let { a ->
+            Nucleo.escolhido?.takeIf { Nucleo.total == 1L && Nucleo.salvos.none { s -> s.addr == it.addr } }?.let { a ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val ja = Nucleo.salvos.any { it.addr == a.addr }
                     Botao(if (ja) "Salvo" else "Salvar", false, Modifier.weight(1f), ligado = !ja) { Nucleo.salvar(a) }
