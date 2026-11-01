@@ -207,9 +207,9 @@ fun Teclado(acao: String, ligado: Boolean, digitou: (String) -> Unit, apagou: ()
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        // "~" = faixa (10~20), só onde se busca
-        if (faixa) Tecla("~", Modifier.weight(1f)) { digitou("~") } else Box(Modifier.weight(1f))
+        // onde se busca: "~" = faixa (10~20) e ";" = grupo (100;200)
+        if (faixa) { Tecla("~", Modifier.weight(1f)) { digitou("~") }; Tecla(";", Modifier.weight(1f)) { digitou(";") } } else Box(Modifier.weight(1f))
         Tecla("0", Modifier.weight(1f)) { digitou("0") }
-        Botao(acao, true, Modifier.weight(2f), ligado, confirmou)
+        Botao(acao, true, Modifier.weight(if (faixa) 1f else 2f), ligado, confirmou)
     }
 }

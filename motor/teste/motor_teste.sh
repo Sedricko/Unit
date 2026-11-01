@@ -16,6 +16,10 @@ confere() { if grep -qF -- "$2" <<<"$got"; then echo "OK   $1"; else echo "FALHA
 got=$({ cat <<CMDS
 search 1
 attach $pid
+search 123456789;87.5
+list 5
+search 87~88 f32
+list 50
 search 123456789
 write $aouro i32 987654321
 refine 987654321
@@ -25,7 +29,6 @@ search 87.5
 list 50
 write $avida f32 99.25
 read $avida f32
-search 87~88 f32
 search 123456780~123456800 i32
 search 9876543210 i64
 search 4321 f64
@@ -58,4 +61,6 @@ confere "bytes: 16 bytes do xp em hex" "ok ea16b04c02000000"
 confere "aob acha o xp pelo desenho" "$axp"
 confere "bytes recusa mais de 4096" "err quantidade de 1 a 4096"
 confere "faixa Float 87~88 acha a vida 87.5" "$avida f32"
+confere "grupo 123456789;87.5 acha o ouro" "$aouro i32 123456789"
+confere "grupo 123456789;87.5 acha a vida junto" "$avida f32 87.5"
 exit $falhou

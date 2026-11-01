@@ -126,7 +126,62 @@ static int regioes(uint64_t **ini, uint64_t **fim) {
     return (int)n;
 }
 
+// busca em grupo (como o GameGuardian): "100;200" ou "100;200::64" = os números perto um do outro (padrão 512 bytes).
+// Cada número em qualquer tipo (Auto). Guarda todos os membros de cada grupo. refinar=1: só fica quem já estava nos
+// resultados (o grupo novo, ex. "90;200", depois de gastar).
+// shortcut: o grupo precisa caber no mesmo bloco de 1 MB lido; um grupo bem na borda de dois blocos escapa (raro)
+static int cmpu64(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }
+static void cmd_grupo(const char *texto, int refinar) {
+    char tmp[1100]; snprintf(tmp, sizeof tmp, "%s", texto);
+    long dist = 512; char *dd = strstr(tmp, "::");
+    if (dd) { *dd = 0; if (dd[2]) dist = strtol(dd + 2, NULL, 10); if (dist < 4 || dist > 4096) { puts("err distância de 4 a 4096"); return; } }
+    alvo_t it[8]; int ni = 0; char *sv;
+    for (char *x = strtok_r(tmp, ";", &sv); x; x = strtok_r(NULL, ";", &sv)) {
+        if (ni == 8 || alvo(x, &it[ni])) { printf("err grupo inválido: %s\n", texto); return; }
+        ni++;
+    }
+    if (ni < 2) { puts("err o grupo precisa de 2 números ou mais"); return; }
+    // os resultados de antes (para refinar), em ordem para a busca binária
+    uint64_t *antes = NULL; size_t na = 0;
+    if (refinar) { na = nres; antes = malloc((na ? na : 1) * 8); for (size_t i = 0; i < na; i++) antes[i] = res[i].addr; qsort(antes, na, 8, cmpu64); }
+    #define JA(a) (!refinar || bsearch(&(uint64_t){a}, antes, na, 8, cmpu64))
+    uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
+    if (nr < 0) { puts("err não li o mapa de memória do jogo"); free(antes); return; }
+    nres = 0; size_t grupos = 0;
+    enum { BLOCO = 1 << 20 };
+    unsigned char *buf = malloc(BLOCO + 8);
+    for (int r = 0; r < nr; r++)
+        for (uint64_t a = ini[r]; a < fim[r]; a += BLOCO) {
+            size_t n = fim[r] - a < BLOCO ? fim[r] - a : BLOCO;
+            if (ler(a, buf, n)) continue;
+            for (size_t o = 0; o + 4 <= n; o += 4)
+                for (int t0 = 0; t0 < NT; t0++) {
+                    if (o + TSIZE[t0] > n || !confere(t0, numero(t0, buf + o), &it[0]) || !JA(a + o)) continue;
+                    if ((t0 == T_I32 || t0 == T_I64) && !it[0].faixa && it[0].v != floor(it[0].v)) continue;
+                    uint64_t mem[8]; int tp[8]; mem[0] = a + o; tp[0] = t0; int ok = 1;
+                    for (int j = 1; j < ni && ok; j++) {
+                        ok = 0;
+                        size_t de = o > (size_t)dist ? o - dist : 0, ate = o + dist < n ? o + dist : n;
+                        for (size_t q = de; q + 4 <= ate && !ok; q += 4) {
+                            if (q == o) continue;
+                            for (int t = 0; t < NT && !ok; t++)
+                                if (q + TSIZE[t] <= n && confere(t, numero(t, buf + q), &it[j]) && JA(a + q)) { mem[j] = a + q; tp[j] = t; ok = 1; }
+                        }
+                    }
+                    if (!ok) continue;
+                    grupos++;
+                    for (int j = 0; j < ni; j++) guardar(mem[j], tp[j]);
+                    break;  // este lugar já virou grupo: não testa os outros tipos nele
+                }
+        }
+    #undef JA
+    free(buf); free(ini); free(fim); free(antes);
+    printf("ok %zu\n", nres);
+    fprintf(stderr, "grupos %zu\n", grupos);
+}
+
 static void cmd_search(const char *valor, const char *tipos) {
+    if (strchr(valor, ';')) { cmd_grupo(valor, 0); return; }
     alvo_t al; if (alvo(valor, &al)) { printf("err valor inválido: %s\n", valor); return; }
     double want = al.v;
     int usar[NT] = {0};
@@ -155,6 +210,7 @@ static void cmd_search(const char *valor, const char *tipos) {
 }
 
 static void cmd_refine(const char *valor) {
+    if (strchr(valor, ';')) { cmd_grupo(valor, 1); return; }
     alvo_t al; if (alvo(valor, &al)) { printf("err valor inválido: %s\n", valor); return; }
     size_t k = 0; unsigned char b[8];
     for (size_t i = 0; i < nres; i++)
