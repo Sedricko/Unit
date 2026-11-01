@@ -39,11 +39,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Nucleo.init(this)
         setContent { Tela() }
+        // tocou no ícone: com a permissão, o Unit já começa como balão; sem ela, pede a permissão primeiro
+        if (savedInstanceState == null) { if (Settings.canDrawOverlays(this)) virarBalao() else { pedindo = true; pedirPermissao() } }
     }
+
+    private var pedindo = false  // foi pedir a permissão de sobrepor: ao voltar com ela, vira balão
+    private fun pedirPermissao() = startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+    private fun virarBalao() { fechouBalao = false; balao(Balao.MINIMIZAR); moveTaskToBack(true) }
 
     override fun onResume() {
         super.onResume()
         podeBalao = Settings.canDrawOverlays(this)
+        if (pedindo) { pedindo = false; if (podeBalao) { virarBalao(); return } }
         // voltou para o app com um jogo ligado: o painel vira o balão (e volta, se o Android tinha fechado ele)
         if (podeBalao && Nucleo.jogo != null) balao(Balao.MINIMIZAR)
     }
