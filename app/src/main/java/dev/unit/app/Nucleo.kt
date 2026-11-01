@@ -156,7 +156,8 @@ object Nucleo {
 
     fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }
 
-    fun pausar() = rodar { cmd { it.cmd(if (pausado) "resume" else "pause") }; pausado = !pausado }
+    // troca o estado na hora e manda o estado de agora: dois toques seguidos (ou a pausa automática) nunca invertem a tela e o jogo
+    fun pausar() { pausado = !pausado; rodar { cmd { it.cmd(if (pausado) "pause" else "resume") } } }
 
     /** O Unit está fechando: o jogo nunca pode ficar congelado sem ele (o Android mostraria "não está respondendo"). */
     fun soltarAoFechar() { if (pausado) { pausado = false; Thread { runCatching { motor?.cmd("resume") } }.start() } }
