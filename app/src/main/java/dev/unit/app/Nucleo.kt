@@ -166,6 +166,17 @@ object Nucleo {
     /** O Unit está fechando: o jogo nunca pode ficar congelado sem ele (o Android mostraria "não está respondendo"). */
     fun soltarAoFechar() { if (pausado) { pausado = false; Thread { runCatching { motor?.cmd("resume") } }.start() } }
 
+    /** Os resultados da busca (até 20, os que aparecem) e o valor aberto no Editar, relidos ao vivo: a lista não fica parada no valor da hora da busca. */
+    fun atualizarAchados() = scope.launch {
+        if (jogo == null || ocupado) return@launch
+        runCatching {
+            fun ler(a: Achado) = a.copy(valor = runCatching { cmd { it.cmd("read ${a.addr} ${a.tipo}") }.status }.getOrDefault(a.valor))
+            val novos = achados.take(20).map { ler(it) }
+            novos.forEach { n -> val i = achados.indexOfFirst { it.addr == n.addr && it.tipo == n.tipo }; if (i >= 0 && achados[i].valor != n.valor) achados[i] = n }
+            escolhido?.let { e -> val n = novos.firstOrNull { it.addr == e.addr && it.tipo == e.tipo } ?: ler(e); if (n.valor != e.valor && escolhido?.addr == e.addr) escolhido = e.copy(valor = n.valor) }
+        }
+    }
+
     /** Os valores salvos de agora (o mini painel mostra ao vivo). Sem aviso: roda a cada segundo. */
     fun atualizarSalvos() = scope.launch {
         if (jogo == null || ocupado) return@launch

@@ -442,6 +442,7 @@ class Balao : Service() {
     @Composable
     private fun Achar() {
         var campo by remember { mutableStateOf("") }
+        LaunchedEffect(Unit) { while (true) { Nucleo.atualizarAchados(); delay(1000) } }  // a lista acompanha o jogo
         ComTeclado({
             Teclado(if (Nucleo.total == null) "Buscar" else "Refinar", campo.isNotBlank() && !Nucleo.ocupado,
                 digitou = { if (it != "~" || "~" !in campo.substringAfterLast(';')) campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" }, faixa = true)
@@ -482,6 +483,7 @@ class Balao : Service() {
     @Composable
     private fun Editar() {
         val e = Nucleo.escolhido ?: run { tela = "inicio"; return }
+        LaunchedEffect(Unit) { while (true) { Nucleo.atualizarAchados(); delay(1000) } }  // o "agora" acompanha o jogo
         var campo by remember(e.addr) { mutableStateOf("") }
         var congelar by remember(e.addr) { mutableStateOf(Nucleo.salvos.any { it.addr == e.addr && it.congelado }) }
         val atual = Nucleo.salvos.firstOrNull { it.addr == e.addr }?.valor ?: e.valor
