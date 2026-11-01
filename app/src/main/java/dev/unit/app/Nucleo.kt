@@ -71,7 +71,9 @@ object Nucleo {
 
     fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE) }
 
-    internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) { f(motor ?: Motor(lib).also { motor = it }) }
+    private val abrindo = Any()
+    // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
+    internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) { f(synchronized(abrindo) { motor ?: Motor(lib).also { motor = it } }) }
 
     /** Roda uma ação do motor; o erro vira o aviso na tela, em vez de fechar o app. */
     fun rodar(f: suspend () -> Unit) = scope.launch {
@@ -156,7 +158,11 @@ object Nucleo {
 
     fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }
 
-    fun pausar() = rodar { cmd { it.cmd(if (pausado) "resume" else "pause") }; pausado = !pausado }
+    // troca o estado na hora e manda o estado de agora: dois toques seguidos (ou a pausa automática) nunca invertem a tela e o jogo
+    fun pausar() { pausado = !pausado; rodar { cmd { it.cmd(if (pausado) "pause" else "resume") } } }
+
+    /** O Unit está fechando: o jogo nunca pode ficar congelado sem ele (o Android mostraria "não está respondendo"). */
+    fun soltarAoFechar() { if (pausado) { pausado = false; Thread { runCatching { motor?.cmd("resume") } }.start() } }
 
     /** Os valores salvos de agora (o mini painel mostra ao vivo). Sem aviso: roda a cada segundo. */
     fun atualizarSalvos() = scope.launch {
