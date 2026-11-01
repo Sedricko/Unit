@@ -2,6 +2,7 @@ package dev.unit.app
 
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,13 +65,18 @@ object Mudanca {
                 linha.forEach { (m, n) -> Botao(n, m == "mudou", Modifier.weight(1f), !Nucleo.ocupado && (total != null || m !in setOf("igual", "foto"))) { Nucleo.rodar { comparar(m) } } }
             }
         }
-        lista.forEach { m ->
-            Linha(Modifier.toque { abrir(Achado(m.addr, m.tipo, m.valor)) }) {
+        // como no Achar: o que já foi salvo sai daqui (fica em Salvos); cada um tem o ⊕ e há o "Salvar todos"
+        val novos = lista.filter { m -> Nucleo.salvos.none { it.addr == m.addr } }
+        novos.forEach { m ->
+            val a = Achado(m.addr, m.tipo, m.valor)
+            Linha(Modifier.toque { abrir(a) }) {
                 Text(m.addr, color = Cor.texto, fontSize = 13.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
                 Text(NOME_TIPO[m.tipo] ?: m.tipo, color = Cor.a2, fontSize = 11.sp, modifier = Modifier.padding(end = 8.dp))
                 Text("${m.foto} → ${m.valor}", color = Cor.texto, fontSize = 13.sp)
+                Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(Ic.SALVAR, 20.dp) }
             }
         }
+        if (novos.size >= 2) Botao("Salvar todos (${novos.size})", false, Modifier.fillMaxWidth()) { novos.forEach { Nucleo.salvar(Achado(it.addr, it.tipo, it.valor)) } }
         if ((total ?: 0) > 50) Text("Ainda são muitos: espere o número mudar de novo e filtre outra vez.", color = Cor.apagado, fontSize = 12.sp)
         Botao("Recomeçar", false, Modifier.fillMaxWidth()) { zerar() }
     }
