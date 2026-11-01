@@ -10,7 +10,7 @@ android {
         applicationId = "dev.unit.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 46  // maior que o APK do Laboratorio (45, 0.3.30-lab)
+        versionCode = 48  // maior que o APK do Laboratorio (47, 0.3.31-lab)
         versionName = "0.3.20"  // 0.2.0: o balao sobre o jogo (3 tamanhos, teclado proprio, pausar)
     }
     // chave fixa: sem ela cada build do GitHub assina diferente e o Android nao deixa atualizar por cima
