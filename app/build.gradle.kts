@@ -10,8 +10,8 @@ android {
         applicationId = "dev.unit.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 51  // LAB 0.3.33-lab: a proxima versao normal precisa de 52+
-        versionName = "0.3.33-lab"  // LABORATORIO (ramo lab-assinatura); o -lab nao se atualiza sozinho
+        versionCode = 53  // LAB 0.3.34-lab: a proxima versao normal precisa de 54+
+        versionName = "0.3.34-lab"  // LABORATORIO (ramo lab-assinatura); o -lab nao se atualiza sozinho
     }
     // chave fixa: sem ela cada build do GitHub assina diferente e o Android nao deixa atualizar por cima
     // shortcut: chave de estudo no repositorio, trocar por uma nos Secrets do GitHub se o app um dia for distribuido

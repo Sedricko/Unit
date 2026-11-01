@@ -191,25 +191,32 @@ fun CampoGrande(valor: String, dica: String) = Row(
 
 /** O teclado próprio do Unit (vidro, sempre no mesmo lugar): números, vírgula, negativo, apagar e o botão de ação. */
 @Composable
-fun Teclado(acao: String, ligado: Boolean, digitou: (String) -> Unit, apagou: () -> Unit, confirmou: () -> Unit, faixa: Boolean = false) = Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-    @Composable fun Tecla(t: String, mod: Modifier, f: () -> Unit) = Box(
-        mod.toque(clique = f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).padding(vertical = 11.dp),
-        contentAlignment = Alignment.Center
-    ) { Text(t, color = Cor.texto, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
-    listOf(listOf("7", "8", "9"), listOf("4", "5", "6"), listOf("1", "2", "3")).forEachIndexed { r, linha ->
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            linha.forEach { d -> Tecla(d, Modifier.weight(1f)) { digitou(d) } }
-            when (r) {
-                0 -> Box(Modifier.weight(1f).toque(clique = apagou).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).padding(vertical = 13.dp), contentAlignment = Alignment.Center) { Icone(Ic.APAGAR, 20.dp) }
-                1 -> Tecla(",", Modifier.weight(1f)) { digitou(",") }
-                else -> Tecla("−", Modifier.weight(1f)) { digitou("-") }
+fun Teclado(acao: String, ligado: Boolean, digitou: (String) -> Unit, apagou: () -> Unit, confirmou: () -> Unit, faixa: Boolean = false) =
+    androidx.compose.foundation.layout.BoxWithConstraints {
+    // painel estreito (deitado, sem tela cheia): o botão de ação vai para uma linha só dele, senão a palavra quebra letra a letra
+    val estreito = maxWidth < 300.dp
+    val alto = if (estreito) 8.dp else 11.dp
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        @Composable fun Tecla(t: String, mod: Modifier, f: () -> Unit) = Box(
+            mod.toque(clique = f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).padding(vertical = alto),
+            contentAlignment = Alignment.Center
+        ) { Text(t, color = Cor.texto, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
+        listOf(listOf("7", "8", "9"), listOf("4", "5", "6"), listOf("1", "2", "3")).forEachIndexed { r, linha ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                linha.forEach { d -> Tecla(d, Modifier.weight(1f)) { digitou(d) } }
+                when (r) {
+                    0 -> Box(Modifier.weight(1f).toque(clique = apagou).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp)).padding(vertical = alto + 2.dp), contentAlignment = Alignment.Center) { Icone(Ic.APAGAR, 20.dp) }
+                    1 -> Tecla(".", Modifier.weight(1f)) { digitou(".") }  // ponto, como no GameGuardian (vírgula também vale no campo)
+                    else -> Tecla("−", Modifier.weight(1f)) { digitou("-") }
+                }
             }
         }
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        // onde se busca: "~" = faixa (10~20) e ";" = grupo (100;200)
-        if (faixa) { Tecla("~", Modifier.weight(1f)) { digitou("~") }; Tecla(";", Modifier.weight(1f)) { digitou(";") } } else Box(Modifier.weight(1f))
-        Tecla("0", Modifier.weight(1f)) { digitou("0") }
-        Botao(acao, true, Modifier.weight(if (faixa) 1f else 2f), ligado, confirmou)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // onde se busca: "~" = faixa (10~20) e ";" = grupo (100;200)
+            if (faixa) { Tecla("~", Modifier.weight(1f)) { digitou("~") }; Tecla(";", Modifier.weight(1f)) { digitou(";") } } else if (!estreito) Box(Modifier.weight(1f))
+            Tecla("0", Modifier.weight(1f)) { digitou("0") }
+            if (!estreito) Botao(acao, true, Modifier.weight(if (faixa) 1f else 2f), ligado, confirmou)
+        }
+        if (estreito) Botao(acao, true, Modifier.fillMaxWidth(), ligado, confirmou)
     }
 }

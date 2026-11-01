@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -447,14 +448,17 @@ class Balao : Service() {
         }) {
             CampoGrande(campo, if (Nucleo.total == null) "número na tela" else "número novo")
             Nucleo.total?.let { n ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${"%,d".format(n).replace(',', '.')} resultado${if (n == 1L) "" else "s"}", color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("começar de novo", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.toque { Nucleo.zerar(); campo = "" })
-                }
+                // número e "começar de novo" em linhas separadas: no painel estreito, lado a lado quebrava a palavra
+                Text("${"%,d".format(n).replace(',', '.')} resultado${if (n == 1L) "" else "s"}", color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text("começar de novo", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.toque { Nucleo.zerar(); campo = "" })
                 if (n > 1) Text("Mude o valor no jogo (ganhe ou gaste), digite o novo e refine.", color = Cor.apagado, fontSize = 12.sp)
             }
-            if (Nucleo.achados.size in 1..50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Nucleo.achados.take(20).forEach { a ->
+            // os que já estão nos Salvos não voltam na lista da busca (ficam na tela de Salvos)
+            val novos = Nucleo.achados.filter { a -> Nucleo.salvos.none { it.addr == a.addr } }
+            val jaSalvos = Nucleo.achados.size - novos.size
+            if (jaSalvos > 0) Text("$jaSalvos já está${if (jaSalvos > 1) "ão" else ""} nos Salvos", color = Cor.apagado, fontSize = 12.sp)
+            if (novos.isNotEmpty() && Nucleo.achados.size <= 50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                novos.take(20).forEach { a ->
                     Linha(Modifier.toque { Nucleo.escolhido = a; tela = "editar" }) {
                         Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
                         Column(horizontalAlignment = Alignment.End) {
@@ -466,7 +470,7 @@ class Balao : Service() {
                     }
                 }
             }
-            if (Nucleo.achados.size in 2..20) Botao("Salvar todos (${Nucleo.achados.size})", false, Modifier.fillMaxWidth()) { Nucleo.achados.forEach(Nucleo::salvar) }
+            if (novos.size in 2..20) Botao("Salvar todos (${novos.size})", false, Modifier.fillMaxWidth()) { novos.forEach(Nucleo::salvar) }
             Nucleo.escolhido?.takeIf { Nucleo.total == 1L }?.let { a ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val ja = Nucleo.salvos.any { it.addr == a.addr }
@@ -503,7 +507,7 @@ class Balao : Service() {
                 Icone(Ic.EDITAR, 18.dp)
             }
             Rotulo("Ver como")
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 TIPOS.forEach { t -> Selo(NOME_TIPO[t] ?: t, e.tipo == t) { if (t != e.tipo) { congelar = false; Nucleo.trocarTipo(e.addr, t) } } }
             }
             vizinho?.let { v ->
