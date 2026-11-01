@@ -11,6 +11,10 @@
 //   write ENDEREÇO TIPO VALOR  -> ok
 //   freeze ENDEREÇO TIPO VALOR / unfreeze ENDEREÇO|all / frozen
 //   pause / resume             para e continua o jogo (SIGSTOP/SIGCONT)
+//   snap ARQUIVO               foto da memória (para a busca por mudança)                  -> ok BYTES
+//   diff MODO                  mudou|igual|foto|aumentou|diminuiu (1ª vez compara com a foto) -> ok N
+//   watch ENDEREÇO [SEG]       quem escreve aqui (vigia do processador; espera até SEG s)    -> pc/lib/ins/base, ok
+//   patch ENDEREÇO HEX         troca bytes (também no código) e devolve os antigos            -> ok ANTIGOS
 //   sleep MS                   espera (testes e scripts: dá tempo ao congelador)
 //   quit
 #define _GNU_SOURCE
@@ -25,7 +29,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ptrace.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
+#include <stddef.h>
+#include <time.h>
 #include <unistd.h>
 
 enum { T_I32, T_F32, T_I64, T_F64, NT };
@@ -35,6 +43,7 @@ static const int TSIZE[NT] = {4, 4, 8, 8};
 typedef struct { uint64_t addr; uint8_t type; } hit_t;
 static pid_t target;
 static hit_t *res; static size_t nres, cap;
+static uint32_t *vb, *vp; static int difat;  // busca por mudança: os 4 bytes da foto e da última olhada de cada resultado
 
 static int tipo(const char *s) { for (int t = 0; t < NT; t++) if (!strcmp(s, TNAME[t])) return t; return -1; }
 
@@ -132,6 +141,7 @@ static int regioes(uint64_t **ini, uint64_t **fim) {
 // shortcut: o grupo precisa caber no mesmo bloco de 1 MB lido; um grupo bem na borda de dois blocos escapa (raro)
 static int cmpu64(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }
 static void cmd_grupo(const char *texto, int refinar) {
+    difat = 0;
     char tmp[1100]; snprintf(tmp, sizeof tmp, "%s", texto);
     long dist = 512; char *dd = strstr(tmp, "::");
     if (dd) { *dd = 0; if (dd[2]) dist = strtol(dd + 2, NULL, 10); if (dist < 4 || dist > 4096) { puts("err distância de 4 a 4096"); return; } }
@@ -181,6 +191,7 @@ static void cmd_grupo(const char *texto, int refinar) {
 }
 
 static void cmd_search(const char *valor, const char *tipos) {
+    difat = 0;
     if (strchr(valor, ';')) { cmd_grupo(valor, 0); return; }
     alvo_t al; if (alvo(valor, &al)) { printf("err valor inválido: %s\n", valor); return; }
     double want = al.v;
@@ -210,6 +221,7 @@ static void cmd_search(const char *valor, const char *tipos) {
 }
 
 static void cmd_refine(const char *valor) {
+    difat = 0;
     if (strchr(valor, ';')) { cmd_grupo(valor, 1); return; }
     alvo_t al; if (alvo(valor, &al)) { printf("err valor inválido: %s\n", valor); return; }
     size_t k = 0; unsigned char b[8];
@@ -224,7 +236,10 @@ static void cmd_list(size_t n) {
     for (size_t i = 0; i < nres && i < n; i++) {
         int t = res[i].type;
         if (ler(res[i].addr, b, TSIZE[t])) strcpy(v, "?"); else texto(t, b, v, sizeof v);
-        printf("%" PRIx64 " %s %s\n", res[i].addr, TNAME[t], v);
+        if (difat && t <= T_F32) {  // na busca por mudança mostra também o valor da foto
+            char f[64]; unsigned char fb[8] = {0}; memcpy(fb, &vb[i], 4); texto(t, fb, f, sizeof f);
+            printf("%" PRIx64 " %s %s %s\n", res[i].addr, TNAME[t], v, f);
+        } else printf("%" PRIx64 " %s %s\n", res[i].addr, TNAME[t], v);
     }
     printf("ok %zu\n", nres);
 }
@@ -302,6 +317,199 @@ static void cmd_aob(const char *hex) {
     for (size_t i = 0; i < na; i++) printf("%" PRIx64 "\n", achados[i]);
 }
 
+// ---- busca por mudança: foto da memória num arquivo e depois "mudou / igual / igual à foto / aumentou / diminuiu" ----
+// Cada resultado guarda os 4 bytes da foto (vb) e os da última olhada (vp). Campos de 4 bytes; o tipo é um palpite
+// (inteiro pequeno = Dword, senão número com vírgula com cara de jogo = Float).
+// shortcut: só campos de 4 bytes (Dword/Float); Qword/Double ficam de fora até alguém precisar
+static char foto[512];
+enum { DMAX = 8000000 };  // shortcut: limite de resultados da 1ª comparação (memória do motor); avisar se faltar
+static int palpite(uint32_t raw) {
+    int32_t i; float f; memcpy(&i, &raw, 4); memcpy(&f, &raw, 4);
+    if (i > -100000000 && i < 100000000) return T_I32;
+    return (isfinite(f) && fabsf(f) > 1e-4f && fabsf(f) < 1e8f) ? T_F32 : T_I32;
+}
+static void cmd_snap(const char *arq) {
+    uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
+    if (nr < 0) { puts("err não li o mapa de memória do jogo"); return; }
+    FILE *f = fopen(arq, "wb"); if (!f) { printf("err não gravei a foto: %s\n", strerror(errno)); free(ini); free(fim); return; }
+    enum { BLOCO = 1 << 20 }; unsigned char *buf = malloc(BLOCO); uint64_t total = 0;
+    for (int r = 0; r < nr; r++)
+        for (uint64_t a = ini[r]; a < fim[r]; a += BLOCO) {
+            uint64_t n = fim[r] - a < BLOCO ? fim[r] - a : BLOCO;
+            if (ler(a, buf, n)) continue;
+            fwrite(&a, 8, 1, f); fwrite(&n, 8, 1, f); fwrite(buf, 1, n, f); total += n;
+        }
+    free(buf); free(ini); free(fim);
+    if (fclose(f)) { puts("err a foto não coube no armazenamento"); return; }
+    snprintf(foto, sizeof foto, "%s", arq); nres = 0; difat = 1;
+    printf("ok %" PRIu64 "\n", total);
+}
+static int passa(int modo, int t, uint32_t agora, uint32_t antes, uint32_t dafoto) {
+    unsigned char x[8] = {0}, y[8] = {0}; memcpy(x, &agora, 4); memcpy(y, &antes, 4);
+    switch (modo) {
+    case 0: return agora != antes;                       // mudou
+    case 1: return agora == antes;                       // igual
+    case 2: return agora == dafoto;                      // igual à foto (voltou)
+    case 3: return numero(t, x) > numero(t, y);          // aumentou
+    default: return numero(t, x) < numero(t, y);         // diminuiu
+    }
+}
+static void cmd_diff(const char *m) {
+    static const char *MODOS[] = {"mudou", "igual", "foto", "aumentou", "diminuiu"};
+    int modo = -1; for (int i = 0; i < 5; i++) if (!strcmp(m, MODOS[i])) modo = i;
+    if (modo < 0) { printf("err modo: mudou|igual|foto|aumentou|diminuiu\n"); return; }
+    if (!difat) { puts("err tire a foto primeiro (snap)"); return; }
+    if (nres == 0) {  // 1ª comparação: a memória de agora contra a foto inteira
+        if (modo == 1 || modo == 2) { puts("err na 1ª comparação use mudou, aumentou ou diminuiu"); return; }
+        FILE *f = fopen(foto, "rb"); if (!f) { puts("err a foto sumiu: tire de novo"); return; }
+        enum { BLOCO = 1 << 20 }; unsigned char *velho = malloc(BLOCO), *novo = malloc(BLOCO);
+        uint64_t a, n; int cheio = 0;
+        free(vb); free(vp); vb = malloc(DMAX * 4); vp = malloc(DMAX * 4);
+        while (!cheio && fread(&a, 8, 1, f) == 1 && fread(&n, 8, 1, f) == 1 && n <= BLOCO && fread(velho, 1, n, f) == n) {
+            if (ler(a, novo, n)) continue;
+            for (uint64_t o = 0; o + 4 <= n; o += 4) {
+                uint32_t x, y; memcpy(&x, novo + o, 4); memcpy(&y, velho + o, 4);
+                if (x == y && modo == 0) continue;
+                int t = palpite(x);
+                if (!passa(modo, t, x, y, y)) continue;
+                if (nres == DMAX) { cheio = 1; break; }
+                guardar(a + o, t); vb[nres - 1] = y; vp[nres - 1] = x;
+            }
+        }
+        fclose(f); free(velho); free(novo);
+        printf("ok %zu%s\n", nres, cheio ? " cheio" : "");
+        return;
+    }
+    size_t k = 0;
+    for (size_t i = 0; i < nres; i++) {
+        uint32_t x; if (ler(res[i].addr, &x, 4)) continue;
+        if (!passa(modo, res[i].type, x, vp[i], vb[i])) continue;
+        res[k] = res[i]; vb[k] = vb[i]; vp[k] = x; k++;
+    }
+    nres = k;
+    printf("ok %zu\n", nres);
+}
+
+// ---- vigia: "quem escreve aqui?" com o registro de vigia do processador (precisa de root/ptrace) ----
+// Prende todas as linhas (threads) do jogo, arma o vigia de escrita em 4 bytes e espera a 1ª escrita. Mostra o comando
+// (pc), a biblioteca + deslocamento, a instrução e, no ARM, o registro base (o começo do "bloco" onde o valor mora).
+// shortcut: só as threads que já existem quando o vigia começa; uma criada depois não é vigiada
+#ifndef NT_PRSTATUS
+#define NT_PRSTATUS 1
+#endif
+#ifndef TRAP_HWBKPT
+#define TRAP_HWBKPT 4
+#endif
+#if defined(__aarch64__)
+#ifndef NT_ARM_HW_WATCH
+#define NT_ARM_HW_WATCH 0x403
+#endif
+struct hw { uint32_t info, pad; struct { uint64_t addr; uint32_t ctrl, pad; } r[16]; };
+static int armar(pid_t tid, uint64_t a, int on) {
+    struct hw h; memset(&h, 0, sizeof h);
+    if (on) {
+        h.r[0].addr = a & ~7ULL;
+        uint32_t bas = (0xfu << (a & 7)) & 0xff;                  // os 4 bytes dentro dos 8 alinhados
+        h.r[0].ctrl = (bas << 5) | (2u << 3) | (2u << 1) | 1u;    // BAS | escrita | modo usuário | ligado
+    }
+    struct iovec io = {&h, offsetof(struct hw, r) + sizeof h.r[0]};
+    return (int)ptrace(PTRACE_SETREGSET, tid, (void *)(uintptr_t)NT_ARM_HW_WATCH, &io);
+}
+static int registros(pid_t tid, uint64_t *pc, uint64_t *x) {
+    struct { uint64_t x[31], sp, pc, pstate; } r; struct iovec io = {&r, sizeof r};
+    if (ptrace(PTRACE_GETREGSET, tid, (void *)(uintptr_t)NT_PRSTATUS, &io)) return -1;
+    *pc = r.pc; memcpy(x, r.x, sizeof r.x); x[31] = r.sp; return 0;
+}
+#elif defined(__x86_64__)
+#include <sys/user.h>
+static int armar(pid_t tid, uint64_t a, int on) {
+    long dr7 = on ? (1L | (1L << 16) | (3L << 18)) : 0;           // L0 | escrita | 4 bytes
+    if (on && ptrace(PTRACE_POKEUSER, tid, (void *)offsetof(struct user, u_debugreg[0]), (void *)(uintptr_t)(a & ~3ULL))) return -1;
+    return (int)ptrace(PTRACE_POKEUSER, tid, (void *)offsetof(struct user, u_debugreg[7]), (void *)dr7);
+}
+static int registros(pid_t tid, uint64_t *pc, uint64_t *x) {
+    struct user_regs_struct r; if (ptrace(PTRACE_GETREGS, tid, 0, &r)) return -1;
+    *pc = r.rip; memset(x, 0, 32 * 8); return 0;
+}
+#else
+static int armar(pid_t tid, uint64_t a, int on) { (void)tid; (void)a; (void)on; errno = ENOSYS; return -1; }
+static int registros(pid_t tid, uint64_t *pc, uint64_t *x) { (void)tid; (void)pc; (void)x; return -1; }
+#endif
+static void onde(uint64_t pc) {  // "lib nome+deslocamento" pelo mapa
+    char p[64]; snprintf(p, sizeof p, "/proc/%d/maps", target);
+    FILE *f = fopen(p, "r"); if (!f) return; char line[512];
+    while (fgets(line, sizeof line, f)) {
+        uint64_t a, b, off; char name[400] = "";
+        if (sscanf(line, "%" SCNx64 "-%" SCNx64 " %*s %" SCNx64 " %*s %*s %399[^\n]", &a, &b, &off, name) < 3) continue;
+        if (pc < a || pc >= b) continue;
+        const char *n = strrchr(name, '/'); n = n ? n + 1 : (name[0] ? name : "anon");
+        printf("lib %s+%" PRIx64 "\n", n, pc - a + off); break;
+    }
+    fclose(f);
+}
+static void cmd_watch(const char *addr, const char *seg) {
+    uint64_t a = strtoull(addr, NULL, 16); int s = seg[0] ? atoi(seg) : 30; if (s < 1 || s > 120) s = 30;
+    char p[64]; snprintf(p, sizeof p, "/proc/%d/task", target);
+    DIR *d = opendir(p); if (!d) { puts("err não li as linhas do jogo"); return; }
+    pid_t tids[1024]; int nt = 0; struct dirent *de;
+    while ((de = readdir(d)) && nt < 1024) if (isdigit((unsigned char)de->d_name[0])) tids[nt++] = atoi(de->d_name);
+    closedir(d);
+    int presos = 0, st;
+    for (int i = 0; i < nt; i++) {
+        if (ptrace(PTRACE_SEIZE, tids[i], 0, 0)) { tids[i] = 0; continue; }
+        ptrace(PTRACE_INTERRUPT, tids[i], 0, 0);
+        if (waitpid(tids[i], &st, __WALL) != tids[i] || armar(tids[i], a, 1)) { ptrace(PTRACE_DETACH, tids[i], 0, 0); tids[i] = 0; continue; }
+        ptrace(PTRACE_CONT, tids[i], 0, 0); presos++;
+    }
+    if (!presos) { printf("err o vigia não prendeu o jogo (precisa de root): %s\n", strerror(errno)); return; }
+    pid_t quem = 0; uint64_t pc = 0, x[32] = {0};
+    time_t fim = time(NULL) + s;
+    while (!quem && time(NULL) < fim) {
+        int algum = 0;
+        for (int i = 0; i < nt && !quem; i++) {
+            if (!tids[i]) continue;
+            pid_t w = waitpid(tids[i], &st, __WALL | WNOHANG);
+            if (w <= 0) continue;
+            algum = 1;
+            if (WIFEXITED(st) || WIFSIGNALED(st)) { tids[i] = 0; continue; }
+            int sig = WSTOPSIG(st); siginfo_t si;
+            if (sig == SIGTRAP && (st >> 16) == 0 && !ptrace(PTRACE_GETSIGINFO, tids[i], 0, &si) && si.si_code == TRAP_HWBKPT) {
+                quem = tids[i]; registros(quem, &pc, x); break;   // fica parado aqui até soltar
+            }
+            // outras paradas: o sinal segue para o jogo (a parada do PTRACE_INTERRUPT não tem sinal a repassar)
+            ptrace(PTRACE_CONT, tids[i], 0, (void *)(uintptr_t)((st >> 16) ? 0 : sig));
+        }
+        if (!algum) usleep(5000);
+    }
+    // solta tudo: para cada linha, para (se roda), desarma e solta
+    for (int i = 0; i < nt; i++) {
+        if (!tids[i]) continue;
+        if (tids[i] != quem) { ptrace(PTRACE_INTERRUPT, tids[i], 0, 0); waitpid(tids[i], &st, __WALL); }
+        armar(tids[i], a, 0); ptrace(PTRACE_DETACH, tids[i], 0, 0);
+    }
+    if (!quem) { printf("err ninguém escreveu em %s em %d s\n", addr, s); return; }
+    printf("pc %" PRIx64 "\n", pc); onde(pc);
+#if defined(__aarch64__)
+    uint32_t ins; if (!ler(pc, &ins, 4)) {
+        printf("ins %08x\n", ins);
+        int rn = (ins >> 5) & 31;  // nas instruções de guardar (str/stur/stp) o registro base fica nos bits 9..5
+        if ((ins & 0x3a000000) == 0x38000000 || (ins & 0x3a000000) == 0x28000000) printf("base %" PRIx64 " x%d\n", x[rn], rn);
+    }
+    puts("ok arm64");
+#else
+    puts("ok x86_64");  // no x86 o pc já é a instrução seguinte: só para estudo, sem "desligar"
+#endif
+}
+static void cmd_patch(const char *addr, const char *hex) {
+    uint64_t a = strtoull(addr, NULL, 16); size_t L = strlen(hex);
+    if (L < 2 || L > 32 || L % 2) { puts("err de 1 a 16 bytes em hex"); return; }
+    unsigned char novo[16], velho[16]; size_t n = L / 2;
+    for (size_t i = 0; i < n; i++) { unsigned v; if (sscanf(hex + 2 * i, "%2x", &v) != 1) { puts("err hex inválido"); return; } novo[i] = (unsigned char)v; }
+    if (ler(a, velho, n)) { printf("err não li %s\n", addr); return; }
+    if (escrever(a, novo, n)) { printf("err não troquei %s: %s\n", addr, strerror(errno)); return; }
+    printf("ok "); for (size_t i = 0; i < n; i++) printf("%02x", velho[i]); putchar('\n');
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     pthread_t th; pthread_create(&th, NULL, congelador, NULL);
@@ -329,6 +537,10 @@ int main(void) {
         else if (!strcmp(c, "list")) cmd_list(strtoul(a1, NULL, 10));
         else if (!strcmp(c, "bytes")) cmd_bytes(a1, a2);
         else if (!strcmp(c, "aob")) cmd_aob(a1);
+        else if (!strcmp(c, "snap")) cmd_snap(a1);
+        else if (!strcmp(c, "diff")) cmd_diff(a1);
+        else if (!strcmp(c, "watch")) cmd_watch(a1, a2);
+        else if (!strcmp(c, "patch")) cmd_patch(a1, a2);
         else if (!strcmp(c, "read") || !strcmp(c, "write") || !strcmp(c, "freeze")) {
             int t = tipo(a2); uint64_t a = strtoull(a1, NULL, 16); unsigned char b[8]; char v[64];
             if (t < 0) { printf("err tipo inválido: %s\n", a2); continue; }

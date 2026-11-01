@@ -7,9 +7,12 @@ volatile int32_t ouro = 123456789;
 volatile float vida = 87.5f;
 volatile int64_t xp = 9876543210LL;
 volatile double tempo = 4321.25;
+volatile float recarga = 0.0f;   // a busca por mudança mexe nela pelo motor
+volatile int32_t batida = 0;      // o próprio "jogo" escreve aqui: o vigia pega quem escreve
 
 int main(void) {
-    printf("%d %lx %lx %lx %lx\n", getpid(), (unsigned long)&ouro, (unsigned long)&vida, (unsigned long)&xp, (unsigned long)&tempo);
+    printf("%d %lx %lx %lx %lx %lx %lx\n", getpid(), (unsigned long)&ouro, (unsigned long)&vida, (unsigned long)&xp, (unsigned long)&tempo,
+           (unsigned long)&recarga, (unsigned long)&batida);
     fflush(stdout);
-    for (;;) sleep(1);
+    for (;;) { batida++; usleep(100000); }
 }

@@ -156,6 +156,21 @@ object Nucleo {
         escolhido = escolhido?.takeIf { it.addr == addr }?.copy(tipo = novo, valor = v)
     }
 
+    /** LABORATÓRIO (Poder.kt): congela vários campos de uma vez (o estado de um poder) e põe nos salvos. */
+    fun congelarVarios(campos: List<Triple<String, String, String>>, nome: String) = rodar {
+        campos.forEach { (a, t, v) ->
+            cmd { it.cmd("freeze $a $t $v") }
+            val s = Salvo(a, t, "$nome ${campos.indexOfFirst { it.first == a } + 1}", v, true)
+            val i = salvos.indexOfFirst { it.addr == a }
+            if (i >= 0) salvos[i] = s.copy(nome = salvos[i].nome) else salvos += s
+        }
+    }
+
+    /** Solta os congelados destes endereços (o Desfazer do Poder.kt). */
+    fun soltar(addrs: List<String>) = rodar {
+        addrs.forEach { a -> cmd { it.cmd("unfreeze $a") }; val i = salvos.indexOfFirst { it.addr == a }; if (i >= 0) salvos[i] = salvos[i].copy(congelado = false) }
+    }
+
     fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }
 
     // troca o estado na hora e manda o estado de agora: dois toques seguidos (ou a pausa automática) nunca invertem a tela e o jogo

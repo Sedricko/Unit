@@ -354,7 +354,7 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; else -> "" },
+            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; "poder" -> "Observar"; "vigia" -> "Quem escreve aqui?"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             // os controles na ordem que a pessoa arrumou (Laboratório: Arrumar.kt)
             Row(Modifier.onGloballyPositioned { Arrumar.areaCima = it.boundsInRoot() }.then(if (Arrumar.editando) Modifier.border(1.dp, Color(0x6667C6FF), RoundedCornerShape(12.dp)).padding(2.dp) else Modifier),
@@ -379,6 +379,8 @@ class Balao : Service() {
             "jogos" -> Jogos()
             "nome" -> Nome()
             "lab" -> Laboratorio.Tela(this@Balao)
+            "poder" -> Poder.Observar(this@Balao) { tela = "vigia" }
+            "vigia" -> Poder.TelaVigia()
             "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
             "opcoes" -> Opcoes()
             else -> Inicio()
@@ -399,6 +401,13 @@ class Balao : Service() {
             Column(Modifier.weight(1f)) {
                 Text("Laboratório", color = Cor.texto, fontWeight = FontWeight.SemiBold)
                 Text("teste: achar os salvos de novo depois de reabrir o jogo", color = Cor.apagado, fontSize = 12.sp)
+            }
+        }
+        // LABORATÓRIO (teste: congelar o estado de um poder). Some junto com o Poder.kt se não der certo
+        if (Nucleo.jogo != null) Linha(Modifier.toque { tela = "poder" }) {
+            Column(Modifier.weight(1f)) {
+                Text("Observar (poder e recarga)", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("teste: busca por mudança, quem escreve aqui e congelar o estado", color = Cor.apagado, fontSize = 12.sp)
             }
         }
         if (Nucleo.salvos.isNotEmpty()) {

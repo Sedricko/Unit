@@ -8,7 +8,7 @@ cc -O2 -Wall -Werror -pthread -o "$out/unitd" motor/unitd.c -lm
 cc -O0 -o "$out/alvo" motor/teste/alvo.c
 "$out/alvo" > "$out/info" & tpid=$!
 for _ in $(seq 50); do [ -s "$out/info" ] && break; sleep 0.1; done
-read -r pid aouro avida axp atempo < "$out/info"
+read -r pid aouro avida axp atempo arec abat < "$out/info"
 falhou=0
 confere() { if grep -qF -- "$2" <<<"$got"; then echo "OK   $1"; else echo "FALHA $1 (esperava: $2)"; falhou=1; fi; }
 
@@ -46,8 +46,25 @@ echo "----"
 hexxp=$(grep -A0 -m1 -E '^ok [0-9a-f]{32}$' <<<"$got" | cut -c4-)
 got2=$(printf 'attach %s\naob %s\naob %s\nbytes %s 5000\n' "$pid" "${hexxp:0:16}????????????????" "$hexxp" "$axp" | "$out/unitd")
 echo "$got2"
+# busca por mudança (a recarga do poder): foto, "usa" (10), volta (0); o vigia acha quem escreve na batida; patch troca bytes
+got3=$({ cat <<CMDS
+attach $pid
+diff mudou
+snap $out/foto
+write $arec f32 10
+diff mudou
+write $arec f32 0
+diff foto
+list 50
+watch $abat 5
+patch $aouro 01020304
+read $aouro i32
+CMDS
+} | "$out/unitd")
+echo "$got3"
 got="$got
-$got2"
+$got2
+$got3"
 confere "sem jogo, recusa" "err escolha o jogo primeiro"
 confere "attach" "ok $pid"
 confere "acha o ouro (Dword)" "$aouro i32 987654321"
@@ -63,4 +80,9 @@ confere "bytes recusa mais de 4096" "err quantidade de 1 a 4096"
 confere "faixa Float 87~88 acha a vida 87.5" "$avida f32"
 confere "grupo 123456789;87.5 acha o ouro" "$aouro i32 123456789"
 confere "grupo 123456789;87.5 acha a vida junto" "$avida f32 87.5"
+confere "mudança: sem foto, recusa" "err tire a foto primeiro"
+confere "mudança: usou e voltou acha a recarga" "$arec f32 0 0"
+confere "vigia: mostra quem escreveu" "lib alvo+"
+confere "patch devolve os bytes antigos (o 555 congelado antes)" "ok 2b020000"
+confere "patch troca os bytes" "ok 67305985"
 exit $falhou
