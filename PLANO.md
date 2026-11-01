@@ -79,6 +79,9 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
       são nomes de processo, não de app; com QUERY_ALL_PACKAGES o pacote de verdade sempre é achado, então "sem app" = ignorar.
       Também esconder ferramentas (Magisk, o próprio Unit).
 - [x] (0.3.11) Resultado Dword e Float com o mesmo número: mostrar o Vírgula primeiro como "provável valor real" (Orecraft).
+- [ ] (lab 0.3.36) Tocar no ícone já abre o balão (com a permissão de sobrepor); sem ela, pede a permissão e vira balão ao voltar.
+- [ ] (lab 0.3.35) Resultados da busca e o "agora" do Editar ao vivo; tecla de ponto; teclado no painel estreito; minimizar vira balão;
+      o salvo sai da pesquisa (fica só em Salvos, como no GameGuardian).
 - [ ] **Busca por mudança**: aumentou / diminuiu / mudou / não mudou / igual à foto (valores que mudam sozinhos). Amostra no Laboratório (0.3.31-lab).
 - [ ] **Ajuda** (prévia aprovada em 01/11): botão "?" no painel abre a lista de tópicos (busca exata, refinar, faixa ~,
       grupo ;, auto e tipos, em volta, ver como/limite, salvar e congelar, pausa e escudo) e uma colinha.
