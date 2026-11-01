@@ -80,6 +80,12 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
       Também esconder ferramentas (Magisk, o próprio Unit).
 - [x] (0.3.11) Resultado Dword e Float com o mesmo número: mostrar o Vírgula primeiro como "provável valor real" (Orecraft).
 - [ ] **Busca por mudança**: aumentou / diminuiu / mudou / não mudou / aumentou N (valores que mudam sozinhos).
+- [ ] **Congelar o estado de um poder** (ideia do usuário, 01/11; Laboratório, depois da busca por mudança):
+      1) Observar: foto da memória, usar o poder, "Usei"; acha o que pulou, andou e parou junto com a recarga.
+      2) "Quem escreve aqui?" (vigia do processador, só com root): mostra o comando do código e o bloco do poder.
+      3) Escolher o momento (pronto ou ativo) e "Congelar este estado": segura só os campos que mudam com o poder.
+      4) Opcional: "Desligar esse comando" (troca a instrução por uma que não faz nada), com Desfazer; vale até fechar o jogo.
+      5) Assinatura guarda tudo para aplicar da próxima vez. Mira na tela: opcional, só para marcar o "Usei" sozinha.
 - [ ] **Ajuda** (prévia aprovada em 01/11): botão "?" no painel abre a lista de tópicos (busca exata, refinar, faixa ~,
       grupo ;, auto e tipos, em volta, ver como/limite, salvar e congelar, pausa e escudo) e uma colinha.
       Cada tópico tem: para que serve, como digitar, um exemplo no Orecraft e o botão "Experimentar",
