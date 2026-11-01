@@ -56,6 +56,13 @@ object Poder {
     var vigia by mutableStateOf<Vigia?>(null)
     var desligado by mutableStateOf<String?>(null)  // bytes antigos do comando desligado (para o Desfazer)
     val congelados = mutableStateListOf<String>()
+    var nome by mutableStateOf("Poder")  // o nome que a pessoa deu (Escudo, Recarga do mago…); vira o nome nos Salvos
+
+    /** Troca o nome; os campos já congelados mudam junto nos Salvos ("Escudo 1", "Escudo 2"…). */
+    fun renomear(n: String) {
+        nome = n.trim().ifEmpty { return }
+        congelados.forEachIndexed { k, a -> val i = Nucleo.salvos.indexOfFirst { it.addr == a }; if (i >= 0) Nucleo.salvos[i] = Nucleo.salvos[i].copy(nome = "$nome ${k + 1}") }
+    }
 
     /** Mesmo palpite do motor: inteiro pequeno = Dword; senão, número com vírgula com cara de jogo = Float. */
     fun palpite(raw: Int): Pair<String, String> {
@@ -80,7 +87,7 @@ object Poder {
     private fun zerar() { foto = false; total = null; usou = 0; lista.clear(); alvo = null; vigia = null }
 
     /** Trocou de jogo: começa do zero. */
-    private fun conferirJogo() { val p = Nucleo.jogo?.pid ?: 0; if (p != pid) { pid = p; zerar(); desligado = null; congelados.clear() } }
+    private fun conferirJogo() { val p = Nucleo.jogo?.pid ?: 0; if (p != pid) { pid = p; zerar(); desligado = null; congelados.clear(); nome = "Poder" } }
 
     private suspend fun comparar(modo: String) {
         total = Nucleo.cmd { it.cmd("diff $modo") }.status.substringBefore(' ').toLongOrNull()
@@ -129,12 +136,18 @@ object Poder {
     }
 
     @Composable
-    fun TelaVigia() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    fun TelaVigia(darNome: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         val m = alvo ?: return@Column
         val addr = m.addr.toLong(16)
         Linha {
             Text(m.addr, color = Cor.texto, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
             Text("${NOME_TIPO[m.tipo] ?: m.tipo} · ${m.valor}", color = Cor.apagado, fontSize = 13.sp)
+        }
+        Linha(Modifier.toque(clique = darNome)) {
+            Column(Modifier.weight(1f)) {
+                Text(nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("nome do que você vai congelar · tocar para mudar", color = Cor.apagado, fontSize = 12.sp)
+            }
         }
         val v = vigia
         if (v == null) {
@@ -208,7 +221,7 @@ object Poder {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Botao("Congelar este estado", true, Modifier.weight(1f), marcados.isNotEmpty() && !Nucleo.ocupado) {
                 val campos = marcados.sorted().map { i -> Triple((inicio + 4 * i).toString(16), palpite(v[i]).first, exato(v[i])) }
-                Nucleo.congelarVarios(campos, "Poder")
+                Nucleo.congelarVarios(campos, nome)
                 congelados.clear(); congelados += campos.map { it.first }
             }
             Botao("Desfazer", false, Modifier.weight(1f), congelados.isNotEmpty()) { Nucleo.soltar(congelados.toList()); congelados.clear() }

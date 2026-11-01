@@ -278,6 +278,7 @@ class Balao : Service() {
     private fun Conteudo() {
         // os salvos ao vivo enquanto o mini ou o painel está à vista
         LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
+        LaunchedEffect(tela) { if (tela != "nome") nomeDoPoder = false }  // saiu da tela de nome por outro caminho (‹)
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }
         // pausa automática: entra ao digitar (ou com o painel aberto) e sai ao sair dessas telas / minimizar
         LaunchedEffect(modo, tela, opcaoPausa) {
@@ -380,7 +381,7 @@ class Balao : Service() {
             "nome" -> Nome()
             "lab" -> Laboratorio.Tela(this@Balao)
             "poder" -> Poder.Observar(this@Balao) { tela = "vigia" }
-            "vigia" -> Poder.TelaVigia()
+            "vigia" -> Poder.TelaVigia { nomeDoPoder = true; tela = "nome" }
             "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
             "opcoes" -> Opcoes()
             else -> Inicio()
@@ -554,14 +555,19 @@ class Balao : Service() {
         vista?.let { wm.updateViewLayout(it, params) }
     }
 
+    private var nomeDoPoder by mutableStateOf(false)  // LABORATÓRIO: a tela de nome dando nome ao estado do Poder.kt
+
     @Composable
     private fun Nome() {
-        val e = Nucleo.escolhido ?: run { tela = "inicio"; return }
-        var campo by remember(e.addr) { mutableStateOf(Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome?.takeUnless { it.startsWith("Valor ") } ?: "") }
+        val poder = nomeDoPoder
+        val e = Nucleo.escolhido ?: Achado("", "", "")
+        if (!poder && e.addr.isEmpty()) { tela = "inicio"; return }
+        val volta = if (poder) "vigia" else "editar"
+        var campo by remember(e.addr, poder) { mutableStateOf(if (poder) Poder.nome.takeUnless { it == "Poder" } ?: "" else Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome?.takeUnless { it.startsWith("Valor ") } ?: "") }
         val foco = remember { androidx.compose.ui.focus.FocusRequester() }
         androidx.compose.runtime.DisposableEffect(Unit) { tecladoDoAndroid(true); onDispose { tecladoDoAndroid(false) } }
         LaunchedEffect(Unit) { delay(150); runCatching { foco.requestFocus() } }
-        fun pronto() { Nucleo.renomear(e, campo); tela = "editar" }
+        fun pronto() { if (poder) Poder.renomear(campo) else Nucleo.renomear(e, campo); nomeDoPoder = false; tela = volta }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             androidx.compose.foundation.text.BasicTextField(
                 campo, { campo = it.take(24) }, singleLine = true,
@@ -572,11 +578,11 @@ class Balao : Service() {
                 modifier = Modifier.fillMaxWidth().focusRequester(foco).background(Color(0x40000000), RoundedCornerShape(16.dp))
                     .border(1.dp, Color(0x9967C6FF), RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 12.dp)
             )
-            listOf("Ouro", "Joias", "Cobre", "Ferro", "Vida", "Moedas").chunked(4).forEach { linha ->
+            (if (poder) listOf("Recarga", "Escudo", "Especial", "Ataque", "Velocidade", "Cura") else listOf("Ouro", "Joias", "Cobre", "Ferro", "Vida", "Moedas")).chunked(4).forEach { linha ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { linha.forEach { n -> Selo(n, campo == n) { campo = n } } }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Botao("Cancelar", false, Modifier.weight(1f)) { tela = "editar" }
+                Botao("Cancelar", false, Modifier.weight(1f)) { nomeDoPoder = false; tela = volta }
                 Botao("Salvar nome", true, Modifier.weight(1f), ligado = campo.isNotBlank()) { pronto() }
             }
         }
