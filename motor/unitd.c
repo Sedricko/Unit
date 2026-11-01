@@ -371,7 +371,9 @@ static void cmd_diff(const char *m) {
             }
         }
         fclose(f); free(velho); free(novo);
-        printf("ok %zu%s\n", nres, cheio ? " cheio" : "");
+        // passou do limite: não fica com uma parte só (o valor certo podia estar no resto); a foto continua valendo
+        if (cheio) { nres = 0; puts("err mudou coisa demais (mais de 8 milhões): use Aumentou ou Diminuiu, ou filtre logo depois da foto"); return; }
+        printf("ok %zu\n", nres);
         return;
     }
     size_t k = 0;
