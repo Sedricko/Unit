@@ -317,6 +317,7 @@ int main(void) {
         if (!strcmp(c, "attach")) {
             pid_t p = (pid_t)atoi(a1); char path[64]; snprintf(path, sizeof path, "/proc/%d", p);
             if (p <= 0 || access(path, F_OK)) { printf("err processo %s não existe\n", a1); continue; }
+            if (target) kill(target, SIGCONT);  // o jogo de antes nunca fica parado
             pthread_mutex_lock(&fzm); memset(fz, 0, sizeof fz); target = p; nres = 0; pthread_mutex_unlock(&fzm);
             printf("ok %d\n", p); continue;
         }
@@ -361,5 +362,7 @@ int main(void) {
         }
         else printf("err comando desconhecido: %s\n", c);
     }
+    // o Unit fechou ou caiu (fim da entrada): não deixa o jogo congelado, senão o Android mostra "não está respondendo"
+    if (target) kill(target, SIGCONT);
     return 0;
 }

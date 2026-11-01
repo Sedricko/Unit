@@ -119,13 +119,12 @@ class Balao : Service() {
     private var escudo: android.view.View? = null
     private val pEscudo = LayoutParams(1, 1, LayoutParams.TYPE_APPLICATION_OVERLAY,
         LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT
-    ).apply { alpha = 0f; width = 1; height = 1; gravity = Gravity.TOP or Gravity.START }
+    ).apply { alpha = 0f; gravity = Gravity.TOP or Gravity.START }
     private fun ligarEscudo(on: Boolean) {
         pEscudo.flags = if (on) LayoutParams.FLAG_LAYOUT_IN_SCREEN else LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN
         // desligado: 1 pixel no canto. Do Android 12 em diante uma janela de outro app cobrindo a tela bloqueia o toque no jogo
         // mesmo "não tocável" (proteção contra toque enganado); só cobre tudo quando precisa segurar o toque (jogo pausado)
         pEscudo.width = if (on) LayoutParams.MATCH_PARENT else 1; pEscudo.height = if (on) LayoutParams.MATCH_PARENT else 1
-        pEscudo.gravity = Gravity.TOP or Gravity.START
         escudo?.let { runCatching { wm.updateViewLayout(it, pEscudo) } }
     }
     private fun soltarPausa() {
