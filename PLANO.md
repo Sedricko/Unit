@@ -79,6 +79,11 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
       são nomes de processo, não de app; com QUERY_ALL_PACKAGES o pacote de verdade sempre é achado, então "sem app" = ignorar.
       Também esconder ferramentas (Magisk, o próprio Unit).
 - [x] (0.3.11) Resultado Dword e Float com o mesmo número: mostrar o Vírgula primeiro como "provável valor real" (Orecraft).
+- [ ] **Busca por mudança**: aumentou / diminuiu / mudou / não mudou / aumentou N (valores que mudam sozinhos).
+- [ ] **Ajuda** (prévia aprovada em 01/11): botão "?" no painel abre a lista de tópicos (busca exata, refinar, faixa ~,
+      grupo ;, auto e tipos, em volta, ver como/limite, salvar e congelar, pausa e escudo) e uma colinha.
+      Cada tópico tem: para que serve, como digitar, um exemplo no Orecraft e o botão "Experimentar",
+      que abre o Achar já com o exemplo digitado. Texto dentro do app, sem internet. Entra depois da busca por mudança.
 
 Já feito na 0.3.1 (31/10): ícones dos jogos, painel arrastável, olho (segurar some), expandir (tela cheia),
 minimizar/fechar no app, lembra tamanho e lugar, trocar de jogo pelo painel, atualização automática (0.3.0).
@@ -151,6 +156,7 @@ O coração do projeto: um programa em C que roda como root e lê/escreve a mem�
 | 6.4 **Prova no jogo real** | Save e velocidade de verdade | Save do Orecraft editado com backup; Orecraft em 2x |
 
 ## Depois (só se fizer sentido)
+Espaço virtual (rodar o jogo dentro de um app, sem root): projeto separado; ver `docs/ideias/espaco-virtual.md`.
 Bot de testes automáticos, painel no PC, assistente de IA. Cada um como peça separada, com o mesmo cuidado.
 
 ---
