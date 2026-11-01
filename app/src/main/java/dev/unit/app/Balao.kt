@@ -615,7 +615,8 @@ class Balao : Service() {
                     if (Nucleo.jogo?.pacote == j.pacote) Selo("ligado", true)
                 }
             }
-            Botao("Atualizar a lista", false, Modifier.fillMaxWidth()) { Nucleo.carregarJogos(this@Balao) }
+            if (Nucleo.ocupado && Nucleo.jogos.isEmpty()) Text("Procurando os jogos… Se aparecer o pedido de root, toque em Permitir.", color = Cor.a2, fontSize = 13.sp)
+            Botao("Atualizar a lista", false, Modifier.fillMaxWidth(), !Nucleo.ocupado) { Nucleo.carregarJogos(this@Balao) }
         }
     }
 
