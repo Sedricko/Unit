@@ -97,9 +97,7 @@ object Nucleo {
             Jogo(p[0].toInt(), pac, pm.getApplicationLabel(app).toString())
         }.distinctBy { it.pacote }.sortedBy { it.nome.lowercase() }
         jogos.clear(); jogos += lista
-        if (lista.isEmpty()) throw IllegalStateException(if (motor?.root == false)
-            "Sem root: o Unit só vê os jogos abertos no mesmo espaço que ele. Dê o root ao Unit (vPhoneOS), ou abra o Unit e o jogo dentro do Vcloud.\n(${motor?.semRoot ?: "su não encontrado"})"
-            else "Nenhum jogo aberto. Abra o jogo e toque em Atualizar.")
+        if (lista.isEmpty()) throw IllegalStateException("Nenhum jogo aberto. Abra o jogo e toque em Atualizar.")
     }
 
     fun escolher(j: Jogo) = rodar {
