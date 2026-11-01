@@ -8,7 +8,7 @@ cc -O2 -Wall -Werror -pthread -o "$out/unitd" motor/unitd.c -lm
 cc -O0 -o "$out/alvo" motor/teste/alvo.c
 "$out/alvo" > "$out/info" & tpid=$!
 for _ in $(seq 50); do [ -s "$out/info" ] && break; sleep 0.1; done
-read -r pid aouro avida axp atempo arec < "$out/info"
+read -r pid aouro avida axp atempo arec acobre < "$out/info"
 falhou=0
 confere() { if grep -qF -- "$2" <<<"$got"; then echo "OK   $1"; else echo "FALHA $1 (esperava: $2)"; falhou=1; fi; }
 
@@ -59,9 +59,17 @@ list 50
 CMDS
 } | "$out/unitd")
 echo "$got3"
+# ponteiro: do global "jogo" (fixo, no próprio programa) até o cobre no heap; o caminho achado leva ao mesmo endereço
+got4=$(printf 'attach %s\nptrscan %s 3\n' "$pid" "$acobre" | "$out/unitd")
+echo "$got4"
+cam=$(grep -m1 '^alvo+' <<<"$got4" || true)
+got5=$(printf 'attach %s\nptr %s\nptr naoexiste+10:8\n' "$pid" "$cam" | "$out/unitd")
+echo "$got5"
 got="$got
 $got2
-$got3"
+$got3
+$got4
+$got5"
 confere "sem jogo, recusa" "err escolha o jogo primeiro"
 confere "attach" "ok $pid"
 confere "acha o ouro (Dword)" "$aouro i32 987654321"
@@ -79,4 +87,8 @@ confere "grupo 123456789;87.5 acha o ouro" "$aouro i32 123456789"
 confere "grupo 123456789;87.5 acha a vida junto" "$avida f32 87.5"
 confere "mudança: sem foto, recusa" "err tire a foto primeiro"
 confere "mudança: mudou e voltou ao da foto acha o valor" "$arec f32 0 0"
+confere "ponteiro: acha um caminho a partir do programa" "alvo+"
+confere "ponteiro: o caminho termina em +40 e +8" ":40:8"
+confere "ponteiro: seguir o caminho chega no cobre" "ok $acobre"
+confere "ponteiro: biblioteca que não existe, recusa" "err biblioteca naoexiste não está aberta"
 exit $falhou

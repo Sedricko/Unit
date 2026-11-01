@@ -13,6 +13,8 @@
 //   pause / resume             para e continua o jogo (SIGSTOP/SIGCONT)
 //   snap ARQUIVO               foto da memória (para a busca por mudança)                  -> ok BYTES
 //   diff MODO                  mudou|igual|foto|aumentou|diminuiu (1ª vez compara com a foto) -> ok N
+//   ptrscan ENDEREÇO [NÍVEIS]  caminhos (ponteiros) de uma biblioteca até o endereço: "lib+OFF:o1:...:oN" -> ok N
+//   ptr CAMINHO                segue o caminho de agora                                     -> ok ENDEREÇO
 //   sleep MS                   espera (testes e scripts: dá tempo ao congelador)
 //   quit
 #define _GNU_SOURCE
@@ -386,6 +388,103 @@ static void cmd_diff(const char *m) {
     printf("ok %zu\n", nres);
 }
 
+// ---- ponteiros: o caminho fixo (biblioteca + deslocamentos) que o jogo usa para chegar num valor ----
+// Mapa inteiro: as regiões graváveis de arquivo (o .data das bibliotecas) e a anônima colada logo depois (o .bss) são
+// "fixas"; a base de cada biblioteca é o começo da 1ª região dela.
+// No Android ARM64 os ponteiros do heap vêm com uma marca no byte de cima (0xb4…): ela é tirada antes de comparar.
+#define SEM_MARCA(v) ((v) & 0x00ffffffffffffffULL)
+typedef struct { uint64_t ini, fim; int rw, fixa; char lib[64]; } reg_t;
+static reg_t *rg; static int nrg;
+static void ler_mapa(void) {
+    char p[64]; snprintf(p, sizeof p, "/proc/%d/maps", target);
+    FILE *f = fopen(p, "r"); nrg = 0; if (!f) return;
+    static int cap; char line[512], ult[64] = ""; uint64_t ultfim = 0;
+    while (fgets(line, sizeof line, f)) {
+        uint64_t a, b; char perms[8] = "", name[400] = "";
+        if (sscanf(line, "%" SCNx64 "-%" SCNx64 " %7s %*s %*s %*s %399[^\n]", &a, &b, perms, name) < 3) continue;
+        if (nrg == cap) { cap = cap ? cap * 2 : 1024; rg = realloc(rg, cap * sizeof *rg); }
+        reg_t *r = &rg[nrg++]; memset(r, 0, sizeof *r); r->ini = a; r->fim = b;
+        r->rw = perms[0] == 'r' && perms[1] == 'w' && !strstr(name, "/dev/") && !strstr(name, "[stack") && !strstr(name, "kgsl");
+        const char *nm = strrchr(name, '/');
+        if (name[0] == '/') { snprintf(r->lib, sizeof r->lib, "%s", nm + 1); snprintf(ult, sizeof ult, "%s", nm + 1); r->fixa = r->rw; }
+        else if (a == ultfim && ult[0] && (!name[0] || strstr(name, ".bss"))) { snprintf(r->lib, sizeof r->lib, "%s", ult); r->fixa = r->rw; }
+        else ult[0] = 0;
+        ultfim = b;
+    }
+    fclose(f);
+}
+static int achar_reg(uint64_t v) {  // as regiões vêm em ordem no mapa: busca binária
+    int lo = 0, hi = nrg - 1;
+    while (lo <= hi) { int m = (lo + hi) / 2; if (v < rg[m].ini) hi = m - 1; else if (v >= rg[m].fim) lo = m + 1; else return m; }
+    return -1;
+}
+static uint64_t base_lib(const char *lib) { for (int i = 0; i < nrg; i++) if (!strcmp(rg[i].lib, lib)) return rg[i].ini; return 0; }
+
+typedef struct { uint64_t v, onde; } pt_t;        // um ponteiro: o valor (para onde aponta) e onde ele mora
+typedef struct { uint64_t t; int pai; uint32_t o; } no_t;  // um passo do caminho: o alvo, quem veio antes e o deslocamento
+static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)->v, y = ((const pt_t *)b)->v; return x < y ? -1 : x > y; }
+enum { PMAX = 12000000, NMAX = 400000, CMAX = 300, DIST = 0x400 };
+// shortcut: até 12 milhões de ponteiros, 400 mil passos e 300 caminhos (memória do celular); jogos maiores podem perder caminhos
+static void cmd_ptrscan(const char *addr, const char *niv) {
+    uint64_t alvo = strtoull(addr, NULL, 16); int nmax = niv[0] ? atoi(niv) : 5; if (nmax < 1 || nmax > 8) nmax = 5;
+    ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
+    pt_t *pt = malloc((size_t)PMAX * sizeof *pt); size_t np = 0;
+    enum { BLOCO = 1 << 20 }; unsigned char *buf = malloc(BLOCO);
+    if (!pt || !buf) { free(pt); free(buf); puts("err sem memória para os ponteiros"); return; }
+    for (int r = 0; r < nrg && np < PMAX; r++) {
+        if (!rg[r].rw) continue;
+        for (uint64_t a = rg[r].ini; a < rg[r].fim && np < PMAX; a += BLOCO) {
+            size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
+            if (ler(a, buf, n)) continue;
+            for (size_t o = 0; o + 8 <= n && np < PMAX; o += 8) {
+                uint64_t v; memcpy(&v, buf + o, 8); v = SEM_MARCA(v);
+                if (v < 0x10000) continue;
+                int k = achar_reg(v); if (k < 0 || !rg[k].rw) continue;
+                pt[np].v = v; pt[np].onde = a + o; np++;
+            }
+        }
+    }
+    free(buf);
+    qsort(pt, np, sizeof *pt, cmp_pt);
+    no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
+    no[nn++] = (no_t){alvo, -1, 0};
+    int ini = 0;
+    for (int nivel = 1; nivel <= nmax && nc < CMAX; nivel++) {
+        int fim = nn;
+        for (int i = ini; i < fim && nc < CMAX; i++) {
+            uint64_t t = no[i].t, de = t >= DIST ? t - DIST : 0;
+            size_t lo = 0, hi = np;  // 1º ponteiro com valor >= t - DIST
+            while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
+            for (size_t j = lo; j < np && pt[j].v <= t && nc < CMAX; j++) {
+                int k = achar_reg(pt[j].onde);
+                uint32_t o = (uint32_t)(t - pt[j].v);
+                if (k >= 0 && rg[k].fixa) {  // chegou numa biblioteca: um caminho
+                    printf("%s+%" PRIx64 ":%x", rg[k].lib, pt[j].onde - base_lib(rg[k].lib), o);
+                    for (int x = i; no[x].pai >= 0; x = no[x].pai) printf(":%x", no[x].o);
+                    putchar('\n'); nc++;
+                } else if (nn < NMAX && nivel < nmax) no[nn++] = (no_t){pt[j].onde, i, o};
+            }
+        }
+        ini = fim;
+    }
+    free(no); free(pt);
+    printf("ok %d\n", nc);
+}
+// segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor
+static void cmd_ptr(const char *cam) {
+    char tmp[600]; snprintf(tmp, sizeof tmp, "%s", cam);
+    char *mais = strrchr(tmp, '+'); if (!mais) { puts("err caminho inválido"); return; }
+    *mais = 0; ler_mapa();
+    uint64_t b = base_lib(tmp); if (!b) { printf("err biblioteca %s não está aberta\n", tmp); return; }
+    char *sv, *x = strtok_r(mais + 1, ":", &sv); if (!x) { puts("err caminho inválido"); return; }
+    uint64_t a = b + strtoull(x, NULL, 16);
+    for (x = strtok_r(NULL, ":", &sv); x; x = strtok_r(NULL, ":", &sv)) {
+        uint64_t p; if (ler(a, &p, 8)) { puts("err o caminho quebrou"); return; }
+        a = SEM_MARCA(p) + strtoull(x, NULL, 16);
+    }
+    printf("ok %" PRIx64 "\n", a);
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     pthread_t th; pthread_create(&th, NULL, congelador, NULL);
@@ -415,6 +514,8 @@ int main(void) {
         else if (!strcmp(c, "aob")) cmd_aob(a1);
         else if (!strcmp(c, "snap")) cmd_snap(a1);
         else if (!strcmp(c, "diff")) cmd_diff(a1);
+        else if (!strcmp(c, "ptrscan")) cmd_ptrscan(a1, a2);
+        else if (!strcmp(c, "ptr")) cmd_ptr(a1);
         else if (!strcmp(c, "read") || !strcmp(c, "write") || !strcmp(c, "freeze")) {
             int t = tipo(a2); uint64_t a = strtoull(a1, NULL, 16); unsigned char b[8]; char v[64];
             if (t < 0) { printf("err tipo inválido: %s\n", a2); continue; }

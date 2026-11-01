@@ -354,7 +354,7 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; "mudanca" -> "Busca por mudança"; else -> "" },
+            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; "mudanca" -> "Busca por mudança"; "caminho" -> "Caminhos"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             // os controles na ordem que a pessoa arrumou (Laboratório: Arrumar.kt)
             Row(Modifier.onGloballyPositioned { Arrumar.areaCima = it.boundsInRoot() }.then(if (Arrumar.editando) Modifier.border(1.dp, Color(0x6667C6FF), RoundedCornerShape(12.dp)).padding(2.dp) else Modifier),
@@ -379,6 +379,7 @@ class Balao : Service() {
             "jogos" -> Jogos()
             "nome" -> Nome()
             "lab" -> Laboratorio.Tela(this@Balao)
+            "caminho" -> Ponteiro.Tela()
             "mudanca" -> Mudanca.Tela(this@Balao) { a -> Nucleo.escolhido = a; tela = "editar" }
             "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
             "opcoes" -> Opcoes()
@@ -400,6 +401,12 @@ class Balao : Service() {
             Column(Modifier.weight(1f)) {
                 Text("Laboratório", color = Cor.texto, fontWeight = FontWeight.SemiBold)
                 Text("teste: achar os salvos de novo depois de reabrir o jogo", color = Cor.apagado, fontSize = 12.sp)
+            }
+        }
+        if (Nucleo.jogo != null) Linha(Modifier.toque { tela = "caminho" }) {
+            Column(Modifier.weight(1f)) {
+                Text("Caminhos (ponteiros)", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("teste: achar sempre, conferir, exportar e importar", color = Cor.apagado, fontSize = 12.sp)
             }
         }
         // LABORATÓRIO (teste: busca por mudança). Some junto com o Mudanca.kt se não der certo
@@ -425,7 +432,7 @@ class Balao : Service() {
     private fun LinhaSalvo(s: Salvo) = Linha(Modifier.toque { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" }) {
         Column(Modifier.weight(1f)) {
             Text(s.nome, color = Cor.texto, fontSize = 15.sp)
-            Text((NOME_TIPO[s.tipo] ?: s.tipo) + if (s.congelado) " · congelado" else "", color = Cor.apagado, fontSize = 11.sp)
+            Text((NOME_TIPO[s.tipo] ?: s.tipo) + (if (s.caminho) " · pelo caminho ✓" else "") + if (s.congelado) " · congelado" else "", color = Cor.apagado, fontSize = 11.sp)
         }
         Text(s.valor, color = if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Box(Modifier.padding(start = 8.dp).toque { Nucleo.alternarCongelado(s) }) { Icone(Ic.CONGELAR, 20.dp, if (s.congelado) Cor.a2 else Cor.apagado) }
@@ -508,6 +515,10 @@ class Balao : Service() {
             Text("agora: $atual · ${NOME_TIPO[e.tipo]}", color = Cor.apagado, fontSize = 13.sp)
             // LABORATÓRIO (teste): os vizinhos deste valor; sai junto com o EmVolta.kt se não der certo
             Botao("Em volta (100 campos acima e abaixo)", false, Modifier.fillMaxWidth()) { tela = "volta" }
+            // LABORATÓRIO: achar sempre (ponteiro). Some junto com o Ponteiro.kt se não der certo
+            Botao("Achar o caminho (ponteiro)", false, Modifier.fillMaxWidth(), !Nucleo.ocupado) {
+                Ponteiro.procurar(e, Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome ?: "Valor"); tela = "caminho"
+            }
             CampoGrande(campo, "valor novo")
             if (acima) Aviso(Cor.atencao) {
                 Text("Passa do limite do ${NOME_TIPO[e.tipo]} (máximo ${"%,d".format(MAX_DWORD).replace(',', '.')}).", color = Cor.texto, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)

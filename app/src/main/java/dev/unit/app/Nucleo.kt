@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
 
 /** Um lugar achado na memória: endereço (hex), tipo (i32/f32/i64/f64) e o valor de agora. */
 data class Achado(val addr: String, val tipo: String, val valor: String)
-data class Salvo(val addr: String, val tipo: String, val nome: String, val valor: String, val congelado: Boolean)
+data class Salvo(val addr: String, val tipo: String, val nome: String, val valor: String, val congelado: Boolean, val caminho: Boolean = false)
 data class Jogo(val pid: Int, val pacote: String, val nome: String)
 
 // os nomes do GameGuardian (o usuário pediu: servem para pesquisar e aprender)
@@ -69,7 +69,7 @@ object Nucleo {
     var aviso by mutableStateOf("")
     var ocupado by mutableStateOf(false)
 
-    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE) }
+    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); Ponteiro.init(ctx) }
 
     private val abrindo = Any()
     // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
@@ -104,6 +104,7 @@ object Nucleo {
         if (pausado) runCatching { cmd { it.cmd("resume") } }  // não deixa o jogo de antes parado
         cmd { it.cmd("attach ${j.pid}") }
         jogo = j; pausado = false; zerar(); salvos.clear()
+        Ponteiro.aplicar()  // LABORATÓRIO: os salvos guardados com caminho aparecem sozinhos
     }
 
     fun zerar() { total = null; achados.clear(); escolhido = null }
@@ -144,6 +145,7 @@ object Nucleo {
     fun renomear(a: Achado, nome: String) {
         val n = nome.trim().ifEmpty { return }
         val i = salvos.indexOfFirst { it.addr == a.addr }
+        if (i >= 0 && salvos[i].caminho) Ponteiro.renomear(salvos[i].nome, n)
         if (i >= 0) salvos[i] = salvos[i].copy(nome = n) else salvos += Salvo(a.addr, a.tipo, n, a.valor, false)
     }
 
