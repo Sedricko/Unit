@@ -170,7 +170,7 @@ object Nucleo {
     fun atualizarAchados() = scope.launch {
         if (jogo == null || ocupado) return@launch
         runCatching {
-            fun ler(a: Achado) = a.copy(valor = runCatching { cmd { it.cmd("read ${a.addr} ${a.tipo}") }.status }.getOrDefault(a.valor))
+            suspend fun ler(a: Achado) = a.copy(valor = runCatching { cmd { it.cmd("read ${a.addr} ${a.tipo}") }.status }.getOrDefault(a.valor))
             val novos = achados.take(20).map { ler(it) }
             novos.forEach { n -> val i = achados.indexOfFirst { it.addr == n.addr && it.tipo == n.tipo }; if (i >= 0 && achados[i].valor != n.valor) achados[i] = n }
             escolhido?.let { e -> val n = novos.firstOrNull { it.addr == e.addr && it.tipo == e.tipo } ?: ler(e); if (n.valor != e.valor && escolhido?.addr == e.addr) escolhido = e.copy(valor = n.valor) }
