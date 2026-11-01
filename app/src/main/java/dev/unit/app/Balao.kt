@@ -466,10 +466,14 @@ class Balao : Service() {
                         }
                         val ja = Nucleo.salvos.any { it.addr == a.addr }
                         Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(if (ja) Ic.SALVO else Ic.SALVAR, 20.dp, if (ja) Cor.a2 else Cor.icone) }
+                        Box(Modifier.padding(start = 10.dp).toque { Nucleo.editar(a.addr, a.tipo, a.valor, true) }) { Icone(Ic.CONGELAR, 20.dp) }  // congela no valor de agora
                     }
                 }
             }
-            if (novos.size in 2..20) Botao("Salvar todos (${novos.size})", false, Modifier.fillMaxWidth()) { novos.forEach(Nucleo::salvar) }
+            if (novos.size in 2..20) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Botao("Salvar todos (${novos.size})", false, Modifier.weight(1f)) { novos.forEach(Nucleo::salvar) }
+                Botao("Congelar todos", false, Modifier.weight(1f)) { novos.forEach { Nucleo.editar(it.addr, it.tipo, it.valor, true) } }
+            }
             Nucleo.escolhido?.takeIf { Nucleo.total == 1L && Nucleo.salvos.none { s -> s.addr == it.addr } }?.let { a ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val ja = Nucleo.salvos.any { it.addr == a.addr }

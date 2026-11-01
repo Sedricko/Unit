@@ -74,9 +74,14 @@ object Mudanca {
                 Text(NOME_TIPO[m.tipo] ?: m.tipo, color = Cor.a2, fontSize = 11.sp, modifier = Modifier.padding(end = 8.dp))
                 Text("${m.foto} → ${m.valor}", color = Cor.texto, fontSize = 13.sp)
                 Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(Ic.SALVAR, 20.dp) }
+                // congelar no valor de agora (vai para os Salvos já congelado)
+                Box(Modifier.padding(start = 10.dp).toque { Nucleo.editar(a.addr, a.tipo, a.valor, true) }) { Icone(Ic.CONGELAR, 20.dp) }
             }
         }
-        if (novos.size >= 2) Botao("Salvar todos (${novos.size})", false, Modifier.fillMaxWidth()) { novos.forEach { Nucleo.salvar(Achado(it.addr, it.tipo, it.valor)) } }
+        if (novos.size >= 2) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Botao("Salvar todos (${novos.size})", false, Modifier.weight(1f)) { novos.forEach { Nucleo.salvar(Achado(it.addr, it.tipo, it.valor)) } }
+            Botao("Congelar todos", false, Modifier.weight(1f)) { novos.forEach { Nucleo.editar(it.addr, it.tipo, it.valor, true) } }
+        }
         if ((total ?: 0) > 50) Text("Ainda são muitos: espere o número mudar de novo e filtre outra vez.", color = Cor.apagado, fontSize = 12.sp)
         Botao("Recomeçar", false, Modifier.fillMaxWidth()) { zerar() }
     }
