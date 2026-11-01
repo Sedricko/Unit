@@ -17,11 +17,18 @@ class Motor(caminho: String) {
         try {
             if (primeira != null) p.outputStream.run { write("$primeira\n".toByteArray()); flush() }
             val r = p.inputStream.bufferedReader()
-            val ola = r.readLine()
-            if (ola == null || !ola.startsWith("ok unitd")) throw IOException("O motor não respondeu: ${ola ?: "fechou"}")
+            // o su espera o "Permitir" do gerenciador de root; sem resposta em 20 s, desiste em vez de travar a lista
+            var ola: String? = null
+            val t = Thread { ola = runCatching { r.readLine() }.getOrNull() }.apply { start(); join(20_000) }
+            if (t.isAlive) { semRoot = "O pedido de root não foi respondido em 20 s (abra o Magisk/su e permita o Unit)."; throw IOException(semRoot) }
+            if (ola?.startsWith("ok unitd") != true) throw IOException("O motor não respondeu: ${ola ?: "fechou"}")
             return Aberto(p, r)
         } catch (e: Exception) { p.destroy(); throw e }
     }
+
+    /** Por que ficou sem root (para o aviso da lista vazia); null = sem su ou recusado. */
+    var semRoot: String? = null
+        private set
 
     private val su = runCatching { abrir(ProcessBuilder("su"), "exec $caminho") }.getOrNull()
     /** false = sem root (motor direto, só vê o próprio espaço). */

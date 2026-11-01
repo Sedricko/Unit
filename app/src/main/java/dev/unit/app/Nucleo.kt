@@ -71,7 +71,9 @@ object Nucleo {
 
     fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE) }
 
-    internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) { f(motor ?: Motor(lib).also { motor = it }) }
+    private val abrindo = Any()
+    // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
+    internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) { f(synchronized(abrindo) { motor ?: Motor(lib).also { motor = it } }) }
 
     /** Roda uma ação do motor; o erro vira o aviso na tela, em vez de fechar o app. */
     fun rodar(f: suspend () -> Unit) = scope.launch {
@@ -96,7 +98,7 @@ object Nucleo {
         }.distinctBy { it.pacote }.sortedBy { it.nome.lowercase() }
         jogos.clear(); jogos += lista
         if (lista.isEmpty()) throw IllegalStateException(if (motor?.root == false)
-            "Sem root: o Unit só vê os jogos abertos no mesmo espaço que ele. Dê o root ao Unit (vPhoneOS), ou abra o Unit e o jogo dentro do Vcloud."
+            motor?.semRoot ?: "Sem root: o Unit só vê os jogos abertos no mesmo espaço que ele. Dê o root ao Unit (vPhoneOS), ou abra o Unit e o jogo dentro do Vcloud."
             else "Nenhum jogo aberto. Abra o jogo e toque em Atualizar.")
     }
 
