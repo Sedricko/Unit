@@ -98,7 +98,7 @@ object Nucleo {
         }.distinctBy { it.pacote }.sortedBy { it.nome.lowercase() }
         jogos.clear(); jogos += lista
         if (lista.isEmpty()) throw IllegalStateException(if (motor?.root == false)
-            motor?.semRoot ?: "Sem root: o Unit só vê os jogos abertos no mesmo espaço que ele. Dê o root ao Unit (vPhoneOS), ou abra o Unit e o jogo dentro do Vcloud."
+            "Sem root: o Unit só vê os jogos abertos no mesmo espaço que ele. Dê o root ao Unit (vPhoneOS), ou abra o Unit e o jogo dentro do Vcloud.\n(${motor?.semRoot ?: "su não encontrado"})"
             else "Nenhum jogo aberto. Abra o jogo e toque em Atualizar.")
     }
 

@@ -30,7 +30,8 @@ class Motor(caminho: String) {
     var semRoot: String? = null
         private set
 
-    private val su = runCatching { abrir(ProcessBuilder("su"), "exec $caminho") }.getOrNull()
+    // o erro exato do su vai para o aviso: sem ele não dá para saber se o su não existe, recusou ou o motor falhou
+    private val su = runCatching { abrir(ProcessBuilder("su"), "exec $caminho") }.onFailure { if (semRoot == null) semRoot = "su: ${it.message}" }.getOrNull()
     /** false = sem root (motor direto, só vê o próprio espaço). */
     val root = su != null
     private val aberto = su ?: abrir(ProcessBuilder(caminho), null)
