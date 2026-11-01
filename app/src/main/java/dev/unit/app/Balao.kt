@@ -206,7 +206,7 @@ class Balao : Service() {
             when (id) {
                 "pausa" -> { pausaAuto = false; Nucleo.pausar() }
                 "expandir" -> { cheio = !cheio; mudar("painel") }
-                "minimizar" -> mudar(if (Nucleo.salvos.isEmpty()) "balao" else "mini")
+                "minimizar" -> mudar("balao")  // minimizar vira o balão de verdade (o mini painel abria no lugar)
                 else -> confirmar = true
             }
         }
