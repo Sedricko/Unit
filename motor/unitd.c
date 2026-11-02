@@ -416,7 +416,9 @@ static void ler_mapa(void) {
         int sistema = !strncmp(name, "/system/", 8) || !strncmp(name, "/apex/", 6) || !strncmp(name, "/vendor/", 8) || !strncmp(name, "/product/", 9)
                    || !strncmp(name, "/system_ext/", 12) || !strncmp(name, "/dev/", 5);
         if (name[0] == '/') { snprintf(r->lib, sizeof r->lib, "%s", nm + 1); snprintf(ult, sizeof ult, "%s", nm + 1); r->fixa = r->rw && !sistema; }
-        else if (a == ultfim && ult[0] && (!name[0] || strstr(name, ".bss"))) { snprintf(r->lib, sizeof r->lib, "%s", ult); r->fixa = r->rw && ultfixa; }
+        // só o 1º bloco anônimo colado na biblioteca é o .bss dela; os seguintes são memória comum que por acaso ficou
+        // encostada (o relatório mostrou "libil2cpp.so+1ceec3950": 7 GB depois da biblioteca, e todos quebravam ao reabrir)
+        else if (a == ultfim && ult[0] && (!name[0] || strstr(name, ".bss"))) { snprintf(r->lib, sizeof r->lib, "%s", ult); r->fixa = r->rw && ultfixa; ult[0] = 0; }
         else ult[0] = 0;
         if (name[0] == '/') ultfixa = !sistema;
         ultfim = b;
@@ -478,7 +480,8 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
             for (size_t j = lo; j < np && pt[j].v <= t && nc < CMAX; j++) {
                 int k = achar_reg(pt[j].onde);
                 uint32_t o = (uint32_t)(t - pt[j].v);
-                if (k >= 0 && rg[k].fixa) {  // chegou numa biblioteca: um caminho
+                // chegou numa biblioteca: um caminho (a menos de 256 MB do começo dela; mais longe não é parte dela)
+                if (k >= 0 && rg[k].fixa && pt[j].onde - base_lib(rg[k].lib) < 0x10000000ULL) {
                     cam_t *c = &cams[nc++]; int len = snprintf(c->txt, sizeof c->txt, "%s+%" PRIx64 ":%x", rg[k].lib, pt[j].onde - base_lib(rg[k].lib), o);
                     unsigned soma = o;
                     for (int x = i; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }

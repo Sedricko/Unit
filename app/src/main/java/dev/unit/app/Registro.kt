@@ -57,10 +57,15 @@ object Registro {
     private val rastro = ArrayDeque<String>()
     private var comandos = 0L; private var erros = 0L; private var somaMs = 0L; private var maxMs = 0L
     @Volatile var aberturas = 0  // quantas vezes o motor abriu (mais de 1 = ele caiu e voltou)
+    private var ultimaChave = ""; private var repetidas = 0
     private val REPETITIVOS = setOf("read", "vivo", "bytes", "frozen", "sleep", "info", "ptr")
     @Synchronized fun comando(cmd: String, resposta: String, ms: Long, erro: Boolean) {
         comandos++; somaMs += ms; if (ms > maxMs) maxMs = ms; if (erro) erros++
         if (erro || cmd.substringBefore(' ') !in REPETITIVOS) {
+            // o mesmo comando com a mesma resposta seguidas (ex.: 1000 "ptr … → o caminho quebrou") viram uma linha com a conta
+            val chave = cmd.substringBefore(' ') + " → " + resposta.take(120)
+            if (chave == ultimaChave && rastro.isNotEmpty()) { repetidas++; rastro.removeFirst(); rastro.addFirst("${SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(Date())} $chave ×$repetidas (o último: ${cmd.take(80)}, ${ms} ms)"); return }
+            ultimaChave = chave; repetidas = 1
             rastro.addFirst("${SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(Date())} ${cmd.take(120)} → ${resposta.take(120)} (${ms} ms)")
             while (rastro.size > 80) rastro.removeLast()
         }
