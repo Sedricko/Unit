@@ -463,9 +463,13 @@ class Balao : Service() {
     private fun Achar() {
         var campo by remember { mutableStateOf("") }
         LaunchedEffect(Unit) { while (true) { Nucleo.atualizarAchados(); delay(1000) } }  // a lista acompanha o jogo
+        // pausa no 1º número digitado (o valor da tela não muda enquanto digita); apagou tudo ou saiu sem buscar: solta
+        androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Nucleo.soltarDigitacao() } }
         ComTeclado({
             Teclado(if (Nucleo.total == null) "Buscar" else "Refinar", campo.isNotBlank() && !Nucleo.ocupado,
-                digitou = { if (it != "~" || "~" !in campo.substringAfterLast(';')) campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" }, faixa = true)
+                digitou = { if (campo.isEmpty()) Nucleo.pausarAoDigitar(); if (it != "~" || "~" !in campo.substringAfterLast(';')) campo += it },
+                apagou = { campo = campo.dropLast(1); if (campo.isEmpty()) Nucleo.soltarDigitacao() },
+                confirmou = { Nucleo.buscar(campo); campo = "" }, faixa = true)
         }) {
             CampoGrande(campo, if (Nucleo.total == null) "número na tela" else "número novo")
             Nucleo.total?.let { n ->

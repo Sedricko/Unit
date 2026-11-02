@@ -164,6 +164,18 @@ object Nucleo {
         Registro.add("busca", "${if (refinar) "Refinar" else "Buscar"} $v → ${total ?: 0} resultado(s) (${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s, jogo pausado durante a busca)")
     }
 
+    private var porDigitar = false  // quem pausou foi o 1º número digitado no Achar (sair sem buscar solta)
+    fun pausarAoDigitar() {
+        if (pausado || jogo == null) return
+        pausado = true; porDigitar = true
+        scope.launch { runCatching { cmd { it.cmd("pause") } }.onFailure { if (porDigitar) { pausado = false; porDigitar = false } } }
+    }
+    fun soltarDigitacao() {
+        if (!porDigitar || !pausado) { porDigitar = false; return }
+        porDigitar = false; pausado = false
+        scope.launch { runCatching { cmd { it.cmd("resume") } } }
+    }
+
     /** Começo da busca: o jogo para, para o valor não mudar no meio (o soltarSePausado solta no fim). */
     internal suspend fun pausarParaBuscar() {
         if (pausado || jogo == null) return
@@ -173,7 +185,7 @@ object Nucleo {
     /** Terminou uma busca: o jogo volta a rodar (pausado muito tempo, o Android mostra "não está respondendo"). */
     internal suspend fun soltarSePausado() {
         if (!pausado) return
-        runCatching { cmd { it.cmd("resume") } }.onSuccess { pausado = false; Registro.add("busca", "Busca terminou: o jogo voltou a rodar") }
+        runCatching { cmd { it.cmd("resume") } }.onSuccess { pausado = false; porDigitar = false }
     }
 
     /** Escreve o valor novo; com congelar, o motor segura ele. Fica nos salvos para o mini painel. */
