@@ -153,7 +153,8 @@ object Nucleo {
     /** Apaga resultados da busca (no motor também: o próximo refino não traz eles de volta). */
     fun apagar(addrs: List<String>) = rodar {
         var sobraram = total
-        addrs.chunked(60).forEach { parte ->  // 60 endereços cabem na linha de comando do motor sobraram = cmd { it.cmd("tirar ${parte.joinToString(",")}") }.status.substringBefore(' ').toLongOrNull() ?: sobraram }
+        // 60 endereços por vez: cabem na linha de comando do motor
+        addrs.chunked(60).forEach { parte -> sobraram = cmd { it.cmd("tirar ${parte.joinToString(",")}") }.status.substringBefore(' ').toLongOrNull() ?: sobraram }
         total = sobraram
         achados.removeAll { it.addr in addrs }
         if (escolhido?.addr in addrs) escolhido = null
