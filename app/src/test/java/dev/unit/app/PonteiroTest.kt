@@ -12,7 +12,8 @@ class PonteiroTest {
         val velha = listOf(c("Cobre", "a+1:8"), c("Ferro", "a+2:8"))
         val r = Ponteiro.juntar(velha, listOf(c("Cobre", "b+9:8"), c("Ouro", "a+3:8")))
         assertEquals(listOf("Ferro", "Cobre", "Ouro"), r.map { it.nome })
-        assertEquals("b+9:8", r.first { it.nome == "Cobre" }.caminhos[0])  // mesmo nome: o novo troca o velho
+        // mesmo nome: funde - os caminhos dos dois ficam, o já conferido primeiro
+        assertEquals(listOf("a+1:8", "b+9:8"), r.first { it.nome == "Cobre" }.caminhos)
     }
 
     @Test fun vivosFicaComAMaioriaEApagaOsMortos() {
@@ -30,6 +31,15 @@ class PonteiroTest {
     @Test fun alimentarPoeOsProvadosPrimeiroSemRepetir() {
         assertEquals(listOf("v1", "n1", "n2"), Ponteiro.alimentar(listOf("v1"), listOf("n1", "v1", "n2")))
         assertEquals(Ponteiro.RESERVA, Ponteiro.alimentar(emptyList(), (1..50).map { "n$it" }).size)
+    }
+
+    @Test fun fundirAConferirComConferido() {
+        val velho = Caminho("Cobre", "f32", listOf("v1", "v2"), fixo = true)
+        val novo = Caminho("Cobre", "f32", listOf("n1", "v1"), conferido = false)
+        val f = Ponteiro.fundir(velho, novo)
+        assertEquals(listOf("v1", "v2", "n1"), f.caminhos)  // sem repetir, os provados primeiro
+        assertTrue(f.conferido && f.fixo)
+        assertEquals(listOf("n1", "x"), Ponteiro.fundir(Caminho("Cobre", "f32", listOf("x"), conferido = false), Caminho("Cobre", "f32", listOf("n1"), conferido = false)).caminhos)
     }
 
     @Test fun fixadoSoTiraNaTerceiraFalha() {

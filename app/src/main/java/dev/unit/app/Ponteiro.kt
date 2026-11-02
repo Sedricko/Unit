@@ -58,8 +58,20 @@ object Ponteiro {
     fun lista(pacote: String) = runCatching { deJson(JSONArray(prefs.getString(pacote, "[]"))) }.getOrDefault(emptyList())
     // o arquivo (unit-ponteiros.json) acompanha sempre: limpou os mortos, usou, importou, renomeou → já sai atualizado
     private fun gravar(pacote: String, l: List<Caminho>) { prefs.edit().putString(pacote, paraJson(l).toString()).commit(); runCatching { exportar() } }
-    /** Junta sem perder nada: mesmo nome no mesmo jogo é trocado; o resto fica. */
-    fun juntar(velha: List<Caminho>, nova: List<Caminho>) = velha.filter { v -> nova.none { it.nome == v.nome } } + nova
+    /**
+     * Junta sem perder nada: mesmo nome no mesmo jogo é FUNDIDO (os caminhos dos dois ficam; os já provados primeiro).
+     * O que não fizer sentido sai sozinho na próxima abertura, pela votação da maioria.
+     */
+    fun juntar(velha: List<Caminho>, nova: List<Caminho>): List<Caminho> {
+        val fundidos = nova.map { n -> velha.firstOrNull { it.nome == n.nome }?.let { fundir(it, n) } ?: n }
+        return velha.filter { v -> nova.none { it.nome == v.nome } } + fundidos
+    }
+
+    fun fundir(v: Caminho, n: Caminho): Caminho {
+        val ordem = if (v.conferido) v.caminhos + n.caminhos else n.caminhos + v.caminhos  // o provado vem primeiro (desempata a votação)
+        return n.copy(caminhos = ordem.distinct().take(AUTO), conferido = v.conferido || n.conferido, congelar = v.congelar || n.congelar,
+            fixo = v.fixo || n.fixo, falhas = v.falhas + n.falhas)
+    }
 
     /** O número da tela bate com o da memória? (Float da tela vem arredondado.) */
     fun bate(tipo: String, memoria: String, tela: Double): Boolean {
