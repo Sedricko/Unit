@@ -187,8 +187,9 @@ object Registro {
             info!!.isFailure -> "${j.nome}: ${info.exceptionOrNull()?.message}"
             else -> "${j.nome} aberto · ${info.getOrThrow()[0]} regiões · ${info.getOrThrow().getOrNull(1)} MB legíveis"
         })
-        val lidos = Nucleo.salvos.count { s -> runCatching { Nucleo.cmd { it.cmd("read ${s.addr} ${s.tipo}") } }.isSuccess }
-        t += Teste(lidos == Nucleo.salvos.size, "Leitura ao vivo", if (Nucleo.salvos.isEmpty()) "nenhum salvo para ler" else "$lidos de ${Nucleo.salvos.size} salvos lidos agora")
+        val vivos = Nucleo.salvos.filterNot { it.perdido }; val perdidos = Nucleo.salvos.size - vivos.size
+        val lidos = vivos.count { s -> runCatching { Nucleo.cmd { it.cmd("read ${s.addr} ${s.tipo}") } }.isSuccess }
+        t += Teste(lidos == vivos.size, "Leitura ao vivo", (if (vivos.isEmpty()) "nenhum salvo para ler" else "$lidos de ${vivos.size} salvos lidos agora") + if (perdidos > 0) " · $perdidos de antes ainda sem endereço" else "")
         val noMotor = runCatching { Nucleo.cmd { it.cmd("frozen") }.status.toInt() }.getOrDefault(-1)
         val noApp = Nucleo.salvos.count { it.congelado }
         t += Teste(noMotor == noApp, "Congelados", if (noMotor < 0) "o motor não respondeu" else "$noMotor no motor · $noApp no app")
@@ -266,7 +267,7 @@ object Registro {
             parte(7, "CAMINHOS")
             val cam = j?.let { Ponteiro.lista(it.pacote) }.orEmpty()
             if (cam.isEmpty()) appendLine("nenhum guardado neste jogo")
-            cam.forEach { c -> appendLine("${c.nome} (${NOME_TIPO[c.tipo] ?: c.tipo}) · ${c.caminhos.size} na reserva" + if (c.congelar) " · volta congelado em ${c.valor}" else ""); c.caminhos.take(3).forEach { appendLine("  $it") } }
+            cam.forEach { c -> appendLine("${c.nome} (${NOME_TIPO[c.tipo] ?: c.tipo}) · ${c.caminhos.size} na reserva" + (if (!c.conferido) " · a conferir" else "") + if (c.congelar) " · volta congelado em ${c.valor}" else ""); c.caminhos.take(3).forEach { appendLine("  $it") } }
             Ponteiro.pendente?.let { appendLine("Conferindo agora: ${it.nome} · ${it.caminhos.size} caminhos") }
 
             parte(8, "AUTOTESTE")

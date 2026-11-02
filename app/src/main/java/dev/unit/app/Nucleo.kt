@@ -14,7 +14,8 @@ import kotlinx.coroutines.withContext
 
 /** Um lugar achado na memória: endereço (hex), tipo (i32/f32/i64/f64) e o valor de agora. */
 data class Achado(val addr: String, val tipo: String, val valor: String)
-data class Salvo(val addr: String, val tipo: String, val nome: String, val valor: String, val congelado: Boolean, val caminho: Boolean = false)
+/** perdido = veio guardado de uma abertura anterior e o endereço ainda não foi achado de novo (sem caminho que chegue). */
+data class Salvo(val addr: String, val tipo: String, val nome: String, val valor: String, val congelado: Boolean, val caminho: Boolean = false, val perdido: Boolean = false)
 data class Jogo(val pid: Int, val pacote: String, val nome: String)
 
 // os nomes do GameGuardian (o usuário pediu: servem para pesquisar e aprender)
@@ -70,7 +71,7 @@ object Nucleo {
     var ocupado by mutableStateOf(false)
     var jogoFechou by mutableStateOf(false)  // o motor disse "o jogo fechou": o painel pergunta se quer reabrir
 
-    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); Ponteiro.init(ctx); Registro.init(ctx); java.io.File(ctx.cacheDir, "foto.bin").delete() }
+    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); salvosGuardados = ctx.getSharedPreferences("salvos", Context.MODE_PRIVATE); Ponteiro.init(ctx); Registro.init(ctx); java.io.File(ctx.cacheDir, "foto.bin").delete() }
 
     private val abrindo = Any()
     // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
@@ -114,8 +115,9 @@ object Nucleo {
     fun escolher(j: Jogo) = rodar {
         if (pausado) runCatching { cmd { it.cmd("resume") } }  // não deixa o jogo de antes parado
         cmd { it.cmd("attach ${j.pid}") }
-        jogo = j; pausado = false; zerar(); salvos.clear()
-        Registro.add("jogo", "Ligado a ${j.nome} (pid ${j.pid})")
+        val antigos = lerSalvos(j.pacote)
+        jogo = j; pausado = false; zerar(); salvos.clear(); salvos += antigos  // os nomes voltam; o caminho (aplicar) acha o endereço
+        Registro.add("jogo", "Ligado a ${j.nome} (pid ${j.pid})" + if (antigos.isNotEmpty()) " · ${antigos.size} salvo(s) guardados de antes" else "")
         Ponteiro.aplicar()  // LABORATÓRIO: os salvos guardados com caminho aparecem sozinhos
         Registro.autotesteRapido()
     }
@@ -140,7 +142,8 @@ object Nucleo {
             val pid = cmd { it.cmd("ps") }.linhas.firstNotNullOfOrNull { l -> l.split(' ', limit = 2).takeIf { p -> p.size == 2 && p[1] == j.pacote }?.get(0)?.toIntOrNull() }
             if (pid != null) {
                 cmd { it.cmd("attach $pid") }
-                jogo = j.copy(pid = pid); jogoFechou = false; pausado = false; zerar(); salvos.clear()
+                val antigos = lerSalvos(j.pacote)
+                jogo = j.copy(pid = pid); jogoFechou = false; pausado = false; zerar(); salvos.clear(); salvos += antigos
                 Registro.add("jogo", "${j.nome} reaberto (pid $pid)")
                 aviso = "Esperando ${j.nome} carregar…"; kotlinx.coroutines.delay(5000); aviso = ""  // recém-aberto: os caminhos ainda não existem
                 Ponteiro.aplicar()
@@ -235,6 +238,7 @@ object Nucleo {
     }
 
     fun alternarCongelado(s: Salvo) = rodar {
+        if (s.perdido) throw IllegalStateException("${s.nome}: o endereço é de antes de reabrir o jogo. Ache de novo para congelar.")
         if (s.congelado) cmd { it.cmd("unfreeze ${s.addr}") } else { cmd { it.cmd("freeze ${s.addr} ${s.tipo} ${s.valor}") }; aprender(s.tipo, 2) }
         val i = salvos.indexOfFirst { it.addr == s.addr }
         if (i >= 0) salvos[i] = salvos[i].copy(congelado = !s.congelado)
@@ -244,7 +248,7 @@ object Nucleo {
     fun renomear(a: Achado, nome: String) {
         val n = nome.trim().ifEmpty { return }
         val i = salvos.indexOfFirst { it.addr == a.addr }
-        if (i >= 0 && salvos[i].caminho) Ponteiro.renomear(salvos[i].nome, n)
+        if (i >= 0) Ponteiro.renomear(salvos[i].nome, n)  // o caminho guardado (conferido ou ainda a conferir) muda de nome junto
         if (i >= 0) salvos[i] = salvos[i].copy(nome = n) else salvos += Salvo(a.addr, a.tipo, n, a.valor, false)
     }
 
@@ -256,6 +260,19 @@ object Nucleo {
         if (i >= 0) salvos[i] = salvos[i].copy(tipo = novo, valor = v, congelado = false)
         escolhido = escolhido?.takeIf { it.addr == addr }?.copy(tipo = novo, valor = v)
     }
+
+    // ---- os Salvos ficam guardados no celular, por jogo: ao reabrir, os nomes voltam (o endereço, só pelo caminho) ----
+    private var salvosGuardados: android.content.SharedPreferences? = null
+    fun guardarSalvos() {
+        val j = jogo ?: return
+        val a = org.json.JSONArray(salvos.map { s -> org.json.JSONObject().put("addr", s.addr).put("tipo", s.tipo).put("nome", s.nome).put("valor", s.valor).put("congelado", s.congelado) })
+        salvosGuardados?.edit()?.putString(j.pacote, a.toString())?.apply()
+    }
+    fun lerSalvos(pacote: String): List<Salvo> = runCatching {
+        val a = org.json.JSONArray(salvosGuardados?.getString(pacote, "[]") ?: "[]")
+        (0 until a.length()).map { i -> a.getJSONObject(i).let { o -> Salvo(o.getString("addr"), o.getString("tipo"), o.getString("nome"), o.optString("valor"), false, perdido = true) } }
+    }.getOrDefault(emptyList())
+    fun esquecerSalvo(s: Salvo) { salvos.removeAll { it.nome == s.nome && it.addr == s.addr } }
 
     fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }
 
@@ -290,7 +307,7 @@ object Nucleo {
     fun atualizarSalvos() = scope.launch {
         if (jogo == null || ocupado) return@launch
         runCatching {
-            val novos = salvos.toList().map { s -> s.copy(valor = runCatching { cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }
+            val novos = salvos.toList().filterNot { it.perdido }.map { s -> s.copy(valor = runCatching { cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }
                 .onFailure { e -> if (falhouLer.add(s.addr)) Registro.add("aviso", "Não consegui ler ${s.nome} (${s.addr}): ${e.message} · o endereço pode ter morrido") }
                 .getOrDefault(s.valor)) }
             novos.forEach { n -> val i = salvos.indexOfFirst { it.addr == n.addr }; if (i >= 0 && salvos[i].valor != n.valor) salvos[i] = salvos[i].copy(valor = n.valor) }

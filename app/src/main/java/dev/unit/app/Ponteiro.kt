@@ -27,7 +27,8 @@ import java.io.File
 import kotlin.math.abs
 
 /** Um valor achado pelo caminho: o nome, o tipo, os caminhos que ainda valem e se volta congelado. */
-data class Caminho(val nome: String, val tipo: String, val caminhos: List<String>, val congelar: Boolean = false, val valor: String = "")
+/** conferido = false: guardado sozinho ao salvar; a próxima abertura do jogo confere pela maioria. */
+data class Caminho(val nome: String, val tipo: String, val caminhos: List<String>, val congelar: Boolean = false, val valor: String = "", val conferido: Boolean = true)
 
 /**
  * LABORATÓRIO (teste): ponteiros. Achou um valor uma vez → o motor procura o caminho (biblioteca + deslocamentos) até
@@ -46,9 +47,9 @@ object Ponteiro {
     var aviso by mutableStateOf("")
 
     // ---- guardar: JSON por jogo (pacote → lista) ----
-    fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor) })
+    fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido) })
     fun deJson(a: JSONArray) = (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
-        Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor")) } }
+        Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor"), o.optBoolean("conferido", true)) } }
     fun lista(pacote: String) = runCatching { deJson(JSONArray(prefs.getString(pacote, "[]"))) }.getOrDefault(emptyList())
     // o arquivo (unit-ponteiros.json) acompanha sempre: limpou os mortos, usou, importou, renomeou → já sai atualizado
     private fun gravar(pacote: String, l: List<Caminho>) { prefs.edit().putString(pacote, paraJson(l).toString()).commit(); runCatching { exportar() } }
@@ -109,9 +110,11 @@ object Ponteiro {
     /** Jogo escolhido: cada valor guardado aparece nos Salvos pelo caminho da maioria; os caminhos mortos são apagados. */
     fun aplicar() = Nucleo.rodar {
         val j = Nucleo.jogo ?: return@rodar
-        val guardados = lista(j.pacote)
+        val todos = lista(j.pacote)
+        val guardados = todos.filter { it.conferido }
         val limpos = guardados.map { c -> c to c.caminhos.map { cam -> cam to seguir(cam, c.tipo)?.first } }
-        gravar(j.pacote, limpos.map { (c, ch) -> c.copy(caminhos = vivos(ch)) })  // a cada abertura sobram só os vivos
+        val pendentesAgora = todos.filterNot { it.conferido }.map { conferirSozinho(it) }  // os guardados sozinhos ao salvar
+        gravar(j.pacote, limpos.map { (c, ch) -> c.copy(caminhos = vivos(ch)) } + pendentesAgora)  // a cada abertura sobram só os vivos
         for ((c, ch) in limpos) {
             val vivo = vivos(ch).toSet(); val mortos = ch.filter { it.first !in vivo }
             val votos = ch.mapNotNull { it.second }.groupingBy { it }.eachCount()
@@ -161,6 +164,44 @@ object Ponteiro {
 
     /** Detalhe do registro: até 30 caminhos com o sinal (+ entrou / – saiu); o resto vira "… e mais N". */
     fun lista5(l: List<String>, sinal: String) = l.take(30).map { "$sinal $it" } + if (l.size > 30) listOf("… e mais ${l.size - 30}") else emptyList()
+
+    // ---- automático: salvou um valor → procura os caminhos sozinho; na próxima abertura confere pela maioria ----
+    private val autoFeitos = mutableSetOf<String>()  // endereços já procurados nesta sessão
+    const val AUTO = 300  // caminhos guardados para a conferência (a maioria escolhe; depois sobram até RESERVA)
+
+    fun autoAchar(s: Salvo) {
+        val j = Nucleo.jogo ?: return
+        if (s.caminho || s.perdido || !autoFeitos.add(s.addr) || lista(j.pacote).any { it.nome == s.nome }) return
+        Nucleo.semAviso {
+            val t0 = System.currentTimeMillis()
+            val c = Nucleo.cmd { it.cmd("ptrscan ${s.addr} 8") }.linhas.filter { '+' in it }.take(AUTO)
+            if (c.isEmpty()) { Registro.add("caminho", "${s.nome}: nenhum caminho achado sozinho (vai precisar achar de novo ao reabrir)"); return@semAviso }
+            val nome = Nucleo.salvos.firstOrNull { it.addr == s.addr }?.nome ?: s.nome  // pode ter sido renomeado enquanto procurava
+            gravar(j.pacote, juntar(lista(j.pacote), listOf(Caminho(nome, s.tipo, c, valor = s.valor, conferido = false))))
+            Registro.add("caminho", "$nome: ${c.size} caminhos guardados sozinhos (${(System.currentTimeMillis() - t0) / 1000} s) · confiro na próxima abertura", lista5(c, "+ achado"))
+        }
+    }
+
+    /** Confere sem número: a maioria (3+) chega no mesmo endereço com um número que faz sentido → vira conferido e volta nos Salvos. */
+    private suspend fun conferirSozinho(c: Caminho): Caminho {
+        val ch = c.caminhos.map { cam -> cam to seguir(cam, c.tipo) }
+        val ok = ch.filter { it.second != null }
+        val votos = ok.groupingBy { it.second!!.first }.eachCount()
+        val melhor = votos.maxByOrNull { it.value }
+        val valor = melhor?.let { m -> ok.first { it.second!!.first == m.key }.second!!.second }
+        val faz = valor?.toDoubleOrNull()?.let { it.isFinite() && it >= 0 } == true
+        if (melhor == null || melhor.value < 3 || !faz) {
+            Registro.add("decisao", "${c.nome}: não deu para conferir sozinho (${melhor?.value ?: 0} caminho(s) concordam, de ${c.caminhos.size}); fica guardado para a próxima abertura")
+            return c.copy(caminhos = ok.map { it.first }.ifEmpty { c.caminhos })  // tira só os quebrados
+        }
+        val bons = ok.filter { it.second!!.first == melhor.key }.map { it.first }
+        val s = Salvo(melhor.key, c.tipo, c.nome, valor!!, false, caminho = true)
+        val i = Nucleo.salvos.indexOfFirst { it.nome == c.nome || it.addr == melhor.key }
+        if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+        Registro.add("decisao", "${c.nome}: conferi sozinho · ${melhor.value} de ${c.caminhos.size} caminhos chegam em ${melhor.key} (valor $valor)",
+            votos.entries.sortedByDescending { it.value }.take(5).map { "${it.key}: ${it.value} voto(s)" })
+        return c.copy(caminhos = bons.take(RESERVA), conferido = true)
+    }
 
     fun renomear(antigo: String, novo: String) {
         val j = Nucleo.jogo ?: return
@@ -253,7 +294,7 @@ object Ponteiro {
             Linha {
                 Column(Modifier.weight(1f)) {
                     Text(c.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                    Text("${NOME_TIPO[c.tipo] ?: c.tipo} · ${c.caminhos.size} caminho(s)" + if (c.congelar) " · volta congelado" else "", color = Cor.apagado, fontSize = 12.sp)
+                    Text("${NOME_TIPO[c.tipo] ?: c.tipo} · ${c.caminhos.size} caminho(s)" + (if (!c.conferido) " · a conferir na próxima abertura" else "") + if (c.congelar) " · volta congelado" else "", color = Cor.apagado, fontSize = 12.sp)
                 }
                 Box(Modifier.padding(start = 8.dp).toque { esquecer(c.nome); aviso = "${c.nome} esquecido." }) { Text("Esquecer", color = Cor.ruim, fontSize = 13.sp) }
             }
