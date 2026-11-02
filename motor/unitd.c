@@ -803,6 +803,11 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
     ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
     enum { BLOCO = 1 << 20 }; uint64_t *buf = malloc(BLOCO); if (!buf) { puts("err sem memória"); return; }
     uint64_t klass = 0;
+    // a ficha não muda de lugar enquanto o jogo está aberto: a da última procura, se ainda for a mesma classe, vale (o app
+    // procura de novo aos 20 s e 60 s; pelo texto, a 1ª procura lê a memória toda e leva dezenas de segundos)
+    static pid_t cpid; static uint64_t ckl; static char ccls[64], cesp[64], ccomo[24];
+    int da_cache = cpid == target && !strcmp(ccls, cls) && !strcmp(cesp, esp) && nome_classe(ckl, nome, e) && !strcmp(nome, cls) && !strcmp(e, esp);
+    if (da_cache) klass = ckl;
     for (int r = 0; r < nrg && !klass; r++) {  // 1) a ficha: alguma variável da biblioteca do jogo aponta para ela
         if (!rg[r].fixa) continue;
         for (uint64_t a = rg[r].ini; a < rg[r].fim && !klass; a += BLOCO) {
@@ -815,7 +820,7 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
             }
         }
     }
-    const char *como = "variável da biblioteca";
+    const char *como = da_cache ? ccomo : "pela-variavel";
     if (!klass) {  // 1b) pelo texto do nome, como os scripts do GameGuardian: nem toda classe tem variável na biblioteca
         // (o Orecraft: o "Item" não tinha). Acha "\0NOME\0" (o global-metadata) e quem aponta para ele: a ficha começa 0x10 antes
         char pad[80]; size_t L = strlen(cls); uint64_t S[64]; int ns = 0;
@@ -847,9 +852,10 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
                 }
             }
         }
-        como = "nome no metadata";
+        if (klass) como = "pelo-texto";
     }
     if (!klass) { free(buf); printf("err a classe %s não foi achada (o jogo ainda não usou ela?)\n", cls); return; }
+    if (klass != ckl || cpid != target) { cpid = target; ckl = klass; snprintf(ccls, sizeof ccls, "%s", cls); snprintf(cesp, sizeof cesp, "%s", esp); snprintf(ccomo, sizeof ccomo, "%s", como); }
     int achados = 0, objetos = 0, temnum = strstr(ass, "n") != NULL, melhor = 0;
     enum { MAXO = 4096 }; uint64_t *cand = malloc(MAXO * 8); int *nota_o = malloc(MAXO * sizeof *nota_o), nc = 0;
     if (!cand || !nota_o) { free(buf); free(cand); free(nota_o); puts("err sem memória"); return; }
@@ -886,7 +892,7 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
     // com números: só os de maior pontuação (se mais de um empatar, vão todos e o app decide)
     for (int i = 0; i < nc; i++) { printf("%" PRIx64 "\n", cand[i] + campo_off); achados++; }
     free(cand); free(nota_o);
-    printf("ok %d %d %s\n", achados, objetos, !strcmp(como, "nome no metadata") ? "pelo-texto" : "pela-variavel");
+    printf("ok %d %d %s\n", achados, objetos, como);
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor
 static void cmd_ptr(const char *cam) {

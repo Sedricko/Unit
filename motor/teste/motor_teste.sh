@@ -208,7 +208,12 @@ pelonome() {  # nome cenário semente-salvar semente-reabrir campo assinatura-es
     testa "$nome: sem a assinatura vêm vários objetos (a assinatura é que separa)" "grep -qE '^ok ([3-9]|[1-9][0-9]+) ' <<<\"\$r0\""
     testa "$nome: acha a ficha da classe $como" "grep -q '^ok 1 [0-9]* $como' <<<\"\$r\""
     testa "$nome: classe que não existe dá erro claro" "grep -q '^err a classe NaoExiste não foi achada' <<<\"\$r0\""
-    testa "$nome: rápido (${ms} ms, até 20000)" "[ $ms -le 20000 ]"
+    testa "$nome: até 45 s (${ms} ms; o celular é mais lento)" "[ $ms -le 45000 ]"
+    # 2ª procura na mesma abertura (as tentativas de 20 s e 60 s do app): a ficha já é conhecida, não lê a memória toda de novo
+    local t1 ms2; t1=$(date +%s%N)
+    printf 'attach %s\npelonome ItemRecurso Jogo %s %s\npelonome ItemRecurso Jogo %s %s\n' "$gp" "$campo" "$ass" "$campo" "$ass" | "$out/unitd" > /dev/null
+    ms2=$(( ($(date +%s%N) - t1) / 1000000 ))
+    [ "$como" = pelo-texto ] && testa "$nome: a 2ª procura na mesma abertura lembra a ficha (2 procuras em ${ms2} ms; a 1ª sozinha levou ${ms} ms)" "[ $ms2 -lt $(( ms * 2 - ms / 4 )) ]"
     fecha
 }
 pelonome "nome A" a 1 2 30 '10=436f627265' pela-variavel
