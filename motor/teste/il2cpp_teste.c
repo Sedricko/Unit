@@ -11,10 +11,10 @@ static void *novo(size_t n) {
     if (!arena) arena = mmap(NULL, 1 << 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     void *p = arena + usado; usado += (n + 15) & ~(size_t)15; return p;
 }
-// classe +0xb8 → campos estáticos +0x10 → gerenciador +0x28 → lista +0x10 → itens +0x38 (item 3) → item +0x30 = cobre
+// classe +0xb8 → campos estáticos +0x10 → gerenciador +0xd38 (objeto grande, como os do Orecraft) → lista +0x10 → itens +0x38 (item 3) → item +0x30 = cobre
 float *montar(float valor, void **nos) {
-    char *classe = novo(0x200), *estaticos = novo(0x40), *ger = novo(0x80), *lista = novo(0x40), *itens = novo(0x80), *item = novo(0x60);
-    memcpy(classe + 0xb8, &estaticos, 8); memcpy(estaticos + 0x10, &ger, 8); memcpy(ger + 0x28, &lista, 8);
+    char *classe = novo(0x200), *estaticos = novo(0x40), *ger = novo(0x1000), *lista = novo(0x40), *itens = novo(0x80), *item = novo(0x60);
+    memcpy(classe + 0xb8, &estaticos, 8); memcpy(estaticos + 0x10, &ger, 8); memcpy(ger + 0xd38, &lista, 8);
     memcpy(lista + 0x10, &itens, 8); memcpy(itens + 0x38, &item, 8);
     float *cobre = (float *)(item + 0x30); *cobre = valor;
     Recursos_TypeInfo = classe;

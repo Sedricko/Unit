@@ -448,11 +448,10 @@ static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)
 // CMAX: caminhos que saem; CPOOL: candidatos juntados antes de escolher (uma biblioteca só não enche tudo - o relatório
 // mostrou 1000 caminhos do Firebase e nenhum do jogo); POR_LIB: no máximo isso de cada biblioteca na saída.
 // DISTFIXA 512 KB: jogos Unity têm dezenas de milhares de classes, e o salto entra na tabela delas (índice × 8)
-enum { NMAX = 2000000, CMAX = 3000, CPOOL = 20000, POR_LIB = 1500, DIST = 0x1000, DISTFIXA = 0x80000, FANIN = 8, POR_OBJ = 64, HCAP = 1 << 23, PENA = 0x20 };
+enum { NMAX = 2000000, CMAX = 3000, CPOOL = 20000, POR_LIB = 1500, DIST = 0x1000, DISTFIXA = 0x80000, POR_OBJ = 64, HCAP = 1 << 23, PENA = 0x20 };
 // PENA: custo de cada nível a mais (um pulo a mais é uma chance a mais de quebrar)
-// FANIN: de cada passo, segue só os 8 objetos mais perto (os campos de verdade ficam no começo do objeto), com até POR_OBJ
-// de quem aponta para cada um. Sem isso, num
-// heap grande o 3º nível já enchia os 2 milhões de passos e os caminhos do Unity (5-7 níveis) nunca eram vistos
+// POR_OBJ: de quem aponta para um mesmo objeto, segue no máximo 64. Não há limite de objetos vizinhos: a procura pelo
+// menor custo já vê os mais perto primeiro, e no Orecraft o limite de 8 cortava os campos de objetos grandes (+d38) e achava 0
 // shortcut: até 100 milhões de ponteiros (1/4 da memória livre), 2 milhões de passos, 20 mil candidatos e 3000 caminhos na saída (memória do celular); jogos maiores podem perder caminhos
 // nota de um caminho (menor = mais confiável): cada pulo a mais é uma chance de quebrar; começar no código do jogo
 // (il2cpp/unity/main) é melhor que noutra biblioteca; pulos pequenos são campos de verdade, grandes costumam ser acaso
@@ -558,11 +557,14 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
         while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
         size_t ub = lo; hi = np;  // 1º ponteiro com valor > t: anda para trás, do mais perto para o mais longe
         while (ub < hi) { size_t m = (ub + hi) / 2; if (pt[m].v <= t) ub = m + 1; else hi = m; }
-        int objs = 0, filhos = 0; uint64_t ultv = ~0ULL;  // objetos vizinhos (valores diferentes) e quem aponta para cada um
-        for (size_t j = ub; j-- > lo && nc < CPOOL && nvisto < HCAP / 2;) {
-            if (pt[j].v != ultv) { ultv = pt[j].v; filhos = 0; if (++objs > FANIN) break; }
+        int filhos = 0; uint64_t ultv = ~0ULL;  // quantos apontam para o mesmo objeto
+        for (size_t j = ub; j-- > lo && nc < CPOOL;) {
+            if (pt[j].v != ultv) { ultv = pt[j].v; filhos = 0; }
             if (filhos >= POR_OBJ) continue;
             uint32_t o = (uint32_t)(t - pt[j].v), c = no[i].custo + o + PENA;
+            // tabela de vistos cheia (e os passos também): continua só ligando às bibliotecas. Antes a procura parava aqui, e
+            // o passo de um campo longe (+d38) nunca era visto
+            if (nvisto >= HCAP / 2) { ligar(pt, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc); filhos++; continue; }
             uint64_t h = (pt[j].onde >> 3) * 0x9E3779B97F4A7C15ULL >> (64 - 23);
             while (visto[h] && visto[h] != pt[j].onde) h = (h + 1) & (HCAP - 1);
             if (visto[h] && vo[h] <= c) continue;  // já chegou aqui mais barato

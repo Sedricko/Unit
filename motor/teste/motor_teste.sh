@@ -103,9 +103,9 @@ confere "android: recusa texto que iria para o sistema" "err uso: android SEGUND
 confere "fechar: depois de fechar, o motor avisa" "err o jogo fechou"
 confere "ponteiro: o que não é endereço (o cabeçalho do programa) quebra o caminho" "err o caminho quebrou (não é endereço)"
 confere "ponteiro: biblioteca que não existe, recusa" "err biblioteca naoexiste não está aberta"
-# jogo grande, como o Orecraft: libil2cpp, 32 milhões de ponteiros (passa do limite do motor), objetos do caminho colados
+# jogo grande, como o Orecraft: libil2cpp, 16 milhões de ponteiros em 2 GB (o dobro da densidade do Orecraft) (passa do limite do motor), objetos do caminho colados
 # (atalhos de deslocamento grande que quebram ao reabrir) e outros objetos apontando para cada passo. O caminho de verdade
-# tem 6 níveis: libil2cpp → classe +b8 → estáticos +10 → gerenciador +28 → lista +10 → itens +38 → item +30 = cobre
+# tem 6 níveis: libil2cpp → classe +b8 → estáticos +10 → gerenciador +d38 → lista +10 → itens +38 → item +30 = cobre
 cc -O2 -shared -fPIC -o "$out/libil2cpp.so" motor/teste/il2cpp_teste.c
 cc -O0 -o "$out/alvo_grande" motor/teste/alvo_grande.c -L"$out" -lil2cpp -Wl,-rpath,"$out"
 "$out/alvo_grande" > "$out/info_g" & gpid=$!
@@ -116,14 +116,14 @@ t0=$(date +%s)
 got6=$(printf 'attach %s\nptrscan %s 8\n' "$gp" "$gcobre" | UNITD_MEM_MB=2500 "$out/unitd")
 seg=$(( $(date +%s) - t0 ))
 tail -1 <<<"$got6"; echo "jogo grande: ${seg} s"
-camg=$(grep -m1 '^libil2cpp.so+[0-9a-f]*:b8:10:28:10:38:30$' <<<"$got6" || true)
+camg=$(grep -m1 '^libil2cpp.so+[0-9a-f]*:b8:10:d38:10:38:30$' <<<"$got6" || true)
 got7=$(printf 'attach %s\nptr %s\n' "$gp" "$camg" | "$out/unitd")
 got="$got6
 $got7"
-confere "jogo grande: com a memória do celular, cabem os 32 milhões de ponteiros" "ponteiros=3"
-confere "jogo grande: acha o caminho de verdade de 6 níveis do Unity" ":b8:10:28:10:38:30"
+confere "jogo grande: com a memória do celular, cabem os 16 milhões de ponteiros" "ponteiros=16"
+confere "jogo grande: acha o caminho de verdade de 6 níveis do Unity" ":b8:10:d38:10:38:30"
 got="$(grep -m1 '^libil2cpp' <<<"$got6")"
-confere "jogo grande: o caminho de verdade vem primeiro (na frente dos atalhos)" ":b8:10:28:10:38:30"
+confere "jogo grande: o caminho de verdade vem primeiro (na frente dos atalhos)" ":b8:10:d38:10:38:30"
 got="$got6
 $got7"
 confere "jogo grande: seguir o caminho chega no cobre" "ok $gcobre"
