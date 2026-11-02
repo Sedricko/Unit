@@ -56,6 +56,7 @@ object Registro {
 
     /** O que o Android anotou (logcat, pelo motor com root) sobre o jogo e o Unit: ANR, falhas, morto por memória. */
     suspend fun lerAndroid() {
+        if (Nucleo.jogo == null) return  // o motor só lê com um jogo ligado (sem jogo virava "erro" à toa no registro)
         val pac = Nucleo.jogo?.pacote ?: "dev.unit.app"
         val agora = System.currentTimeMillis() / 1000.0
         val l = runCatching { Nucleo.cmd { it.cmd("android ${"%.3f".format(Locale.ROOT, androidDesde)} $pac") }.linhas }.getOrNull() ?: return
@@ -190,7 +191,7 @@ object Registro {
         val vivos = Nucleo.salvos.filterNot { it.perdido }; val perdidos = Nucleo.salvos.size - vivos.size
         val lidos = vivos.count { s -> runCatching { Nucleo.cmd { it.cmd("read ${s.addr} ${s.tipo}") } }.isSuccess }
         t += Teste(lidos == vivos.size, "Leitura ao vivo", (if (vivos.isEmpty()) "nenhum salvo para ler" else "$lidos de ${vivos.size} salvos lidos agora") + if (perdidos > 0) " · $perdidos de antes ainda sem endereço" else "")
-        val noMotor = runCatching { Nucleo.cmd { it.cmd("frozen") }.status.toInt() }.getOrDefault(-1)
+        val noMotor = if (Nucleo.jogo == null) 0 else runCatching { Nucleo.cmd { it.cmd("frozen") }.status.toInt() }.getOrDefault(-1)
         val noApp = Nucleo.salvos.count { it.congelado }
         t += Teste(noMotor == noApp, "Congelados", if (noMotor < 0) "o motor não respondeu" else "$noMotor no motor · $noApp no app")
         val cam = j?.let { Ponteiro.lista(it.pacote) }.orEmpty()
@@ -218,7 +219,7 @@ object Registro {
         val se = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { selinux() }  // roda um programa: fora da tela
         val j = Nucleo.jogo
         val jogoInfo = if (j != null) runCatching { Nucleo.cmd { it.cmd("info") }.status }.getOrElse { "erro: ${it.message}" } else ""
-        val congeladosMotor = runCatching { Nucleo.cmd { it.cmd("frozen") }.linhas }.getOrDefault(emptyList())
+        val congeladosMotor = if (j == null) emptyList() else runCatching { Nucleo.cmd { it.cmd("frozen") }.linhas }.getOrDefault(emptyList())
         return buildString {
             fun parte(n: Int, t: String) { appendLine(); appendLine("== $n. $t ==") }
             appendLine("RELATÓRIO DO UNIT · ${SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.ROOT).format(Date())}")
