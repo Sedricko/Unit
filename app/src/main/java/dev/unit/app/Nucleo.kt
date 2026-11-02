@@ -150,6 +150,16 @@ object Nucleo {
         throw IllegalStateException("${j.nome} não abriu em 30 s. Abra ele e escolha de novo em Jogos.")
     }
 
+    /** Apaga resultados da busca (no motor também: o próximo refino não traz eles de volta). */
+    fun apagar(addrs: List<String>) = rodar {
+        var sobraram = total
+        addrs.chunked(60).forEach { parte ->  // 60 endereços cabem na linha de comando do motor sobraram = cmd { it.cmd("tirar ${parte.joinToString(",")}") }.status.substringBefore(' ').toLongOrNull() ?: sobraram }
+        total = sobraram
+        achados.removeAll { it.addr in addrs }
+        if (escolhido?.addr in addrs) escolhido = null
+        Registro.add("busca", "Apaguei ${addrs.size} resultado(s) da busca · sobraram ${total ?: 0}")
+    }
+
     fun zerar() { total = null; achados.clear(); escolhido = null }
 
     /** A 1ª vez busca; depois refina com o número novo da tela. Com 1 sobrando, ele já fica escolhido. */

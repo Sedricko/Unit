@@ -20,6 +20,8 @@ search 123456789;87.5
 list 5
 search 87~88 f32
 list 50
+tirar $avida
+list 50
 search 123456789
 write $aouro i32 987654321
 refine 987654321
@@ -86,6 +88,7 @@ confere "aob acha o xp pelo desenho" "$axp"
 confere "aob: o endereço vem antes do ok (o app para de ler no ok)" "$axp ok 1"
 confere "bytes recusa mais de 4096" "err quantidade de 1 a 4096"
 confere "faixa Float 87~88 acha a vida 87.5" "$avida f32"
+confere "tirar: a vida sai dos resultados" "ok 0 1"
 confere "grupo 123456789;87.5 acha o ouro" "$aouro i32 123456789"
 confere "grupo 123456789;87.5 acha a vida junto" "$avida f32 87.5"
 confere "mudança: sem foto, recusa" "err tire a foto primeiro"

@@ -17,6 +17,7 @@
 //   ptr CAMINHO                segue o caminho de agora                                     -> ok ENDEREÇO
 //   vivo / fechar              o jogo ainda está aberto? / fecha o jogo
 //   android DESDE PACOTE       o que o Android anotou (logcat) sobre o jogo, o Unit, ANR e falhas -> ok N
+//   tirar A1,A2,...            tira endereços dos resultados (apagados pela pessoa)        -> ok SOBRARAM TIRADOS
 //   info                       regiões, MB legíveis, memória do motor e do jogo (KB)       -> ok N MB KBMOTOR KBJOGO
 //   sleep MS                   espera (testes e scripts: dá tempo ao congelador)
 //   quit
@@ -544,6 +545,22 @@ static void cmd_android(const char *desde, const char *pac) {
     printf("ok %d\n", n);
 }
 
+// tirar A1,A2,...: tira esses endereços dos resultados (a pessoa apagou da lista; o próximo refino não traz de volta)
+static void cmd_tirar(const char *lista) {
+    uint64_t fora[128]; int nf = 0; char tmp[1100]; snprintf(tmp, sizeof tmp, "%s", lista); char *sv;
+    for (char *x = strtok_r(tmp, ",", &sv); x && nf < 128; x = strtok_r(NULL, ",", &sv)) fora[nf++] = strtoull(x, NULL, 16);
+    if (!nf) { puts("err uso: tirar ENDEREÇO,ENDEREÇO,..."); return; }
+    qsort(fora, nf, 8, cmpu64);
+    size_t k = 0, antes = nres;
+    for (size_t i = 0; i < nres; i++) {
+        if (bsearch(&res[i].addr, fora, nf, 8, cmpu64)) continue;
+        if (difat && vb && vp) { vb[k] = vb[i]; vp[k] = vp[i]; }
+        res[k++] = res[i];
+    }
+    nres = k;
+    printf("ok %zu %zu\n", nres, antes - nres);  // sobraram, tirados
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     pthread_t th; pthread_create(&th, NULL, congelador, NULL);
@@ -575,6 +592,7 @@ int main(void) {
         else if (!strcmp(c, "ptrscan")) cmd_ptrscan(a1, a2);
         else if (!strcmp(c, "ptr")) cmd_ptr(a1);
         else if (!strcmp(c, "vivo")) puts("ok");
+        else if (!strcmp(c, "tirar")) cmd_tirar(a1);
         else if (!strcmp(c, "android")) cmd_android(a1, a2);
         else if (!strcmp(c, "info")) {  // para o autoteste: quantas regiões e quantos MB do jogo o Unit consegue ler
             uint64_t *ini, *fim; int nr = regioes(&ini, &fim); uint64_t tot = 0;

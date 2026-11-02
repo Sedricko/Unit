@@ -492,6 +492,8 @@ class Balao : Service() {
     @Composable
     private fun Achar() {
         var campo by remember { mutableStateOf("") }
+        var selecionando by remember { mutableStateOf(false) }
+        val marcados = remember { androidx.compose.runtime.mutableStateListOf<String>() }
         LaunchedEffect(Unit) { while (true) { Nucleo.atualizarAchados(); delay(1000) } }  // a lista acompanha o jogo
         // pausa no 1º número digitado (o valor da tela não muda enquanto digita); apagou tudo ou saiu sem buscar: solta
         androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Nucleo.soltarDigitacao() } }
@@ -510,21 +512,37 @@ class Balao : Service() {
             }
             // os que já estão nos Salvos não voltam na lista da busca (ficam na tela de Salvos)
             val novos = Nucleo.achados.filter { a -> Nucleo.salvos.none { it.addr == a.addr } }
+            // selecionar: marca resultados para apagar da busca (o próximo refino não traz de volta), salvar ou congelar
+            if (novos.size >= 2) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (selecionando) "${marcados.size} marcado(s)" else "", color = Cor.texto, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                if (selecionando) Text("Todos", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.padding(end = 14.dp).toque { marcados.clear(); marcados += novos.take(20).map { it.addr } })
+                Text(if (selecionando) "Pronto" else "Selecionar", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.toque { selecionando = !selecionando; marcados.clear() })
+            }
             if (novos.isNotEmpty() && Nucleo.achados.size <= 50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 novos.take(20).forEach { a ->
-                    Linha(Modifier.toque { Nucleo.escolhido = a; tela = "editar" }) {
+                    val marcado = a.addr in marcados
+                    Linha(Modifier.toque { if (selecionando) { if (marcado) marcados.remove(a.addr) else marcados += a.addr } else { Nucleo.escolhido = a; tela = "editar" } }) {
+                        if (selecionando) Box(Modifier.padding(end = 10.dp).size(20.dp).then(if (marcado) Modifier.background(Cor.a2, RoundedCornerShape(5.dp)) else Modifier.border(1.dp, Cor.linha, RoundedCornerShape(5.dp))))
                         Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto, maxLines = 1); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1) }
                         Column(horizontalAlignment = Alignment.End) {
                             Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp, maxLines = 1)
                             if (a.tipo == Nucleo.aprendido) Text("mais usado", color = Cor.ok, fontSize = 11.sp, maxLines = 1)  // curto: a linha é estreita deitado
                         }
                         val ja = Nucleo.salvos.any { it.addr == a.addr }
-                        Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(if (ja) Ic.SALVO else Ic.SALVAR, 20.dp, if (ja) Cor.a2 else Cor.icone) }
-                        Box(Modifier.padding(start = 10.dp).toque { Nucleo.editar(a.addr, a.tipo, a.valor, true) }) { Icone(Ic.CONGELAR, 20.dp) }  // congela no valor de agora
+                        if (!selecionando) {
+                            Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(if (ja) Ic.SALVO else Ic.SALVAR, 20.dp, if (ja) Cor.a2 else Cor.icone) }
+                            Box(Modifier.padding(start = 10.dp).toque { Nucleo.editar(a.addr, a.tipo, a.valor, true) }) { Icone(Ic.CONGELAR, 20.dp) }  // congela no valor de agora
+                        }
                     }
                 }
             }
-            if (novos.size in 2..20) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (selecionando && marcados.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val escolhidos = novos.filter { it.addr in marcados }
+                Botao("Apagar (${marcados.size})", false, Modifier.weight(1f), !Nucleo.ocupado) { Nucleo.apagar(marcados.toList()); marcados.clear() }
+                Botao("Salvar", false, Modifier.weight(1f)) { escolhidos.forEach(Nucleo::salvar); marcados.clear() }
+                Botao("Congelar", false, Modifier.weight(1f)) { escolhidos.forEach { Nucleo.editar(it.addr, it.tipo, it.valor, true) }; marcados.clear() }
+            }
+            if (!selecionando && novos.size in 2..20) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Botao("Salvar todos (${novos.size})", false, Modifier.weight(1f)) { novos.forEach(Nucleo::salvar) }
                 Botao("Congelar todos", false, Modifier.weight(1f)) { novos.forEach { Nucleo.editar(it.addr, it.tipo, it.valor, true) } }
             }
