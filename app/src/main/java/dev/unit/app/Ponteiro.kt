@@ -95,6 +95,29 @@ object Ponteiro {
         addr to Nucleo.cmd { it.cmd("read $addr $tipo") }.status
     }.getOrNull()
 
+    /**
+     * Confirma um valor guardado (a conferir ou já conferido) pelo número que está na tela agora: ficam só os caminhos que
+     * chegam nele - certeza, sem votação. Nenhum chegou: não apaga nada e avisa.
+     */
+    fun confirmarComNumero(nome: String, tela: Double) = Nucleo.rodar {
+        val j = Nucleo.jogo ?: return@rodar
+        val c = lista(j.pacote).firstOrNull { it.nome == nome } ?: return@rodar
+        val chegam = c.caminhos.mapNotNull { cam -> seguir(cam, c.tipo)?.let { (a, v) -> Triple(cam, a, v) } }.filter { bate(c.tipo, it.third, tela) }
+        if (chegam.isEmpty()) {
+            Registro.add("caminho", "$nome: nenhum dos ${c.caminhos.size} caminhos chega em ${EmVolta.texto(tela)} agora; não apaguei nada")
+            throw IllegalStateException("Nenhum caminho chega em ${EmVolta.texto(tela)}. Confira o número (ou espere o jogo carregar) e tente de novo.")
+        }
+        val bons = chegam.map { it.first }
+        gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(caminhos = bons.take(RESERVA), conferido = true, valor = it.valor.ifEmpty { chegam[0].third }) else it })
+        val (_, addr, v) = chegam[0]
+        val s = Salvo(addr, c.tipo, nome, v, false, caminho = true)
+        val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
+        if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+        Registro.add("caminho", "$nome: confirmado pelo número da tela (${EmVolta.texto(tela)}) · ${bons.size} de ${c.caminhos.size} caminhos chegam nele",
+            lista5(c.caminhos - bons.toSet(), "– saiu"))
+        recarga++
+    }
+
     fun conferir(tela: Double) = Nucleo.rodar {
         val p = pendente ?: return@rodar
         pendente = p.copy(caminhos = p.caminhos.filter { c -> seguir(c, p.tipo)?.let { bate(p.tipo, it.second, tela) } == true })
@@ -355,6 +378,17 @@ object Ponteiro {
         @Suppress("UNUSED_EXPRESSION") recarga  // relê a lista quando fixa/desfixa
         val guardados = j?.let { lista(it.pacote) }.orEmpty()
         if (guardados.isEmpty()) Text("Nenhum ainda. No Editar de um valor, toque em Achar o caminho.", color = Cor.apagado, fontSize = 12.sp)
+        var confirmando by remember { mutableStateOf<String?>(null) }
+        var numero by remember { mutableStateOf("") }
+        confirmando?.let { nome ->
+            Rotulo("Confirmar $nome")
+            Text("Digite o número de $nome que está na tela do jogo agora. Ficam só os caminhos que chegam nele.", color = Cor.apagado, fontSize = 12.sp)
+            CampoGrande(numero, "número na tela")
+            Teclado("Confirmar", numero.isNotBlank() && !Nucleo.ocupado, digitou = { numero += it }, apagou = { numero = numero.dropLast(1) },
+                confirmou = { numero.replace(',', '.').toDoubleOrNull()?.let { confirmarComNumero(nome, it) }; numero = ""; confirmando = null })
+            Botao("Cancelar", false, Modifier.fillMaxWidth()) { confirmando = null; numero = "" }
+            return@Column
+        }
         guardados.forEach { c ->
             val aberto = c.nome in abertos
             // cascata: fechada é uma linha só; tocar abre os caminhos do grupo (o 1º é o mais confiável)
@@ -363,6 +397,7 @@ object Ponteiro {
                     Text((if (aberto) "▾ " else "▸ ") + c.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
                     Text("${NOME_TIPO[c.tipo] ?: c.tipo} · ${c.caminhos.size} caminho(s)" + (if (!c.conferido) " · a conferir na próxima abertura" else "") + if (c.congelar) " · volta congelado" else "", color = Cor.apagado, fontSize = 12.sp)
                 }
+                if (!c.conferido) Box(Modifier.padding(start = 8.dp).toque { confirmando = c.nome }) { Text("Confirmar", color = Cor.a2, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                 if (c.conferido) Box(Modifier.padding(start = 8.dp).toque { fixar(c.nome, !c.fixo); recarga++ }) { Text(if (c.fixo) "📌 Fixado" else "Fixar", color = Cor.a2, fontSize = 13.sp) }
                 Box(Modifier.padding(start = 10.dp).toque { esquecer(c.nome); aviso = "${c.nome} esquecido." }) { Text("Esquecer", color = Cor.ruim, fontSize = 13.sp) }
             }

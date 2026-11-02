@@ -411,6 +411,12 @@ class Balao : Service() {
         if (confirmar) ConfirmarFechar({ confirmar = false }) { stopSelf() }
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
+        // valor a conferir depois de reabrir: convida a digitar o número da tela (certeza; sem isso, a votação continua sozinha)
+        val aConferir = Nucleo.jogo?.let { j -> Ponteiro.lista(j.pacote).filter { !it.conferido }.map { it.nome } }.orEmpty().filter { n -> Nucleo.salvos.none { it.nome == n && it.caminho } }
+        if (!Nucleo.jogoFechou && aConferir.isNotEmpty() && tela != "caminho") Linha(Modifier.toque { tela = "caminho" }) {
+            Text("${aConferir.joinToString()}: digite o número que está na tela para confirmar", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("›", color = Cor.a2, fontSize = 18.sp)
+        }
         if (Nucleo.jogoFechou) Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${Nucleo.jogo?.nome ?: "O jogo"} fechou. Quer abrir de novo?", color = Cor.texto, fontWeight = FontWeight.SemiBold)
