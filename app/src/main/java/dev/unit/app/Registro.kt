@@ -45,12 +45,51 @@ object Registro {
     val linhas = mutableStateListOf<Evento>()  // a mais nova primeiro
     private var arquivo: File? = null
     private var pasta: File? = null
+    private var dados: File? = null
     private var versao = ""
+    private var codigo = 0L
+    private var app: Context? = null
+
+    /** O estado do painel (o Balao escreve): modo, tela cheia, tela aberta, pausa automática. */
+    @Volatile var painel = ""
+
+    // ---- o motor: cada comando com resposta e tempo (os repetitivos, como a leitura ao vivo, só entram na conta) ----
+    private val rastro = ArrayDeque<String>()
+    private var comandos = 0L; private var erros = 0L; private var somaMs = 0L; private var maxMs = 0L
+    @Volatile var aberturas = 0  // quantas vezes o motor abriu (mais de 1 = ele caiu e voltou)
+    private val REPETITIVOS = setOf("read", "vivo", "bytes", "frozen", "sleep", "info", "ptr")
+    @Synchronized fun comando(cmd: String, resposta: String, ms: Long, erro: Boolean) {
+        comandos++; somaMs += ms; if (ms > maxMs) maxMs = ms; if (erro) erros++
+        if (erro || cmd.substringBefore(' ') !in REPETITIVOS) {
+            rastro.addFirst("${SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(Date())} ${cmd.take(120)} → ${resposta.take(120)} (${ms} ms)")
+            while (rastro.size > 80) rastro.removeLast()
+        }
+    }
 
     fun init(ctx: Context) {
+        app = ctx.applicationContext
+        dados = ctx.filesDir
         arquivo = File(ctx.filesDir, "registro.txt"); pasta = ctx.getExternalFilesDir(null) ?: ctx.filesDir
-        versao = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull().orEmpty()
+        runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()?.let {
+            versao = it.versionName.orEmpty(); codigo = if (Build.VERSION.SDK_INT >= 28) it.longVersionCode else @Suppress("DEPRECATION") it.versionCode.toLong()
+        }
         if (linhas.isEmpty()) runCatching { linhas += arquivo!!.readLines().mapNotNull(::deLinha) }
+        // o Unit fechou com erro da última vez? (o pegador abaixo grava o erro técnico completo)
+        val falha = File(ctx.filesDir, "falha.txt")
+        if (falha.exists()) { add("erro", "O Unit fechou com erro na última vez (detalhes no relatório)", falha.readLines().take(4)); falha.renameTo(File(ctx.filesDir, "falha-vista.txt")) }
+        val antes = Thread.getDefaultUncaughtExceptionHandler()
+        if (antes !is Pegador) Thread.setDefaultUncaughtExceptionHandler(Pegador(antes))
+    }
+
+    /** Grava o erro que ia fechar o Unit (hora, versão, linha do código) e deixa o Android seguir como sempre. */
+    private class Pegador(val antes: Thread.UncaughtExceptionHandler?) : Thread.UncaughtExceptionHandler {
+        override fun uncaughtException(t: Thread, e: Throwable) {
+            runCatching {
+                val sw = java.io.StringWriter(); e.printStackTrace(java.io.PrintWriter(sw))
+                File(dados, "falha.txt").writeText("${SimpleDateFormat("dd/MM HH:mm:ss", Locale.ROOT).format(Date())} · Unit $versao · thread ${t.name}\n$sw")
+            }
+            antes?.uncaughtException(t, e)
+        }
     }
 
     // uma linha por evento no arquivo: hora \t tipo \t texto \t detalhe1 | detalhe2
@@ -63,14 +102,19 @@ object Registro {
         runCatching { arquivo?.writeText(linhas.joinToString("\n", transform = ::paraLinha)) }
     }
 
-    /** As 8 conferências. Só lê: não escreve nada no jogo. */
+    private fun mb(b: Long) = "${b / (1024 * 1024)} MB"
+    private fun selinux() = runCatching { ProcessBuilder("getenforce").start().inputStream.bufferedReader().readText().trim() }.getOrNull()?.ifEmpty { null } ?: "?"
+    private fun espacoLivre() = dados?.usableSpace ?: 0L
+
+    /** As conferências. Só lê: não escreve nada no jogo. */
     suspend fun autoteste(ctx: Context): List<Teste> {
         val t = mutableListOf<Teste>()
         val ola = runCatching { Nucleo.cmd { it.ola } }
         t += Teste(ola.getOrNull()?.contains("uid=0") == true, "Root",
             ola.fold({ if ("uid=0" in it) "motor abriu pelo su (uid 0)" else "motor sem root: $it" }, { "não abriu: ${it.message}" }))
         val ms = runCatching { val c = System.nanoTime(); Nucleo.cmd { it.cmd("sleep 0") }; (System.nanoTime() - c) / 1_000_000 }
-        t += Teste(ms.isSuccess, "Motor", ms.fold({ "respondeu em $it ms" }, { "não respondeu: ${it.message}" }))
+        t += Teste(ms.getOrNull()?.let { it < 200 } == true, "Motor", ms.fold({ "respondeu em $it ms" + if (it >= 200) " (lento)" else "" }, { "não respondeu: ${it.message}" }))
+        t += Teste(aberturas <= 1, "Motor estável", if (aberturas <= 1) "abriu 1 vez nesta sessão" else "abriu $aberturas vezes: ele caiu e voltou ${aberturas - 1} vez(es)")
         val j = Nucleo.jogo
         val info = if (j == null) null else runCatching { Nucleo.cmd { it.cmd("info") }.status.split(' ') }
         t += Teste(info?.isSuccess == true, "Jogo", when {
@@ -84,30 +128,100 @@ object Registro {
         val noApp = Nucleo.salvos.count { it.congelado }
         t += Teste(noMotor == noApp, "Congelados", if (noMotor < 0) "o motor não respondeu" else "$noMotor no motor · $noApp no app")
         val cam = j?.let { Ponteiro.lista(it.pacote) }.orEmpty()
-        t += Teste(true, "Caminhos", if (cam.isEmpty()) "nenhum guardado neste jogo" else cam.joinToString(" · ") { "${it.nome} ${it.caminhos.size} na reserva" })
+        val semCaminho = cam.filter { c -> Nucleo.salvos.none { it.nome == c.nome && it.caminho } }
+        t += Teste(semCaminho.isEmpty(), "Caminhos", if (cam.isEmpty()) "nenhum guardado neste jogo" else
+            cam.joinToString(" · ") { c -> "${c.nome} ${c.caminhos.size} na reserva" + if (c in semCaminho) " (não achou agora)" else "" })
         val sobrepor = Settings.canDrawOverlays(ctx)
         t += Teste(sobrepor, "Permissão de sobrepor", if (sobrepor) "liberada" else "falta liberar: Configurações → Apps → Unit → Sobrepor")
+        val livre = espacoLivre()
+        t += Teste(livre > 1024L * 1024 * 1024, "Espaço livre", "${mb(livre)} (a foto da busca por mudança pode precisar de algumas centenas de MB)")
+        val ultimoErro = linhas.firstOrNull { it.tipo == "erro" }
+        t += Teste(linhas.take(50).none { it.tipo == "erro" }, "Erros recentes", ultimoErro?.let { "último: ${it.hora} · ${it.texto}" } ?: "nenhum erro registrado")
+        val falhou = File(dados, "falha-vista.txt").exists()
+        t += Teste(!falhou, "Fechou com erro", if (falhou) "o Unit já fechou com erro (o erro técnico vai no relatório)" else "nunca fechou com erro")
         t += Teste(Atualizador.nova == null, "Atualização", if (Atualizador.nova == null) "versão $versao" else "${Atualizador.nova} disponível" + if (versao.endsWith("-lab")) " (este é um APK de laboratório)" else "")
         add("outro", "Autoteste: ${t.count { it.ok }}/${t.size}", t.filterNot { it.ok }.map { "✗ ${it.nome}: ${it.como}" })
         return t
     }
 
-    /** Um texto só: cabeçalho, autoteste e o registro (com os caminhos que saíram e entraram). */
-    fun texto(testes: List<Teste>?): String = buildString {
-        appendLine("RELATÓRIO DO UNIT · ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ROOT).format(Date())}")
-        appendLine("Unit $versao · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}")
-        appendLine("Jogo: ${Nucleo.jogo?.let { "${it.nome} (${it.pacote}, pid ${it.pid})" } ?: "nenhum"}")
-        testes?.let { l ->
-            appendLine(); appendLine("AUTOTESTE ${l.count { it.ok }}/${l.size}")
-            l.forEach { appendLine("${if (it.ok) "✓" else "✗"} ${it.nome}: ${it.como}") }
+    /** O relatório completo, em partes, com tudo o que ajuda a achar um defeito sem print. */
+    suspend fun texto(testes: List<Teste>?): String {
+        val ctx = app
+        val se = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { selinux() }  // roda um programa: fora da tela
+        val j = Nucleo.jogo
+        val jogoInfo = if (j != null) runCatching { Nucleo.cmd { it.cmd("info") }.status }.getOrElse { "erro: ${it.message}" } else ""
+        val congeladosMotor = runCatching { Nucleo.cmd { it.cmd("frozen") }.linhas }.getOrDefault(emptyList())
+        return buildString {
+            fun parte(n: Int, t: String) { appendLine(); appendLine("== $n. $t ==") }
+            appendLine("RELATÓRIO DO UNIT · ${SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.ROOT).format(Date())}")
+
+            parte(1, "APARELHO")
+            appendLine("${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE}) · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
+            appendLine("Processador: ${Build.SUPPORTED_ABIS.joinToString()} · SELinux: $se")
+            ctx?.resources?.displayMetrics?.let { d -> appendLine("Tela: ${d.widthPixels}x${d.heightPixels} px · ${d.densityDpi} dpi · ${if (d.widthPixels > d.heightPixels) "deitado" else "em pé"}") }
+            ctx?.getSystemService(android.app.ActivityManager::class.java)?.let { am ->
+                val m = android.app.ActivityManager.MemoryInfo(); am.getMemoryInfo(m)
+                appendLine("RAM: ${mb(m.availMem)} livres de ${mb(m.totalMem)}" + if (m.lowMemory) " (pouca memória!)" else "")
+            }
+            appendLine("Espaço livre: ${mb(espacoLivre())}")
+
+            parte(2, "APP")
+            appendLine("Unit $versao (código $codigo)" + if (versao.endsWith("-lab")) " · laboratório" else " · normal")
+            appendLine("Sobrepor: ${ctx?.let { if (Settings.canDrawOverlays(it)) "liberado" else "NÃO liberado" } ?: "?"}")
+            appendLine("Painel: $painel")
+            val rt = Runtime.getRuntime(); appendLine("Memória do Unit: ${mb(rt.totalMemory() - rt.freeMemory())} de ${mb(rt.maxMemory())}")
+            if (Nucleo.aviso.isNotBlank()) appendLine("Aviso na tela: ${Nucleo.aviso}")
+
+            parte(3, "MOTOR")
+            appendLine("Abertura: ${runCatching { Nucleo.cmd { it.ola } }.getOrElse { "não abriu: ${it.message}" }} · abriu $aberturas vez(es)")
+            synchronized(this@Registro) {
+                appendLine("Comandos: $comandos · erros: $erros · tempo médio ${if (comandos > 0) somaMs / comandos else 0} ms · maior ${maxMs} ms")
+                appendLine("Últimos comandos (o mais novo primeiro; leituras repetitivas ficam só na conta):")
+                rastro.forEach { appendLine("  $it") }
+            }
+
+            parte(4, "JOGO")
+            if (j == null) appendLine("nenhum jogo escolhido") else {
+                val vj = ctx?.let { c -> runCatching { c.packageManager.getPackageInfo(j.pacote, 0).versionName }.getOrNull() }
+                appendLine("${j.nome} · ${j.pacote} · versão ${vj ?: "?"} · pid ${j.pid}")
+                appendLine("Memória legível: $jogoInfo (regiões MB) · pausado: ${Nucleo.pausado} · fechou: ${Nucleo.jogoFechou}")
+            }
+
+            parte(5, "VALORES")
+            if (Nucleo.salvos.isEmpty()) appendLine("nenhum salvo")
+            Nucleo.salvos.forEach { s -> appendLine("${s.nome} · ${s.addr} · ${NOME_TIPO[s.tipo] ?: s.tipo} · ${s.valor}" + (if (s.congelado) " · congelado" else "") + if (s.caminho) " · pelo caminho" else "") }
+            appendLine("Congelados no motor (${congeladosMotor.size}): ${congeladosMotor.joinToString()}")
+
+            parte(6, "BUSCA")
+            appendLine("Resultados: ${Nucleo.total ?: "nenhuma busca"} · na tela: ${Nucleo.achados.size} · tipo aprendido neste jogo: ${Nucleo.aprendido ?: "nenhum"}")
+            Nucleo.achados.take(10).forEach { appendLine("  ${it.addr} ${it.tipo} ${it.valor}") }
+
+            parte(7, "CAMINHOS")
+            val cam = j?.let { Ponteiro.lista(it.pacote) }.orEmpty()
+            if (cam.isEmpty()) appendLine("nenhum guardado neste jogo")
+            cam.forEach { c -> appendLine("${c.nome} (${NOME_TIPO[c.tipo] ?: c.tipo}) · ${c.caminhos.size} na reserva" + if (c.congelar) " · volta congelado em ${c.valor}" else ""); c.caminhos.take(3).forEach { appendLine("  $it") } }
+            Ponteiro.pendente?.let { appendLine("Conferindo agora: ${it.nome} · ${it.caminhos.size} caminhos") }
+
+            parte(8, "AUTOTESTE")
+            if (testes == null) appendLine("(não rodado: abra Autoteste e toque em Rodar)") else {
+                appendLine("${testes.count { it.ok }}/${testes.size}")
+                testes.forEach { appendLine("${if (it.ok) "✓" else "✗"} ${it.nome}: ${it.como}") }
+            }
+
+            parte(9, "ÚLTIMA FALHA (o Unit fechou com erro)")
+            val falha = dados?.let { File(it, "falha-vista.txt") }?.takeIf { it.exists() }
+            if (falha == null) appendLine("nenhuma") else falha.readLines().take(40).forEach { appendLine(it) }
+
+            parte(10, "REGISTRO (${linhas.size} linhas, a mais nova primeiro)")
+            linhas.forEach { e -> appendLine("${e.hora} [${e.tipo}] ${e.texto}"); e.detalhe.forEach { appendLine("    $it") } }
         }
-        appendLine(); appendLine("REGISTRO (${linhas.size} linhas, a mais nova primeiro)")
-        linhas.forEach { e -> appendLine("${e.hora} [${e.tipo}] ${e.texto}"); e.detalhe.forEach { appendLine("    $it") } }
     }
 
+    private var ultimosTestes: List<Teste>? = null
+
     /** Abre a lista do Android (WhatsApp, e-mail, copiar…) e guarda uma cópia em relatorio-unit.txt. */
-    fun compartilhar(ctx: Context, testes: List<Teste>?) {
-        val txt = texto(testes)
+    fun compartilhar(ctx: Context, testes: List<Teste>?) = Nucleo.rodar {
+        val txt = texto(testes ?: ultimosTestes)
         runCatching { File(pasta, "relatorio-unit.txt").writeText(txt) }
         val envio = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "Relatório do Unit").putExtra(Intent.EXTRA_TEXT, txt)
         ctx.startActivity(Intent.createChooser(envio, "Compartilhar relatório do Unit").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -118,10 +232,10 @@ object Registro {
     @Composable
     fun TelaAutoteste(ctx: Context, verRegistro: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         var testes by remember { mutableStateOf<List<Teste>?>(null) }
-        fun rodar() = Nucleo.rodar { testes = autoteste(ctx) }
+        fun rodar() = Nucleo.rodar { testes = autoteste(ctx).also { ultimosTestes = it } }
         val l = testes
         if (l == null) {
-            Text("Confere root, motor, jogo, leitura, congelados, caminhos, permissão e atualização. Só lê: não mexe no jogo.", color = Cor.apagado, fontSize = 12.sp)
+            Text("Confere root, motor, jogo, leitura, congelados, caminhos, permissão, espaço, erros e atualização. Só lê: não mexe no jogo.", color = Cor.apagado, fontSize = 12.sp)
             Botao(if (Nucleo.ocupado) "Conferindo…" else "Rodar autoteste", true, Modifier.fillMaxWidth(), !Nucleo.ocupado) { rodar() }
         } else {
             Linha {

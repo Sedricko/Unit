@@ -281,6 +281,7 @@ class Balao : Service() {
         LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
         LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
         LaunchedEffect(Nucleo.jogoFechou) { if (Nucleo.jogoFechou && modo != "painel") mudar("painel") }  // abre o painel para perguntar
+        LaunchedEffect(modo, cheio, tela, opcaoPausa) { Registro.painel = "modo=$modo · tela cheia=$cheio · tela=$tela · pausa automática=$opcaoPausa" }  // vai no relatório
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }
         // pausa automática: entra ao digitar (ou com o painel aberto) e sai ao sair dessas telas / minimizar
         LaunchedEffect(modo, tela, opcaoPausa) {

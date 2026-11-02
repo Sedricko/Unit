@@ -21,15 +21,19 @@ class Motor(caminho: String) {
 
     @Synchronized
     fun cmd(comando: String): Resposta {
-        entrada.write(comando + "\n")
-        entrada.flush()
-        val linhas = mutableListOf<String>()
-        while (true) {
-            val l = saida.readLine() ?: throw IOException("O motor fechou.")
-            if (l.startsWith("err ")) throw IOException(l.removePrefix("err "))
-            if (l == "ok" || l.startsWith("ok ")) return Resposta(linhas, l.removePrefix("ok").trim())
-            linhas += l
-        }
+        val t0 = System.nanoTime()
+        try {
+            entrada.write(comando + "\n")
+            entrada.flush()
+            val linhas = mutableListOf<String>()
+            while (true) {
+                val l = saida.readLine() ?: throw IOException("O motor fechou.")
+                if (l.startsWith("err ")) throw IOException(l.removePrefix("err "))
+                if (l == "ok" || l.startsWith("ok ")) return Resposta(linhas, l.removePrefix("ok").trim())
+                    .also { Registro.comando(comando, "ok ${it.status}".trim() + if (linhas.isEmpty()) "" else " (+${linhas.size} linhas)", (System.nanoTime() - t0) / 1_000_000, false) }
+                linhas += l
+            }
+        } catch (e: IOException) { Registro.comando(comando, "err ${e.message}", (System.nanoTime() - t0) / 1_000_000, true); throw e }
     }
 
     fun fechar() = proc.destroy()

@@ -76,7 +76,7 @@ object Nucleo {
     // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
     internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) {
         // motor novo (o primeiro, ou depois de um que caiu/fechou): já se liga ao jogo escolhido
-        val m = synchronized(abrindo) { motor ?: Motor(lib).also { n -> motor = n; jogo?.let { j -> runCatching { n.cmd("attach ${j.pid}") } } } }
+        val m = synchronized(abrindo) { motor ?: Motor(lib).also { n -> motor = n; Registro.aberturas++; jogo?.let { j -> runCatching { n.cmd("attach ${j.pid}") } } } }
         try { f(m) } catch (e: java.io.IOException) {
             // o motor caiu (falta de memória, su fechado): solta ele para o próximo comando abrir outro, em vez de falhar sempre
             if (e.message == "O motor fechou." || e.message?.contains("pipe", ignoreCase = true) == true) synchronized(abrindo) { if (motor === m) { m.fechar(); motor = null } }
