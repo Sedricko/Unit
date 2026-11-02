@@ -69,6 +69,7 @@ object Ponteiro {
         pendente = Caminho(nome, a.tipo, r.linhas.filter { '+' in it }, valor = a.valor)
         Registro.add("caminho", "$nome: ${pendente!!.caminhos.size} caminhos achados (${(System.currentTimeMillis() - t0) / 1000} s)", lista5(pendente!!.caminhos, "+ achado"))
         aviso = if (pendente!!.caminhos.isEmpty()) "Nenhum caminho achado para esse valor." else ""
+        Nucleo.soltarSePausado()
     }
 
     private suspend fun seguir(c: String, tipo: String): Pair<String, String>? = runCatching {

@@ -42,6 +42,7 @@ object Mudanca {
         total = Nucleo.cmd { it.cmd("diff $modo") }.status.substringBefore(' ').toLongOrNull()
         lista.clear()
         if ((total ?: 0) in 1..50) lista += Nucleo.cmd { it.cmd("list 50") }.linhas.map { it.split(' ') }.filter { it.size == 4 }.map { Mudou(it[0], it[1], it[2], it[3]) }
+        Nucleo.soltarSePausado()
     }
 
     @Composable

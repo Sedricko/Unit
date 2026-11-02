@@ -160,6 +160,13 @@ object Nucleo {
         if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.let { ordenar(juntar(it), aprendido) }
         escolhido = achados.singleOrNull()
         Registro.add("busca", "${if (refinar) "Refinar" else "Buscar"} $v → ${total ?: 0} resultado(s) (${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s)")
+        soltarSePausado()
+    }
+
+    /** Terminou uma busca: o jogo volta a rodar (pausado muito tempo, o Android mostra "não está respondendo"). */
+    internal suspend fun soltarSePausado() {
+        if (!pausado) return
+        runCatching { cmd { it.cmd("resume") } }.onSuccess { pausado = false; Registro.add("busca", "Busca terminou: o jogo voltou a rodar") }
     }
 
     /** Escreve o valor novo; com congelar, o motor segura ele. Fica nos salvos para o mini painel. */
