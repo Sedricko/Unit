@@ -38,11 +38,12 @@ object Mudanca {
 
     private fun zerar() { foto = false; total = null; lista.clear() }
 
-    private suspend fun comparar(modo: String) {
+    private suspend fun comparar(modo: String) = try { compararJa(modo) } finally { Nucleo.soltarSePausado() }
+    private suspend fun compararJa(modo: String) {
+        Nucleo.pausarParaBuscar()  // o valor não muda no meio da comparação
         total = Nucleo.cmd { it.cmd("diff $modo") }.status.substringBefore(' ').toLongOrNull()
         lista.clear()
         if ((total ?: 0) in 1..50) lista += Nucleo.cmd { it.cmd("list 50") }.linhas.map { it.split(' ') }.filter { it.size == 4 }.map { Mudou(it[0], it[1], it[2], it[3]) }
-        Nucleo.soltarSePausado()
     }
 
     @Composable
@@ -52,7 +53,7 @@ object Mudanca {
             color = Cor.apagado, fontSize = 12.sp)
         if (!foto) {
             Botao("Tirar a foto", true, Modifier.fillMaxWidth(), !Nucleo.ocupado) {
-                Nucleo.zerar(); Nucleo.rodar { Nucleo.cmd { it.cmd("snap ${File(ctx.cacheDir, "foto.bin").absolutePath}") }; foto = true; total = null; lista.clear() }  // o motor tem uma lista só: a busca do Achar recomeça
+                Nucleo.zerar(); Nucleo.rodar { try { Nucleo.pausarParaBuscar(); Nucleo.cmd { it.cmd("snap ${File(ctx.cacheDir, "foto.bin").absolutePath}") } } finally { Nucleo.soltarSePausado() }; foto = true; total = null; lista.clear() }  // o motor tem uma lista só: a busca do Achar recomeça
             }
             return@Column
         }

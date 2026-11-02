@@ -150,17 +150,24 @@ object Nucleo {
     fun zerar() { total = null; achados.clear(); escolhido = null }
 
     /** A 1ª vez busca; depois refina com o número novo da tela. Com 1 sobrando, ele já fica escolhido. */
-    fun buscar(texto: String) = rodar {
+    fun buscar(texto: String) = rodar { try { buscarJa(texto) } finally { soltarSePausado() } }
+    private suspend fun buscarJa(texto: String) {
         val v = texto.trim().replace(',', '.')
         val refinar = total != null; val t0 = System.currentTimeMillis()
+        pausarParaBuscar()
         cmd { it.cmd(if (!refinar) "search $v" else "refine $v") }
         val r = cmd { it.cmd("list 50") }
         total = r.status.toLongOrNull()
         achados.clear()
         if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.let { ordenar(juntar(it), aprendido) }
         escolhido = achados.singleOrNull()
-        Registro.add("busca", "${if (refinar) "Refinar" else "Buscar"} $v → ${total ?: 0} resultado(s) (${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s)")
-        soltarSePausado()
+        Registro.add("busca", "${if (refinar) "Refinar" else "Buscar"} $v → ${total ?: 0} resultado(s) (${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s, jogo pausado durante a busca)")
+    }
+
+    /** Começo da busca: o jogo para, para o valor não mudar no meio (o soltarSePausado solta no fim). */
+    internal suspend fun pausarParaBuscar() {
+        if (pausado || jogo == null) return
+        runCatching { cmd { it.cmd("pause") } }.onSuccess { pausado = true }
     }
 
     /** Terminou uma busca: o jogo volta a rodar (pausado muito tempo, o Android mostra "não está respondendo"). */
