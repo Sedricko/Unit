@@ -693,8 +693,15 @@ class Balao : Service() {
 
     @Composable
     private fun Salvos() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Nucleo.salvos.forEach { s -> LinhaSalvo(s) }
-        Text("Toque num valor para editar; no floco, congela ou solta.", color = Cor.apagado, fontSize = 12.sp)
+        var apagando by remember { mutableStateOf(false) }
+        if (Nucleo.salvos.isNotEmpty()) Text(if (apagando) "Pronto" else "Apagar", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.align(Alignment.End).toque { apagando = !apagando })
+        Nucleo.salvos.toList().forEach { s ->
+            if (!apagando) LinhaSalvo(s) else Linha {
+                Text(s.nome, color = Cor.texto, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Box(Modifier.padding(start = 8.dp).toque(!Nucleo.ocupado) { Nucleo.esquecerSalvo(s) }) { Text("Apagar", color = Cor.ruim, fontSize = 13.sp) }
+            }
+        }
+        Text(if (apagando) "Toque em Apagar no valor que quer tirar (se estiver congelado, solta antes)." else "Toque num valor para editar; no floco, congela ou solta.", color = Cor.apagado, fontSize = 12.sp)
     }
 
     /** Os jogos abertos, dentro do painel: tocar troca o processo (o Unit solta o jogo de antes). */

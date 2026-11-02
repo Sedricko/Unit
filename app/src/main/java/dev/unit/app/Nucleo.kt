@@ -275,7 +275,11 @@ object Nucleo {
         val a = org.json.JSONArray(salvosGuardados?.getString(pacote, "[]") ?: "[]")
         (0 until a.length()).map { i -> a.getJSONObject(i).let { o -> Salvo(o.getString("addr"), o.getString("tipo"), o.getString("nome"), o.optString("valor"), false, perdido = true) } }
     }.getOrDefault(emptyList())
-    fun esquecerSalvo(s: Salvo) { salvos.removeAll { it.nome == s.nome && it.addr == s.addr } }
+    fun esquecerSalvo(s: Salvo) = rodar {
+        if (s.congelado) cmd { it.cmd("unfreeze ${s.addr}") }  // apagado não pode ficar congelado sem ninguém ver
+        salvos.removeAll { it.nome == s.nome && it.addr == s.addr }
+        Registro.add("decisao", "Você apagou ${s.nome} dos salvos")
+    }
 
     fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }
 
