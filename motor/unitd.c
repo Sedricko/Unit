@@ -448,12 +448,12 @@ static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)
 // CMAX: caminhos que saem; CPOOL: candidatos juntados antes de escolher (uma biblioteca só não enche tudo - o relatório
 // mostrou 1000 caminhos do Firebase e nenhum do jogo); POR_LIB: no máximo isso de cada biblioteca na saída.
 // DISTFIXA 512 KB: jogos Unity têm dezenas de milhares de classes, e o salto entra na tabela delas (índice × 8)
-enum { PMAX = 12000000, NMAX = 2000000, CMAX = 3000, CPOOL = 20000, POR_LIB = 1500, DIST = 0x1000, DISTFIXA = 0x80000, FANIN = 8, POR_OBJ = 64, HCAP = 1 << 23, PENA = 0x20 };
+enum { NMAX = 2000000, CMAX = 3000, CPOOL = 20000, POR_LIB = 1500, DIST = 0x1000, DISTFIXA = 0x80000, FANIN = 8, POR_OBJ = 64, HCAP = 1 << 23, PENA = 0x20 };
 // PENA: custo de cada nível a mais (um pulo a mais é uma chance a mais de quebrar)
 // FANIN: de cada passo, segue só os 8 objetos mais perto (os campos de verdade ficam no começo do objeto), com até POR_OBJ
 // de quem aponta para cada um. Sem isso, num
 // heap grande o 3º nível já enchia os 2 milhões de passos e os caminhos do Unity (5-7 níveis) nunca eram vistos
-// shortcut: até 12 milhões de ponteiros, 2 milhões de passos, 20 mil candidatos e 3000 caminhos na saída (memória do celular); jogos maiores podem perder caminhos
+// shortcut: até 100 milhões de ponteiros (1/4 da memória livre), 2 milhões de passos, 20 mil candidatos e 3000 caminhos na saída (memória do celular); jogos maiores podem perder caminhos
 // nota de um caminho (menor = mais confiável): cada pulo a mais é uma chance de quebrar; começar no código do jogo
 // (il2cpp/unity/main) é melhor que noutra biblioteca; pulos pequenos são campos de verdade, grandes costumam ser acaso
 typedef struct { char txt[240]; unsigned nota; } cam_t;
@@ -480,10 +480,20 @@ static void ligar(const pt_t *pt, size_t nf, uint64_t t, int pai, uint32_t oext,
         c->nota = nota(nivel, rg[k].lib, soma) + (o > DIST ? 0x400 : 0);  // salto longo direto da biblioteca: vale, mas é menos certo
     }
 }
+// quantos ponteiros cabem: um quarto da memória livre (MemAvailable), entre 12 e 100 milhões. Fixo em 12 milhões, num jogo
+// grande o limite enchia antes de ler o fim do heap e o caminho que morava lá nunca era achado (o teste do jogo grande mostrou).
+// O malloc só ocupa de verdade o que é usado. UNITD_MEM_MB: finge a memória livre (o teste usa a do celular do usuário)
+static size_t limite_ponteiros(void) {
+    unsigned long long kb = 0; char l[128]; const char *e = getenv("UNITD_MEM_MB");
+    if (e) kb = strtoull(e, NULL, 10) * 1024;
+    else { FILE *f = fopen("/proc/meminfo", "r"); while (f && fgets(l, sizeof l, f)) if (sscanf(l, "MemAvailable: %llu kB", &kb) == 1) break; if (f) fclose(f); }
+    size_t n = (size_t)(kb * 1024 / 4 / sizeof(pt_t));
+    return n < 12000000 ? 12000000 : n > 100000000 ? 100000000 : n;
+}
 static void cmd_ptrscan(const char *addr, const char *niv) {
     uint64_t alvo = strtoull(addr, NULL, 16); int nmax = niv[0] ? atoi(niv) : 8; if (nmax < 1 || nmax > 8) nmax = 8;
     ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
-    pt_t *pt = malloc((size_t)PMAX * sizeof *pt); size_t np = 0;
+    size_t PMAX = limite_ponteiros(); pt_t *pt = malloc(PMAX * sizeof *pt); size_t np = 0;
     enum { BLOCO = 1 << 20 }; unsigned char *buf = malloc(BLOCO);
     // retrato parado: o jogo pausa só enquanto os ponteiros são lidos (uns segundos); montar os caminhos usa o retrato,
     // com o jogo já rodando. Assim um objeto criado/apagado no meio da leitura não deixa o retrato pela metade
@@ -579,7 +589,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     }
     free(cams);
     // números da procura para o relatório (o app só usa as linhas com "+"): ponteiros lidos, se encheu, passos por nível
-    printf("ok %d ponteiros=%zu%s candidatos=%d passos=%d niveis=%d,%d,%d,%d,%d,%d,%d%s\n", saiu, np, cheio ? "(cheio)" : "", nc, nn,
+    printf("ok %d ponteiros=%zu/%zu%s candidatos=%d passos=%d niveis=%d,%d,%d,%d,%d,%d,%d%s\n", saiu, np, PMAX, cheio ? "(cheio)" : "", nc, nn,
            pornivel[1], pornivel[2], pornivel[3], pornivel[4], pornivel[5], pornivel[6], pornivel[7], nn >= NMAX ? " (limite de passos)" : "");
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor

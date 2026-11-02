@@ -1,9 +1,16 @@
 // Faz o papel da libil2cpp de um jogo Unity: guarda na .bss o ponteiro para a "classe" (como os TypeInfo do il2cpp)
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 void *volatile Recursos_TypeInfo;
 char reserva[1 << 20];  // .bss grande: vira a região anônima colada na biblioteca, como no Android
-static void *novo(size_t n) { void *p = calloc(1, n); return p; }
+// os objetos do caminho moram numa região própria, criada antes do heap grande: fica depois dele no mapa (o pior caso:
+// é lida por último, quando o limite de ponteiros do motor já pode ter enchido)
+static char *arena; static size_t usado;
+static void *novo(size_t n) {
+    if (!arena) arena = mmap(NULL, 1 << 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void *p = arena + usado; usado += (n + 15) & ~(size_t)15; return p;
+}
 // classe +0xb8 → campos estáticos +0x10 → gerenciador +0x28 → lista +0x10 → itens +0x38 (item 3) → item +0x30 = cobre
 float *montar(float valor, void **nos) {
     char *classe = novo(0x200), *estaticos = novo(0x40), *ger = novo(0x80), *lista = novo(0x40), *itens = novo(0x80), *item = novo(0x60);

@@ -8,7 +8,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 float *montar(float valor, void **nos);
-enum { NOBJ = 8 << 20, VIZ = 16 };  // 8 milhões de objetos de 64 bytes (512 MB) × 2 ponteiros = 16 milhões de ponteiros
+enum { NOBJ = 16 << 20, VIZ = 32 };  // 16 milhões de objetos de 64 bytes (1 GB) × 2 ponteiros = 32 milhões de ponteiros
 static uint64_t x = 88172645463325252ULL;
 static uint64_t sorte(void) { x ^= x << 13; x ^= x >> 7; x ^= x << 17; return x; }
 int main(void) {
