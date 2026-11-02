@@ -434,8 +434,16 @@ typedef struct { uint64_t t; int pai; uint32_t o; } no_t;  // um passo do caminh
 static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)->v, y = ((const pt_t *)b)->v; return x < y ? -1 : x > y; }
 enum { PMAX = 12000000, NMAX = 400000, CMAX = 1000, DIST = 0x400 };
 // shortcut: até 12 milhões de ponteiros, 400 mil passos e 1000 caminhos (memória do celular); jogos maiores podem perder caminhos
+// nota de um caminho (menor = mais confiável): cada pulo a mais é uma chance de quebrar; começar no código do jogo
+// (il2cpp/unity/main) é melhor que noutra biblioteca; pulos pequenos são campos de verdade, grandes costumam ser acaso
+typedef struct { char txt[240]; unsigned nota; } cam_t;
+static unsigned nota(int nivel, const char *lib, unsigned soma) {
+    int jogo = strstr(lib, "il2cpp") || strstr(lib, "unity") || strstr(lib, "libmain") || strstr(lib, "libgame");
+    return (unsigned)nivel * 1000 + (jogo ? 0 : 500) + (soma > 0x3000 ? 0x3000 : soma) / 16;
+}
+static int cmp_cam(const void *a, const void *b) { unsigned x = ((const cam_t *)a)->nota, y = ((const cam_t *)b)->nota; return x < y ? -1 : x > y; }
 static void cmd_ptrscan(const char *addr, const char *niv) {
-    uint64_t alvo = strtoull(addr, NULL, 16); int nmax = niv[0] ? atoi(niv) : 5; if (nmax < 1 || nmax > 8) nmax = 5;
+    uint64_t alvo = strtoull(addr, NULL, 16); int nmax = niv[0] ? atoi(niv) : 8; if (nmax < 1 || nmax > 8) nmax = 8;
     ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
     pt_t *pt = malloc((size_t)PMAX * sizeof *pt); size_t np = 0;
     enum { BLOCO = 1 << 20 }; unsigned char *buf = malloc(BLOCO);
@@ -456,7 +464,8 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     free(buf);
     qsort(pt, np, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
-    if (!no) { free(pt); puts("err sem memória para os caminhos"); return; }
+    cam_t *cams = malloc(CMAX * sizeof *cams);
+    if (!no || !cams) { free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
     no[nn++] = (no_t){alvo, -1, 0};
     int ini = 0;
     for (int nivel = 1; nivel <= nmax && nc < CMAX; nivel++) {
@@ -469,15 +478,19 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
                 int k = achar_reg(pt[j].onde);
                 uint32_t o = (uint32_t)(t - pt[j].v);
                 if (k >= 0 && rg[k].fixa) {  // chegou numa biblioteca: um caminho
-                    printf("%s+%" PRIx64 ":%x", rg[k].lib, pt[j].onde - base_lib(rg[k].lib), o);
-                    for (int x = i; no[x].pai >= 0; x = no[x].pai) printf(":%x", no[x].o);
-                    putchar('\n'); nc++;
+                    cam_t *c = &cams[nc++]; int len = snprintf(c->txt, sizeof c->txt, "%s+%" PRIx64 ":%x", rg[k].lib, pt[j].onde - base_lib(rg[k].lib), o);
+                    unsigned soma = o;
+                    for (int x = i; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }
+                    c->nota = nota(nivel, rg[k].lib, soma);
                 } else if (nn < NMAX && nivel < nmax) no[nn++] = (no_t){pt[j].onde, i, o};
             }
         }
         ini = fim;
     }
     free(no); free(pt);
+    qsort(cams, nc, sizeof *cams, cmp_cam);  // o mais confiável primeiro
+    for (int i = 0; i < nc; i++) puts(cams[i].txt);
+    free(cams);
     printf("ok %d\n", nc);
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor

@@ -63,7 +63,7 @@ object Ponteiro {
     // ---- motor ----
     fun procurar(a: Achado, nome: String) = Nucleo.rodar {
         aviso = "Procurando o caminho… pode levar até 1 minuto."
-        val r = Nucleo.cmd { it.cmd("ptrscan ${a.addr} 5") }
+        val r = Nucleo.cmd { it.cmd("ptrscan ${a.addr} 8") }  // até 8 níveis; o motor manda o mais confiável primeiro
         pendente = Caminho(nome, a.tipo, r.linhas.filter { '+' in it }, valor = a.valor)
         aviso = if (pendente!!.caminhos.isEmpty()) "Nenhum caminho achado para esse valor." else ""
     }
