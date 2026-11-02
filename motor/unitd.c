@@ -441,23 +441,45 @@ static int achar_reg(uint64_t v) {  // as regiões vêm em ordem no mapa: busca 
 static uint64_t base_lib(const char *lib) { for (int i = 0; i < nrg; i++) if (!strcmp(rg[i].lib, lib)) return rg[i].ini; return 0; }
 
 typedef struct { uint64_t v, onde; } pt_t;        // um ponteiro: o valor (para onde aponta) e onde ele mora
-typedef struct { uint64_t t; int pai; uint32_t o; } no_t;  // um passo do caminho: o alvo, quem veio antes e o deslocamento
+typedef struct { uint64_t t; int pai; uint32_t o, custo; int nivel; } no_t;  // um passo: o endereço, quem veio antes, o deslocamento, o custo (soma)
 static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)->v, y = ((const pt_t *)b)->v; return x < y ? -1 : x > y; }
 // DIST: salto entre estruturas (até 4 KB, como o Cheat Engine). DISTFIXA: o salto que sai da biblioteca pode ser grande: nos
 // jogos Unity ele entra numa tabela (biblioteca → tabela[índice] → classe → dados); com 1 KB o caminho certo ficava de fora
 // CMAX: caminhos que saem; CPOOL: candidatos juntados antes de escolher (uma biblioteca só não enche tudo - o relatório
 // mostrou 1000 caminhos do Firebase e nenhum do jogo); POR_LIB: no máximo isso de cada biblioteca na saída.
 // DISTFIXA 512 KB: jogos Unity têm dezenas de milhares de classes, e o salto entra na tabela delas (índice × 8)
-enum { PMAX = 12000000, NMAX = 400000, CMAX = 3000, CPOOL = 20000, POR_LIB = 1500, DIST = 0x1000, DISTFIXA = 0x80000 };
-// shortcut: até 12 milhões de ponteiros, 400 mil passos, 20 mil candidatos e 1000 caminhos na saída (memória do celular); jogos maiores podem perder caminhos
+enum { PMAX = 12000000, NMAX = 2000000, CMAX = 3000, CPOOL = 20000, POR_LIB = 1500, DIST = 0x1000, DISTFIXA = 0x80000, FANIN = 8, POR_OBJ = 64, HCAP = 1 << 23, PENA = 0x20 };
+// PENA: custo de cada nível a mais (um pulo a mais é uma chance a mais de quebrar)
+// FANIN: de cada passo, segue só os 8 objetos mais perto (os campos de verdade ficam no começo do objeto), com até POR_OBJ
+// de quem aponta para cada um. Sem isso, num
+// heap grande o 3º nível já enchia os 2 milhões de passos e os caminhos do Unity (5-7 níveis) nunca eram vistos
+// shortcut: até 12 milhões de ponteiros, 2 milhões de passos, 20 mil candidatos e 3000 caminhos na saída (memória do celular); jogos maiores podem perder caminhos
 // nota de um caminho (menor = mais confiável): cada pulo a mais é uma chance de quebrar; começar no código do jogo
 // (il2cpp/unity/main) é melhor que noutra biblioteca; pulos pequenos são campos de verdade, grandes costumam ser acaso
 typedef struct { char txt[240]; unsigned nota; } cam_t;
 static unsigned nota(int nivel, const char *lib, unsigned soma) {
     int jogo = strstr(lib, "il2cpp") || strstr(lib, "unity") || strstr(lib, "libmain") || strstr(lib, "libgame");
-    return (unsigned)nivel * 1000 + (jogo ? 0 : 500) + (soma > 0x3000 ? 0x3000 : soma) / 16;
+    // a mesma conta da procura: soma dos deslocamentos + PENA por nível (antes o nível pesava mais, e os atalhos de 2 níveis,
+    // que quebram ao reabrir, vinham na frente do caminho de verdade de 6)
+    return (unsigned)nivel * PENA + (jogo ? 0 : 0x200) + (soma > 0x3000 ? 0x3000 : soma);
 }
 static int cmp_cam(const void *a, const void *b) { unsigned x = ((const cam_t *)a)->nota, y = ((const cam_t *)b)->nota; return x < y ? -1 : x > y; }
+// liga o endereço t às bibliotecas: cada ponteiro de biblioteca até DISTFIXA antes de t vira um caminho
+// "lib+OFF:oLib[:oExtra]:(deslocamentos de pai até o alvo)". O salto longo só vale saindo da biblioteca (tabelas do Unity)
+static void ligar(const pt_t *pt, size_t nf, uint64_t t, int pai, uint32_t oext, int temext, int nivel, const no_t *no, cam_t *cams, int *nc) {
+    uint64_t de = t >= DISTFIXA ? t - DISTFIXA : 0; size_t lo = 0, hi = nf;
+    while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
+    for (size_t j = lo; j < nf && pt[j].v <= t && *nc < CPOOL; j++) {
+        int k = achar_reg(pt[j].onde); if (k < 0 || !rg[k].fixa) continue;
+        uint64_t off = pt[j].onde - base_lib(rg[k].lib);
+        if (off >= 0x10000000ULL) continue;  // a mais de 256 MB do começo da biblioteca: não é parte dela
+        uint32_t o = (uint32_t)(t - pt[j].v); unsigned soma = o;
+        cam_t *c = &cams[(*nc)++]; int len = snprintf(c->txt, sizeof c->txt, "%s+%" PRIx64 ":%x", rg[k].lib, off, o);
+        if (temext) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", oext); soma += oext; }
+        for (int x = pai; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }
+        c->nota = nota(nivel, rg[k].lib, soma) + (o > DIST ? 0x400 : 0);  // salto longo direto da biblioteca: vale, mas é menos certo
+    }
+}
 static void cmd_ptrscan(const char *addr, const char *niv) {
     uint64_t alvo = strtoull(addr, NULL, 16); int nmax = niv[0] ? atoi(niv) : 8; if (nmax < 1 || nmax > 8) nmax = 8;
     ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
@@ -470,7 +492,8 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     // as bibliotecas primeiro: se o limite encher no meio do heap, os ponteiros de onde os caminhos começam já estão lá
     // (antes o mapa era lido em ordem e o limite podia acabar antes das bibliotecas: 0 caminhos)
     int cheio = 0;
-    for (int passo = 0; passo < 2; passo++)
+    size_t nf = 0;  // pt[0..nf): ponteiros que moram nas bibliotecas; o resto: heap
+    for (int passo = 0; passo < 2; nf = passo == 0 ? np : nf, passo++)
     for (int r = 0; r < nrg && np < PMAX; r++) {
         if (!rg[r].rw || rg[r].fixa != (passo == 0)) continue;
         for (uint64_t a = rg[r].ini; a < rg[r].fim && np < PMAX; a += BLOCO) {
@@ -487,43 +510,62 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     free(buf);
     kill(target, SIGCONT);
     cheio = np >= PMAX;
-    qsort(pt, np, sizeof *pt, cmp_pt);
+    qsort(pt, nf, sizeof *pt, cmp_pt); qsort(pt + nf, np - nf, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
     cam_t *cams = malloc(CPOOL * sizeof *cams);
     if (!no || !cams) { free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
     // cada endereço entra uma vez só (pelo caminho mais curto): sem isso o mesmo ponteiro entrava por vários alvos vizinhos
     // e enchia o limite de passos nos primeiros níveis, e os caminhos mais fundos (os do Unity) nunca eram vistos
-    enum { HCAP = 1 << 21 }; uint64_t *visto = calloc(HCAP, sizeof *visto);
-    if (!visto) { free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
-    no[nn++] = (no_t){alvo, -1, 0};
-    int ini = 0, pornivel[9] = {0};
-    for (int nivel = 1; nivel <= nmax && nc < CPOOL; nivel++) {
-        int fim = nn;
-        for (int i = ini; i < fim && nc < CPOOL; i++) {
-            uint64_t t = no[i].t, de = t >= DISTFIXA ? t - DISTFIXA : 0;
-            size_t lo = 0, hi = np;  // 1º ponteiro com valor >= t - DISTFIXA (o salto longo só vale saindo da biblioteca)
-            while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
-            for (size_t j = lo; j < np && pt[j].v <= t && nc < CPOOL; j++) {
-                int k = achar_reg(pt[j].onde);
-                uint32_t o = (uint32_t)(t - pt[j].v);
-                int fixa = k >= 0 && rg[k].fixa;
-                if (o > DIST && !fixa) continue;
-                // chegou numa biblioteca: um caminho (a menos de 256 MB do começo dela; mais longe não é parte dela)
-                if (k >= 0 && rg[k].fixa && pt[j].onde - base_lib(rg[k].lib) < 0x10000000ULL) {
-                    cam_t *c = &cams[nc++]; int len = snprintf(c->txt, sizeof c->txt, "%s+%" PRIx64 ":%x", rg[k].lib, pt[j].onde - base_lib(rg[k].lib), o);
-                    unsigned soma = o;
-                    for (int x = i; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }
-                    c->nota = nota(nivel, rg[k].lib, soma) + (o > DIST ? 800 : 0);  // salto longo direto da biblioteca: vale, mas é menos certo
-                } else if (o <= DIST && nn < NMAX && nivel < nmax) {  // salto longo só saindo da biblioteca
-                    uint64_t h = (pt[j].onde >> 3) * 0x9E3779B97F4A7C15ULL >> 43;
-                    while (visto[h] && visto[h] != pt[j].onde) h = (h + 1) & (HCAP - 1);
-                    if (!visto[h]) { visto[h] = pt[j].onde; no[nn++] = (no_t){pt[j].onde, i, o}; pornivel[nivel]++; }
-                }
-            }
+    uint64_t *visto = calloc(HCAP, sizeof *visto); uint32_t *vo = malloc(HCAP * sizeof *vo);
+    if (!visto || !vo) { free(visto); free(vo); free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
+    // procura pelo menor custo (soma dos deslocamentos + PENA por nível), não por nível: campos de verdade têm deslocamento
+    // pequeno. Objetos criados juntos ficam colados, e a procura por nível chegava neles por "atalhos" de deslocamento grande
+    // (que quebram ao reabrir o jogo) e descartava o caminho de verdade, que tem mais níveis
+    int *fila = malloc(NMAX * sizeof *fila), nf2 = 0;
+    if (!fila) { free(visto); free(vo); free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
+    #define CUSTO(x) no[fila[x]].custo
+    #define POR(x, i_) do { int _p = (x); fila[_p] = (i_); while (_p && CUSTO((_p - 1) / 2) > CUSTO(_p)) { int _q = (_p - 1) / 2, _t = fila[_q]; fila[_q] = fila[_p]; fila[_p] = _t; _p = _q; } } while (0)
+    no[nn++] = (no_t){alvo, -1, 0, 0, 0}; fila[nf2++] = 0;
+    int pornivel[9] = {0}, nvisto = 0;
+    ligar(pt, nf, alvo, 0, 0, 0, 1, no, cams, &nc);
+    while (nf2 && nc < CPOOL) {
+        int i = fila[0]; fila[0] = fila[--nf2];  // tira o mais barato
+        for (int p = 0;;) { int l = 2 * p + 1, r = l + 1, m = p;
+            if (l < nf2 && CUSTO(l) < CUSTO(m)) m = l;
+            if (r < nf2 && CUSTO(r) < CUSTO(m)) m = r;
+            if (m == p) break;
+            int _t = fila[m]; fila[m] = fila[p]; fila[p] = _t; p = m;
         }
-        ini = fim;
+        int nivel = no[i].nivel + 1;  // nível dos que apontam para este
+        if (nivel >= nmax) continue;  // o último nível vem do ligar(): só biblioteca
+        uint64_t t = no[i].t, de = t >= DIST ? t - DIST : 0;
+        if (i) {  // passo velho: o endereço já voltou por um caminho mais barato
+            uint64_t h = (t >> 3) * 0x9E3779B97F4A7C15ULL >> (64 - 23);
+            while (visto[h] && visto[h] != t) h = (h + 1) & (HCAP - 1);
+            if (visto[h] && vo[h] < no[i].custo) continue;
+        }
+        size_t lo = nf, hi = np;  // no heap a janela é só DIST (antes 512 KB no heap inteiro: a procura levava 4 min)
+        while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
+        size_t ub = lo; hi = np;  // 1º ponteiro com valor > t: anda para trás, do mais perto para o mais longe
+        while (ub < hi) { size_t m = (ub + hi) / 2; if (pt[m].v <= t) ub = m + 1; else hi = m; }
+        int objs = 0, filhos = 0; uint64_t ultv = ~0ULL;  // objetos vizinhos (valores diferentes) e quem aponta para cada um
+        for (size_t j = ub; j-- > lo && nc < CPOOL && nvisto < HCAP / 2;) {
+            if (pt[j].v != ultv) { ultv = pt[j].v; filhos = 0; if (++objs > FANIN) break; }
+            if (filhos >= POR_OBJ) continue;
+            uint32_t o = (uint32_t)(t - pt[j].v), c = no[i].custo + o + PENA;
+            uint64_t h = (pt[j].onde >> 3) * 0x9E3779B97F4A7C15ULL >> (64 - 23);
+            while (visto[h] && visto[h] != pt[j].onde) h = (h + 1) & (HCAP - 1);
+            if (visto[h] && vo[h] <= c) continue;  // já chegou aqui mais barato
+            if (!visto[h]) nvisto++;
+            visto[h] = pt[j].onde; vo[h] = c; filhos++;
+            ligar(pt, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc);  // uma biblioteca aponta para cá? vira caminho
+            if (nn < NMAX) { no[nn] = (no_t){pt[j].onde, i, o, c, nivel}; POR(nf2, nn); nf2++; nn++; pornivel[nivel]++; }
+        }
     }
-    free(no); free(pt); free(visto);
+    free(fila);
+    #undef CUSTO
+    #undef POR
+    free(no); free(pt); free(visto); free(vo);
     qsort(cams, nc, sizeof *cams, cmp_cam);  // o mais confiável primeiro
     // saída: até CMAX, no máximo POR_LIB de cada biblioteca (variedade: se uma biblioteca for ruim, as outras ainda estão lá)
     int saiu = 0; char libs[64][64]; int quantos[64] = {0}, nl = 0;

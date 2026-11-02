@@ -3,7 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 out=$(mktemp -d); tpid=
-trap 'kill -9 $tpid 2>/dev/null || true; rm -rf "$out"' EXIT
+gpid=
+trap 'kill -9 $tpid $gpid 2>/dev/null || true; rm -rf "$out"' EXIT
 cc -O2 -Wall -Werror -pthread -o "$out/unitd" motor/unitd.c -lm
 cc -O0 -o "$out/alvo" motor/teste/alvo.c
 "$out/alvo" > "$out/info" & tpid=$!
@@ -102,4 +103,28 @@ confere "android: recusa texto que iria para o sistema" "err uso: android SEGUND
 confere "fechar: depois de fechar, o motor avisa" "err o jogo fechou"
 confere "ponteiro: o que não é endereço (o cabeçalho do programa) quebra o caminho" "err o caminho quebrou (não é endereço)"
 confere "ponteiro: biblioteca que não existe, recusa" "err biblioteca naoexiste não está aberta"
+# jogo grande, como o Orecraft: libil2cpp, 16 milhões de ponteiros (passa do limite do motor), objetos do caminho colados
+# (atalhos de deslocamento grande que quebram ao reabrir) e outros objetos apontando para cada passo. O caminho de verdade
+# tem 6 níveis: libil2cpp → classe +b8 → estáticos +10 → gerenciador +28 → lista +10 → itens +38 → item +30 = cobre
+cc -O2 -shared -fPIC -o "$out/libil2cpp.so" motor/teste/il2cpp_teste.c
+cc -O0 -o "$out/alvo_grande" motor/teste/alvo_grande.c -L"$out" -lil2cpp -Wl,-rpath,"$out"
+"$out/alvo_grande" > "$out/info_g" & gpid=$!
+for _ in $(seq 200); do [ -s "$out/info_g" ] && break; sleep 0.1; done
+read -r gp gcobre _ < "$out/info_g"
+t0=$(date +%s)
+got6=$(printf 'attach %s\nptrscan %s 8\n' "$gp" "$gcobre" | "$out/unitd")
+seg=$(( $(date +%s) - t0 ))
+tail -1 <<<"$got6"; echo "jogo grande: ${seg} s"
+camg=$(grep -m1 '^libil2cpp.so+[0-9a-f]*:b8:10:28:10:38:30$' <<<"$got6" || true)
+got7=$(printf 'attach %s\nptr %s\n' "$gp" "$camg" | "$out/unitd")
+got="$got6
+$got7"
+confere "jogo grande: passou do limite de ponteiros e mesmo assim leu a biblioteca" "(cheio)"
+confere "jogo grande: acha o caminho de verdade de 6 níveis do Unity" ":b8:10:28:10:38:30"
+got="$(grep -m1 '^libil2cpp' <<<"$got6")"
+confere "jogo grande: o caminho de verdade vem primeiro (na frente dos atalhos)" ":b8:10:28:10:38:30"
+got="$got6
+$got7"
+confere "jogo grande: seguir o caminho chega no cobre" "ok $gcobre"
+if [ "$seg" -le 60 ]; then echo "OK   jogo grande: procura em ${seg} s (até 60)"; else echo "FALHA jogo grande: procura levou ${seg} s"; falhou=1; fi
 exit $falhou
