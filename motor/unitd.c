@@ -403,7 +403,7 @@ static void cmd_diff(const char *m) {
 // "fixas"; a base de cada biblioteca é o começo da 1ª região dela.
 // No Android ARM64 os ponteiros do heap vêm com uma marca no byte de cima (0xb4…): ela é tirada antes de comparar.
 #define SEM_MARCA(v) ((v) & 0x00ffffffffffffffULL)
-typedef struct { uint64_t ini, fim; int rw, fixa, longe, usa, anon; char lib[64]; } reg_t;
+typedef struct { uint64_t ini, fim, base; int rw, rd, fixa, longe, usa, anon; char lib[64]; } reg_t;  // base: começo da biblioteca da região
 static reg_t *rg; static int nrg;
 // onde a biblioteca termina na memória (fim do último PT_LOAD do ELF, em páginas); 0 se não deu para ler. Guardado por caminho:
 // o ptr chama o mapa a cada caminho conferido
@@ -438,6 +438,7 @@ static void ler_mapa(void) {
         if (nrg == cap) { cap = cap ? cap * 2 : 1024; rg = realloc(rg, cap * sizeof *rg); }
         reg_t *r = &rg[nrg++]; memset(r, 0, sizeof *r); r->ini = a; r->fim = b;
         r->rw = perms[0] == 'r' && perms[1] == 'w' && !strstr(name, "/dev/") && !strstr(name, "[stack") && !strstr(name, "kgsl");
+        r->rd = perms[0] == 'r' && perms[2] != 'x' && strncmp(name, "/dev/", 5) && !strstr(name, "kgsl");  // legível e não é código
         const char *nm = strrchr(name, '/');
         // só as bibliotecas do jogo contam como começo de caminho: as do sistema (/system, /apex, /vendor…) guardam ponteiros
         // do alocador que mudam a cada abertura e enchiam o limite de caminhos com caminhos que quebram
@@ -473,6 +474,12 @@ static void ler_mapa(void) {
         ultfim = b;
     }
     fclose(f);
+    // o começo de cada biblioteca, guardado na região: antes cada caminho candidato percorria todas as regiões para achar
+    // (no celular são ~5000; com milhares de candidatos, a procura levava minutos)
+    for (int i = 0; i < nrg; i++) if (rg[i].lib[0]) {
+        rg[i].base = rg[i].ini;
+        for (int k = i - 1; k >= 0 && k >= i - 64; k--) if (!strcmp(rg[k].lib, rg[i].lib)) { rg[i].base = rg[k].base; break; }
+    }
     // jogo Unity (tem libil2cpp): só o código do jogo conta como começo de caminho. As outras bibliotecas (Firebase,
     // anúncios…) guardam ponteiros para tudo e enchiam a procura (o relatório mostrou 1000 caminhos do Firebase, todos falsos)
     int unity = 0;
@@ -581,7 +588,7 @@ static void ligar(const pt_t *pt, size_t n1, size_t nf, uint64_t t, int pai, uin
     while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
     for (size_t j = lo; j < fim && pt[j].v <= t; j++) {
         int k = achar_reg(pt[j].onde); if (k < 0 || !rg[k].fixa) continue;
-        uint64_t off = pt[j].onde - base_lib(rg[k].lib);
+        uint64_t off = pt[j].onde - rg[k].base;
         if (off >= 0x10000000ULL) continue;  // a mais de 256 MB do começo da biblioteca: não é parte dela
         // o salto longo da libil2cpp é tabela[índice da classe]: o tamanho dele não diz nada (é índice × 8): custo fixo,
         // nem barato (os saltos longos falsos passariam na frente) nem pelo tamanho (o caminho de tabela ia para o fim)
@@ -752,13 +759,25 @@ static void cmd_classe(const char *addr) {
     for (uint64_t off = 0; off <= 0x1000 && off <= base; off += 8) {
         uint64_t k; if (ler(base - off, &k, 8) || !nome_classe(k, nome, esp)) continue;
         if (!strcmp(nome, "String") && !strcmp(esp, "System")) break;  // caiu dentro de um texto: não é objeto do jogo
-        uint64_t obj = base - off; char nums[1024] = ""; int nn = 0, ln = 0;
+        uint64_t obj = base - off; char nums[1024] = "", est[1200] = ""; int nn = 0, ln = 0, le = 0;
         for (uint64_t f = 0x10; f < 0x200; f += 8) {  // os campos que apontam para textos, até o começo do próximo objeto
-            uint64_t p; char hex[130];
+            uint64_t p; char hex[130], cn[64], ce[64];
             if (ler(obj + f, &p, 8)) break;
             if (f > a - obj && eh_classe(p)) break;  // outro ponteiro para ficha depois do valor: é o próximo objeto
-            if (texto_unity(p, hex, sizeof hex)) { printf("texto %" PRIx64 " %s\n", f, hex); continue; }
-            if (achar_reg(SEM_MARCA(p)) >= 0) continue;  // ponteiro: muda a cada abertura, não serve de assinatura
+            // a estrutura do objeto, para o relatório (ver como é o objeto de verdade, sem adivinhar)
+            if (le < (int)sizeof est - 80) le += snprintf(est + le, sizeof est - le, " %" PRIx64 ":", f);
+            if (texto_unity(p, hex, sizeof hex)) { printf("texto %" PRIx64 " %s\n", f, hex); le += snprintf(est + le, sizeof est - le, "texto"); continue; }
+            if (achar_reg(SEM_MARCA(p)) >= 0) {  // ponteiro: muda a cada abertura, não serve; mas o objeto apontado pode ter textos
+                uint64_t k2; int sub = !ler(SEM_MARCA(p), &k2, 8) && nome_classe(k2, cn, ce);
+                if (le < (int)sizeof est - 80) le += snprintf(est + le, sizeof est - le, sub ? "->%s" : "ptr", cn);
+                // um nível: o item aponta para a definição dele, que tem o nome ("Cobre"). Linha "texto F>G HEX"
+                for (uint64_t g = 0x10; sub && g < 0x100; g += 8) {
+                    uint64_t q; if (ler(SEM_MARCA(p) + g, &q, 8) || eh_classe(q)) break;
+                    if (texto_unity(q, hex, sizeof hex)) printf("texto %" PRIx64 ">%" PRIx64 " %s\n", f, g, hex);
+                }
+                continue;
+            }
+            if (le < (int)sizeof est - 80) le += snprintf(est + le, sizeof est - le, f <= a - obj && a - obj < f + 8 ? "valor" : p ? "num" : "zero");
             // números do objeto (de 4 em 4 bytes), menos o próprio valor: o código do item, o tipo… separam objetos da
             // mesma classe que não têm texto (o "Item" do Orecraft). Ao reabrir, fica o objeto mais parecido
             for (int h = 0; h < 2 && nn < 24; h++) {
@@ -768,6 +787,8 @@ static void cmd_classe(const char *addr) {
             }
         }
         if (nn) printf("numeros %s\n", nums);
+        for (char *z; (z = strrchr(est, ' ')) && !strcmp(strchr(z, ':') ? strchr(z, ':') : z, ":zero");) *z = 0;  // sem os zeros do fim
+        printf("estrutura%s\n", est);
         printf("ok %s %s %" PRIx64 "\n", nome, esp, a - obj); return;
     }
     puts("err o valor não está dentro de um objeto do Unity");
@@ -794,6 +815,40 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
             }
         }
     }
+    const char *como = "variável da biblioteca";
+    if (!klass) {  // 1b) pelo texto do nome, como os scripts do GameGuardian: nem toda classe tem variável na biblioteca
+        // (o Orecraft: o "Item" não tinha). Acha "\0NOME\0" (o global-metadata) e quem aponta para ele: a ficha começa 0x10 antes
+        char pad[80]; size_t L = strlen(cls); uint64_t S[64]; int ns = 0;
+        if (L + 2 < sizeof pad) {
+            pad[0] = 0; memcpy(pad + 1, cls, L); pad[L + 1] = 0;
+            for (int r = 0; r < nrg && ns < 64; r++) {
+                if (!rg[r].rd) continue;
+                for (uint64_t a = rg[r].ini; a < rg[r].fim && ns < 64; a += BLOCO - 128) {  // blocos encostados: o nome pode cair na emenda
+                    size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
+                    if (ler(a, buf, n)) continue;
+                    for (char *q = (char *)buf; ns < 64 && (q = memmem(q, n - (size_t)(q - (char *)buf), pad, L + 2)); q++) {
+                        uint64_t em = a + (uint64_t)(q - (char *)buf) + 1; int ja = 0;
+                        for (int i = 0; i < ns; i++) if (S[i] == em) ja = 1;
+                        if (!ja) S[ns++] = em;
+                    }
+                    if (n < BLOCO) break;
+                }
+            }
+        }
+        for (int r = 0; r < nrg && ns && !klass; r++) {
+            if (!rg[r].usa) continue;
+            for (uint64_t a = rg[r].ini; a < rg[r].fim && !klass; a += BLOCO) {
+                size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
+                if (ler(a, buf, n)) continue;
+                for (size_t i = 2; i < n / 8 && !klass; i++) {
+                    uint64_t v = SEM_MARCA(buf[i]); int achou = 0;
+                    for (int k = 0; k < ns; k++) if (v == S[k]) achou = 1;
+                    if (achou && nome_classe(a + i * 8 - 0x10, nome, e) && !strcmp(nome, cls) && !strcmp(e, esp)) klass = a + i * 8 - 0x10;
+                }
+            }
+        }
+        como = "nome no metadata";
+    }
     if (!klass) { free(buf); printf("err a classe %s não foi achada (o jogo ainda não usou ela?)\n", cls); return; }
     int achados = 0, objetos = 0, temnum = strstr(ass, "n") != NULL, melhor = 0;
     enum { MAXO = 4096 }; uint64_t *cand = malloc(MAXO * 8); int *nota_o = malloc(MAXO * sizeof *nota_o), nc = 0;
@@ -813,8 +868,11 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
                         uint32_t w; if (!ler(obj + strtoull(t + 1, NULL, 16), &w, 4) && w == (uint32_t)strtoul(ig + 1, NULL, 16)) pontos++;
                         continue;
                     }
-                    uint64_t p; char hex[130];  // texto: tem que ser igual
-                    bate = !ler(obj + strtoull(t, NULL, 16), &p, 8) && texto_unity(p, hex, sizeof hex) && !strcmp(hex, ig + 1);
+                    uint64_t p; char hex[130];  // texto: tem que ser igual ("F>G": no objeto apontado por F, o campo G)
+                    char *mai = strchr(t, '>');
+                    if (mai && (ler(obj + strtoull(t, NULL, 16), &p, 8) || ler(SEM_MARCA(p) + strtoull(mai + 1, NULL, 16), &p, 8))) { bate = 0; continue; }
+                    if (!mai && ler(obj + strtoull(t, NULL, 16), &p, 8)) { bate = 0; continue; }
+                    bate = texto_unity(p, hex, sizeof hex) && !strcmp(hex, ig + 1);
                 }
                 if (!bate) continue;
                 // guarda só os de maior pontuação até agora: com milhares de objetos da classe, a lista enchia antes dos
@@ -828,7 +886,7 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
     // com números: só os de maior pontuação (se mais de um empatar, vão todos e o app decide)
     for (int i = 0; i < nc; i++) { printf("%" PRIx64 "\n", cand[i] + campo_off); achados++; }
     free(cand); free(nota_o);
-    printf("ok %d %d\n", achados, objetos);
+    printf("ok %d %d %s\n", achados, objetos, !strcmp(como, "nome no metadata") ? "pelo-texto" : "pela-variavel");
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor
 static void cmd_ptr(const char *cam) {

@@ -185,7 +185,9 @@ object Ponteiro {
         val todos = lista(j.pacote).groupBy { it.nome }.values.map { it.reduce(::fundir) }  // nomes repetidos de antes viram um só
         // jogo Unity: pelo nome primeiro (classe + assinatura). Exatamente 1 objeto = o valor, sem caminho e sem digitar
         val pelonome = mutableMapOf<String, String>()  // nome → endereço achado
+        faltaNome.clear()
         for (c in todos.filter { it.unity.isNotEmpty() }) {
+            faltaNome += c.nome  // sai daqui quando achar; senão as tentativas de 20 s e 60 s procuram de novo
             val r = runCatching { Nucleo.cmd { it.cmd("pelonome ${c.unity}") } }.getOrNull()
             val achados = r?.linhas.orEmpty().filter { it.isNotBlank() }
             if (achados.size != 1) {
@@ -199,7 +201,7 @@ object Ponteiro {
             val s = Salvo(addr, c.tipo, c.nome, if (congela) c.valor else v, congela, caminho = true)
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
             if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
-            pelonome[c.nome] = addr
+            pelonome[c.nome] = addr; faltaNome -= c.nome
             Registro.add("caminho", "${c.nome} pelo nome (${rotuloUnity(c.unity)}) = ${s.valor} · sem caminho e sem digitar")
         }
         val guardados = todos.filter { it.conferido }
@@ -279,8 +281,10 @@ object Ponteiro {
         Nucleo.semAviso {
             val t0 = System.currentTimeMillis()
             // jogo Unity: de que objeto o valor faz parte (classe + campo + os textos dele). Ao reabrir, acha pelo nome
-            val unity = runCatching { Nucleo.cmd { it.cmd("classe ${s.addr}") }.let { r -> deClasse(r.linhas, r.status) } }.getOrNull()
-            if (unity != null) Registro.add("caminho", "${s.nome}: é um objeto do Unity (${rotuloUnity(unity)}) · ao reabrir acho pelo nome", listOf(unity))
+            val rc = runCatching { Nucleo.cmd { it.cmd("classe ${s.addr}") } }.getOrNull()
+            val unity = rc?.let { r -> deClasse(r.linhas, r.status) }
+            // no registro vai também a estrutura do objeto (cada campo: texto, ponteiro para qual classe, número, o valor)
+            if (unity != null) Registro.add("caminho", "${s.nome}: é um objeto do Unity (${rotuloUnity(unity)}) · ao reabrir acho pelo nome", listOf(unity) + rc?.linhas.orEmpty())
             val c = runCatching { Nucleo.cmd { it.cmd("ptrscan ${s.addr} 8") }.linhas.filter { '+' in it }.take(AUTO) }.getOrDefault(emptyList())
             if (c.isEmpty() && unity == null) {
                 estadoAuto[s.addr] = "nenhum caminho achado"; aoTerminar?.invoke("${s.nome}: nenhum caminho achado")
@@ -341,7 +345,8 @@ object Ponteiro {
         Nucleo.semAviso {
             for (espera in listOf(20_000L, 40_000L)) {
                 kotlinx.coroutines.delay(espera)
-                if (Nucleo.jogo?.pid != j.pid || lista(j.pacote).none { !it.conferido }) return@semAviso
+                // pelo nome também: logo ao abrir o jogo a classe pode não estar carregada (o relatório: achou nada no 1º segundo)
+                if (Nucleo.jogo?.pid != j.pid || (lista(j.pacote).none { !it.conferido } && faltaNome.isEmpty())) return@semAviso
                 Registro.add("decisao", "Conferindo os caminhos de novo (${if (espera == 20_000L) "20" else "60"} s depois de abrir)")
                 aplicar()
             }
@@ -355,6 +360,9 @@ object Ponteiro {
             }
         }
     }
+
+    /** Valores do Unity que ainda não voltaram pelo nome nesta abertura (as tentativas de 20 s e 60 s procuram de novo). */
+    private val faltaNome = mutableSetOf<String>()
 
     /** Valores que a conferência sozinha não achou nas 3 tentativas: o painel pede o número da tela. */
     val precisaNumero = mutableStateListOf<String>()

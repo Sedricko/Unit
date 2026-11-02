@@ -77,6 +77,8 @@ class PonteiroTest {
         assertEquals("Moedas - 18", Ponteiro.deClasse(emptyList(), "Moedas - 18"))  // sem textos: só a classe
         // sem texto, com números fixos (o "Item" do Orecraft): vão na assinatura com o "n" na frente
         assertEquals("Item - 18 n10=00000007,n14=00000001", Ponteiro.deClasse(listOf("numeros n10=00000007,n14=00000001"), "Item - 18"))
+        // texto num objeto apontado (a definição do item tem o nome) e a estrutura, que só vai para o registro
+        assertEquals("Item - 18 10>10=436f627265", Ponteiro.deClasse(listOf("texto 10>10 436f627265", "estrutura 10:->DefItem 18:valor"), "Item - 18"))
         assertEquals(null, Ponteiro.deClasse(emptyList(), ""))  // não é objeto do Unity
         assertEquals("ItemRecurso, campo +0x30", Ponteiro.rotuloUnity("ItemRecurso Jogo 30 10=436f627265"))
     }

@@ -108,6 +108,9 @@ int main(int argc, char **argv) {
     lixo_raiz(tls);
     // reserva enorme nunca usada (como as do Android e do Unity): só zeros, o motor deve pular sem ler (pagemap)
     char *res = regiao((size_t)16 << 30, 1);
+    // muitas regiões pequenas, como no celular (~5000): o motor não pode percorrer todas a cada caminho candidato
+    // (percorria para achar o começo da biblioteca: no Orecraft a procura levou 5 a 8 minutos)
+    for (int k = 0; k < 3000; k++) { char *p = regiao(8192, 0); p[0] = 1; }
     if (argc > 3) { pthread_t t; pthread_create(&t, NULL, mexer, NULL); }
     printf("%d %lx", getpid(), (unsigned long)cobre); for (int n = 0; n < 6; n++) printf(" %lx", (unsigned long)nos[n]);  // os passos, para depurar
     printf(" %lx %lx %lx %lx\n", (unsigned long)arena_base(), (unsigned long)tls, (unsigned long)lnk, (unsigned long)res);  // regiões que o teste renomeia
