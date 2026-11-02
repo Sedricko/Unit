@@ -283,6 +283,7 @@ class Balao : Service() {
         LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
         // os Salvos ficam guardados no celular a cada mudança, e cada salvo novo ganha caminhos procurados sozinho
         LaunchedEffect(Unit) {
+            Ponteiro.aoTerminar = { m -> android.widget.Toast.makeText(this@Balao, m, android.widget.Toast.LENGTH_SHORT).show() }
             androidx.compose.runtime.snapshotFlow { Nucleo.salvos.toList() }.collect { l -> Nucleo.guardarSalvos(); l.forEach { Ponteiro.autoAchar(it) } }
         }
         LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); Nucleo.semAviso { Registro.pulso() } } }  // pulso a cada 5 min
@@ -487,7 +488,8 @@ class Balao : Service() {
     private fun LinhaSalvo(s: Salvo) = Linha(Modifier.toque { if (s.perdido) tela = "achar" else { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" } }) {
         Column(Modifier.weight(1f)) {
             Text(s.nome, color = if (s.perdido) Cor.apagado else Cor.texto, fontSize = 15.sp)
-            Text(if (s.perdido) "endereço antigo · ache de novo (último: ${s.valor})" else (NOME_TIPO[s.tipo] ?: s.tipo) + (if (s.caminho) " · pelo caminho ✓" else "") + if (s.congelado) " · congelado" else "", color = Cor.apagado, fontSize = 11.sp)
+            Text(if (s.perdido) "endereço antigo · ache de novo (último: ${s.valor})" else (NOME_TIPO[s.tipo] ?: s.tipo) + (if (s.caminho) " · pelo caminho ✓" else Ponteiro.estadoAuto[s.addr]?.let { " · $it" } ?: "") + if (s.congelado) " · congelado" else "",
+                color = if (!s.caminho && Ponteiro.estadoAuto[s.addr] == "procurando caminhos…") Cor.a2 else Cor.apagado, fontSize = 11.sp)
         }
         if (s.perdido) { Box(Modifier.padding(start = 8.dp).toque { Nucleo.esquecerSalvo(s) }) { Text("Esquecer", color = Cor.ruim, fontSize = 12.sp) }; return@Linha }
         Text(s.valor, color = if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold)

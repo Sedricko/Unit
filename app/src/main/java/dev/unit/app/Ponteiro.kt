@@ -174,18 +174,27 @@ object Ponteiro {
 
     // ---- automático: salvou um valor → procura os caminhos sozinho; na próxima abertura confere pela maioria ----
     private val autoFeitos = mutableSetOf<String>()  // endereços já procurados nesta sessão
+    /** O que a procura sozinha está fazendo com cada salvo (por endereço): aparece na linha do salvo. */
+    val estadoAuto = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    /** Avisa na tela quando a procura termina (o Balao mostra como um aviso rápido do Android). */
+    var aoTerminar: ((String) -> Unit)? = null
     const val AUTO = 300  // caminhos guardados para a conferência (a maioria escolhe; depois sobram até RESERVA)
 
     fun autoAchar(s: Salvo) {
         val j = Nucleo.jogo ?: return
         if (s.caminho || s.perdido || !autoFeitos.add(s.addr) || lista(j.pacote).any { it.nome == s.nome }) return
+        estadoAuto[s.addr] = "procurando caminhos…"
         Nucleo.semAviso {
             val t0 = System.currentTimeMillis()
-            val c = Nucleo.cmd { it.cmd("ptrscan ${s.addr} 8") }.linhas.filter { '+' in it }.take(AUTO)
-            if (c.isEmpty()) { Registro.add("caminho", "${s.nome}: nenhum caminho achado sozinho (vai precisar achar de novo ao reabrir)"); return@semAviso }
+            val c = runCatching { Nucleo.cmd { it.cmd("ptrscan ${s.addr} 8") }.linhas.filter { '+' in it }.take(AUTO) }.getOrDefault(emptyList())
+            if (c.isEmpty()) {
+                estadoAuto[s.addr] = "nenhum caminho achado"; aoTerminar?.invoke("${s.nome}: nenhum caminho achado")
+                Registro.add("caminho", "${s.nome}: nenhum caminho achado sozinho (vai precisar achar de novo ao reabrir)"); return@semAviso
+            }
             val nome = Nucleo.salvos.firstOrNull { it.addr == s.addr }?.nome ?: s.nome  // pode ter sido renomeado enquanto procurava
             gravar(j.pacote, juntar(lista(j.pacote), listOf(Caminho(nome, s.tipo, c, valor = s.valor, conferido = false))))
             Registro.add("caminho", "$nome: ${c.size} caminhos guardados sozinhos (${(System.currentTimeMillis() - t0) / 1000} s) · confiro na próxima abertura", lista5(c, "+ achado"))
+            estadoAuto[s.addr] = "${c.size} caminhos guardados · confere ao reabrir"; aoTerminar?.invoke("$nome: caminhos guardados ✓")
         }
     }
 
