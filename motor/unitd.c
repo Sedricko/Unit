@@ -525,7 +525,11 @@ static void cmd_ptr(const char *cam) {
     uint64_t a = b + strtoull(x, NULL, 16);
     for (x = strtok_r(NULL, ":", &sv); x; x = strtok_r(NULL, ":", &sv)) {
         uint64_t p; if (ler(a, &p, 8)) { puts("err o caminho quebrou"); return; }
-        a = SEM_MARCA(p) + strtoull(x, NULL, 16);
+        p = SEM_MARCA(p);
+        // vazio (a estrutura ainda não existe, ex.: o jogo carregando) ou não é endereço (ex.: texto): não soma em cima
+        if (p < 0x10000) { puts("err o caminho quebrou (vazio)"); return; }
+        if (p > 0x0000ffffffffffffULL) { puts("err o caminho quebrou (não é endereço)"); return; }
+        a = p + strtoull(x, NULL, 16);
     }
     printf("ok %" PRIx64 "\n", a);
 }

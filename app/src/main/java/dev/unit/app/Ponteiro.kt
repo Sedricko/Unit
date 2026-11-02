@@ -219,8 +219,8 @@ object Ponteiro {
         val valor = melhor?.let { m -> ok.first { it.second!!.first == m.key }.second!!.second }
         val faz = valor?.toDoubleOrNull()?.let { it.isFinite() && it >= 0 } == true
         if (melhor == null || melhor.value < 3 || !faz) {
-            Registro.add("decisao", "${c.nome}: não deu para conferir sozinho (${melhor?.value ?: 0} caminho(s) concordam, de ${c.caminhos.size}); fica guardado para a próxima abertura")
-            return c.copy(caminhos = ok.map { it.first }.ifEmpty { c.caminhos })  // tira só os quebrados
+            Registro.add("decisao", "${c.nome}: não deu para conferir sozinho (${melhor?.value ?: 0} caminho(s) concordam, de ${c.caminhos.size}); guardei todos e tento de novo daqui a pouco e na próxima abertura")
+            return c  // não apaga nada: se o jogo ainda estava carregando, os bons pareciam quebrados
         }
         val bons = ok.filter { it.second!!.first == melhor.key }.map { it.first }
         val s = Salvo(melhor.key, c.tipo, c.nome, valor!!, false, caminho = true)
@@ -246,6 +246,19 @@ object Ponteiro {
         val j = Nucleo.jogo ?: return
         gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(fixo = sim, falhas = emptyMap()) else it })
         Registro.add("caminho", "$nome: ${if (sim) "fixado (protegido e realimentado)" else "não está mais fixado"}")
+    }
+
+    /** Ainda há valor a conferir: tenta de novo em 20 s e em 60 s (o jogo pode montar as estruturas depois de abrir). */
+    fun tentarDeNovo() {
+        val j = Nucleo.jogo ?: return
+        Nucleo.semAviso {
+            for (espera in listOf(20_000L, 40_000L)) {
+                kotlinx.coroutines.delay(espera)
+                if (Nucleo.jogo?.pid != j.pid || lista(j.pacote).none { !it.conferido }) return@semAviso
+                Registro.add("decisao", "Conferindo os caminhos de novo (${if (espera == 20_000L) "20" else "60"} s depois de abrir)")
+                aplicar()
+            }
+        }
     }
 
     fun renomear(antigo: String, novo: String) {

@@ -119,6 +119,7 @@ object Nucleo {
         jogo = j; pausado = false; zerar(); salvos.clear(); salvos += antigos  // os nomes voltam; o caminho (aplicar) acha o endereço
         Registro.add("jogo", "Ligado a ${j.nome} (pid ${j.pid})" + if (antigos.isNotEmpty()) " · ${antigos.size} salvo(s) guardados de antes" else "")
         Ponteiro.aplicar()  // LABORATÓRIO: os salvos guardados com caminho aparecem sozinhos
+        Ponteiro.tentarDeNovo()
         Registro.autotesteRapido()
     }
 
@@ -147,6 +148,7 @@ object Nucleo {
                 Registro.add("jogo", "${j.nome} reaberto (pid $pid)")
                 aviso = "Esperando ${j.nome} carregar…"; kotlinx.coroutines.delay(5000); aviso = ""  // recém-aberto: os caminhos ainda não existem
                 Ponteiro.aplicar()
+                Ponteiro.tentarDeNovo()  // o jogo pode montar as estruturas depois: confere de novo em 20 s e em 60 s
                 return@rodar
             }
         }
