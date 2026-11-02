@@ -27,6 +27,11 @@ class PonteiroTest {
         assertEquals(listOf("c1", "c2"), Ponteiro.vivos(listOf("c1" to null, "c2" to null)))
     }
 
+    @Test fun alimentarPoeOsProvadosPrimeiroSemRepetir() {
+        assertEquals(listOf("v1", "n1", "n2"), Ponteiro.alimentar(listOf("v1"), listOf("n1", "v1", "n2")))
+        assertEquals(Ponteiro.RESERVA, Ponteiro.alimentar(emptyList(), (1..50).map { "n$it" }).size)
+    }
+
     @Test fun bateComOArredondamentoDaTela() {
         assertTrue(Ponteiro.bate("f32", "100.37", 100.0))
         assertFalse(Ponteiro.bate("f32", "101", 100.0))

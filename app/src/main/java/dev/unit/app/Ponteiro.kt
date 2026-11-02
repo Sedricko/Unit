@@ -82,7 +82,7 @@ object Ponteiro {
     /** Guarda no jogo de agora (até 5 caminhos: se um quebrar numa atualização, outro pode valer). */
     fun usar(congelar: Boolean) {
         val p = pendente ?: return; val j = Nucleo.jogo ?: return
-        gravar(j.pacote, juntar(lista(j.pacote), listOf(p.copy(caminhos = p.caminhos.take(5), congelar = congelar))))
+        gravar(j.pacote, juntar(lista(j.pacote), listOf(p.copy(caminhos = p.caminhos.take(RESERVA), congelar = congelar))))
         pendente = null; aplicar()
     }
 
@@ -114,7 +114,29 @@ object Ponteiro {
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
             if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
         }
+        // auto-alimentar: com poucos caminhos vivos, procura caminhos novos a partir do endereço que um vivo achou agora
+        for ((c, ch) in limpos) {
+            val chegou = ch.mapNotNull { it.second }
+            val addr = chegou.groupingBy { it }.eachCount().maxByOrNull { it.value } ?: continue
+            if (addr.value >= POUCOS || c.nome in renovados) continue
+            // só alimenta com prova: 2+ caminhos concordam, ou o único guardado (já conferido) ainda chega. Senão um caminho
+            // errado sozinho viraria "maioria" com os novos que nasceram dele
+            if (addr.value < 2 && ch.size > 1) continue
+            renovados += c.nome
+            aviso = "Renovando os caminhos de ${c.nome}… (até 1 minuto)"
+            val novos = runCatching { Nucleo.cmd { it.cmd("ptrscan ${addr.key} 8") }.linhas.filter { '+' in it } }.getOrDefault(emptyList())
+            val atual = lista(j.pacote).firstOrNull { it.nome == c.nome } ?: continue
+            gravar(j.pacote, juntar(lista(j.pacote), listOf(atual.copy(caminhos = alimentar(atual.caminhos, novos)))))
+            aviso = ""
+        }
     }
+
+    const val RESERVA = 20  // caminhos guardados por valor: dá prova para a maioria e reserva se uns quebrarem
+    const val POUCOS = 3    // menos vivos que isso: procura caminhos novos
+    private val renovados = mutableSetOf<String>()  // uma renovação por valor enquanto o app está aberto (a procura pesa)
+
+    /** Os vivos primeiro (já provados), depois os novos na ordem de confiança do motor, sem repetir, até a reserva. */
+    fun alimentar(vivos: List<String>, novos: List<String>) = (vivos + novos).distinct().take(RESERVA)
 
     fun renomear(antigo: String, novo: String) {
         val j = Nucleo.jogo ?: return
