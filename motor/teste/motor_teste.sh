@@ -182,11 +182,35 @@ cenario B b 3 ':8ca0:b8:18:40:10:48:34' '[anon:scudo:primary]'
 # a procura continua e fica com os melhores. Antes ela parava ao encher, e o caminho certo podia nem ter aparecido
 bach=$(grep -o 'achados=[0-9]*' <<<"$gres" | cut -d= -f2)
 testa "B: a lista de candidatos encheu (${bach:-?} achados para 20000 lugares) e o caminho certo ficou" "[ '${bach:-0}' -gt 20000 ] && grep -q -- ':8ca0:b8:18:40:10:48:34\$' '$out/cam_B'"
-# a ficha da classe (nome em +0x10) põe o caminho de verdade na frente dos milhares que passam pelo coletor de lixo
+# com milhares de caminhos, a ordem antes de reabrir não é garantida; o que vale é ficar entre os 3000 e, ao reabrir, entre os 20 vivos
 bpos=$(grep -n -m1 -- ':8ca0:b8:18:40:10:48:34$' "$out/cam_B" | cut -d: -f1 || true)
-testa "B: com a ficha da classe reconhecida, o caminho certo fica entre os 20 primeiros (posição ${bpos:-nenhuma})" "[ -n '$bpos' ] && [ '$bpos' -le 20 ]"
+testa "B: com a lista cheia, o caminho certo fica entre os 3000 que o app guarda (posição ${bpos:-nenhuma}; depois de reabrir: ver abaixo)" "[ -n '$bpos' ] && [ '$bpos' -le 3000 ]"
 # D: o gerenciador do caminho é popular (5000 objetos do heap apontam para ele): o ponteiro verdadeiro é um entre 5001
 cenario D d 8 ':b8:10:d38:10:38:30' '[anon:libc_malloc]'
+# ===== achar pelo nome (como os scripts do GameGuardian, mas sozinho): classe do objeto + assinatura (os textos dele) =====
+# 3 itens da mesma classe (Ferro, Cobre, Ouro) com o MESMO valor: só a assinatura separa. Ao reabrir, sem caminho nenhum
+pelonome() {  # nome cenário semente-salvar semente-reabrir campo
+    local nome=$1 cen=$2 campo=$5
+    abre "$cen" "$3"
+    local cl; cl=$(printf 'attach %s\nclasse %s\n' "$gp" "$gcobre" | "$out/unitd" | tail -n +3)
+    local ass; ass=$(awk '/^texto / { printf "%s%s=%s", (n++ ? "," : ""), $2, $3 }' <<<"$cl")
+    testa "$nome: ao salvar, descobre a classe do valor (ItemRecurso, campo +$campo)" "grep -qx 'ok ItemRecurso Jogo $campo' <<<\"\$cl\""
+    testa "$nome: a assinatura é só o nome do item (sem textos dos objetos vizinhos): $ass" "[ '$ass' = '10=436f627265' ]"
+    fecha
+    abre "$cen" "$4"
+    local t0 r r0; t0=$(date +%s%N)
+    r=$(printf 'attach %s\npelonome ItemRecurso Jogo %s %s\n' "$gp" "$campo" "$ass" | "$out/unitd" | tail -n +3)
+    local ms=$(( ($(date +%s%N) - t0) / 1000000 ))
+    r0=$(printf 'attach %s\npelonome ItemRecurso Jogo %s\npelonome NaoExiste Jogo %s\n' "$gp" "$campo" "$campo" | "$out/unitd" | tail -n +3)
+    echo "$nome: reaberto, pelo nome: $(tr '\n' ' ' <<<"$r")(${ms} ms) · sem assinatura: $(grep '^ok' <<<"$r0" | head -1)"
+    testa "$nome: reaberto, acha o cobre só pelo nome e pela assinatura (1 de 3 itens, no endereço novo)" "[ \"\$(head -1 <<<\"\$r\")\" = '$gcobre' ] && grep -qx 'ok 1 3' <<<\"\$r\""
+    testa "$nome: sem a assinatura vêm os 3 itens (a assinatura é que separa)" "grep -qx 'ok 3 3' <<<\"\$r0\""
+    testa "$nome: classe que não existe dá erro claro" "grep -q '^err a classe NaoExiste não foi achada' <<<\"\$r0\""
+    testa "$nome: rápido (${ms} ms, até 20000)" "[ $ms -le 20000 ]"
+    fecha
+}
+pelonome "nome A" a 1 2 30
+pelonome "nome B" b 3 4 34
 # C: a memória do caminho colada logo depois da .bss da libil2cpp. Sem nome, o Linux junta as duas numa linha do mapa, e o
 # motor via a arena como se fosse da biblioteca (falha que aparecia às vezes, conforme onde o sistema punha cada região)
 cenario C c 7 ':b8:10:d38:10:38:30' '-'

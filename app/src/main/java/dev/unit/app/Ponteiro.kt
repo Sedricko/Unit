@@ -31,7 +31,8 @@ import kotlin.math.abs
 /** conferido = false: guardado sozinho ao salvar; a próxima abertura do jogo confere pela maioria. */
 /** fixo = a pessoa fixou: caminho que falha só sai depois de 3 aberturas seguidas (falhas conta), e a reserva é mantida cheia. */
 data class Caminho(val nome: String, val tipo: String, val caminhos: List<String>, val congelar: Boolean = false, val valor: String = "", val conferido: Boolean = true,
-                   val fixo: Boolean = false, val falhas: Map<String, Int> = emptyMap(), val pid: Int = 0)  // pid: a abertura em que foi procurado
+                   val fixo: Boolean = false, val falhas: Map<String, Int> = emptyMap(), val pid: Int = 0,  // pid: a abertura em que foi procurado
+                   val unity: String = "")  // jogo Unity: "CLASSE ESPAÇO CAMPO [OFF=HEX,...]" - acha o valor pelo nome, sem caminho
 
 /**
  * LABORATÓRIO (teste): ponteiros. Achou um valor uma vez → o motor procura o caminho (biblioteca + deslocamentos) até
@@ -51,10 +52,10 @@ object Ponteiro {
     private var recarga by mutableStateOf(0)
 
     // ---- guardar: JSON por jogo (pacote → lista) ----
-    fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido).put("fixo", c.fixo).put("falhas", JSONObject(c.falhas)).put("pid", c.pid) })
+    fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido).put("fixo", c.fixo).put("falhas", JSONObject(c.falhas)).put("pid", c.pid).put("unity", c.unity) })
     fun deJson(a: JSONArray) = (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
         Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor"), o.optBoolean("conferido", true), o.optBoolean("fixo"),
-            o.optJSONObject("falhas")?.let { f -> f.keys().asSequence().associateWith { k -> f.getInt(k) } }.orEmpty(), o.optInt("pid")) } }
+            o.optJSONObject("falhas")?.let { f -> f.keys().asSequence().associateWith { k -> f.getInt(k) } }.orEmpty(), o.optInt("pid"), o.optString("unity")) } }
     fun lista(pacote: String) = runCatching { deJson(JSONArray(prefs.getString(pacote, "[]"))) }.getOrDefault(emptyList())
     // o arquivo (unit-ponteiros.json) acompanha sempre: limpou os mortos, usou, importou, renomeou → já sai atualizado
     private fun gravar(pacote: String, l: List<Caminho>) { prefs.edit().putString(pacote, paraJson(l).toString()).commit(); runCatching { exportar() } }
@@ -74,14 +75,30 @@ object Ponteiro {
             val antes = v.caminhos.toSet(); val comum = n.caminhos.filter { it in antes }
             if (comum.isNotEmpty()) {
                 Registro.add("caminho", "${n.nome}: cruzei duas procuras · ${comum.size} caminho(s) aparecem nas duas aberturas (de ${v.caminhos.size} e ${n.caminhos.size})", lista5(comum, "+ nas duas"))
-                return n.copy(caminhos = comum.take(RESERVA), conferido = true)
+                return n.copy(caminhos = comum.take(RESERVA), conferido = true, unity = n.unity.ifEmpty { v.unity })
             }
             Registro.add("decisao", "${n.nome}: as duas procuras não têm caminho em comum; guardei os da mais nova para conferir")
-            return n
+            return n.copy(unity = n.unity.ifEmpty { v.unity })
         }
         val ordem = if (v.conferido) v.caminhos + n.caminhos else n.caminhos + v.caminhos  // o provado vem primeiro (desempata a votação)
         return n.copy(caminhos = ordem.distinct().take(AUTO), conferido = v.conferido || n.conferido, congelar = v.congelar || n.congelar,
-            fixo = v.fixo || n.fixo, falhas = v.falhas + n.falhas)
+            fixo = v.fixo || n.fixo, falhas = v.falhas + n.falhas, unity = n.unity.ifEmpty { v.unity })
+    }
+
+    /** Resposta do "classe" do motor ("texto OFF HEX"... + "ok CLASSE ESPAÇO CAMPO") → o que o "pelonome" pede. */
+    fun deClasse(linhas: List<String>, status: String): String? {
+        val p = status.split(' ').filter { it.isNotEmpty() }
+        if (p.size != 3) return null
+        val ass = linhas.filter { it.startsWith("texto ") }.mapNotNull { l -> l.split(' ').takeIf { it.size == 3 }?.let { "${it[1]}=${it[2]}" } }.joinToString(",")
+        return (p + listOfNotNull(ass.ifEmpty { null })).joinToString(" ")
+    }
+    /** Para o registro e a tela: "ItemRecurso, campo +0x30". */
+    fun rotuloUnity(u: String) = u.split(' ').let { if (it.size >= 3) "${it[0]}, campo +0x${it[2]}" else u }
+
+    /** O número achado é parecido com o último conhecido? (o relatório mostrou um "conferido" com 0, e o jogo com 524) */
+    fun plausivel(ultimo: String, valor: String?): Boolean {
+        val u = ultimo.toDoubleOrNull()
+        return valor?.toDoubleOrNull()?.let { v -> v.isFinite() && v >= 0 && (u == null || u <= 0 || (v > 0 && v in u / 50..u * 50 + 1000)) } == true
     }
 
     /** O número da tela bate com o da memória? (Float da tela vem arredondado.) */
@@ -163,9 +180,32 @@ object Ponteiro {
     fun aplicar() = Nucleo.rodar {
         val j = Nucleo.jogo ?: return@rodar
         val todos = lista(j.pacote).groupBy { it.nome }.values.map { it.reduce(::fundir) }  // nomes repetidos de antes viram um só
+        // jogo Unity: pelo nome primeiro (classe + assinatura). Exatamente 1 objeto = o valor, sem caminho e sem digitar
+        val pelonome = mutableMapOf<String, String>()  // nome → endereço achado
+        for (c in todos.filter { it.unity.isNotEmpty() }) {
+            val r = runCatching { Nucleo.cmd { it.cmd("pelonome ${c.unity}") } }.getOrNull()
+            val achados = r?.linhas.orEmpty().filter { it.isNotBlank() }
+            if (achados.size != 1) {
+                Registro.add("decisao", "${c.nome}: pelo nome (${rotuloUnity(c.unity)}) achei ${if (r == null) "nada (a classe ainda não carregou?)" else "${achados.size} objeto(s)"}; sigo pelos caminhos")
+                continue
+            }
+            val addr = achados[0]
+            val v = runCatching { Nucleo.cmd { it.cmd("read $addr ${c.tipo}") }.status }.getOrNull() ?: continue
+            val congela = c.congelar && c.valor.isNotEmpty()
+            if (congela) Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") }
+            val s = Salvo(addr, c.tipo, c.nome, if (congela) c.valor else v, congela, caminho = true)
+            val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
+            if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+            pelonome[c.nome] = addr
+            Registro.add("caminho", "${c.nome} pelo nome (${rotuloUnity(c.unity)}) = ${s.valor} · sem caminho e sem digitar")
+        }
         val guardados = todos.filter { it.conferido }
         val limpos = guardados.map { c -> c to c.caminhos.map { cam -> cam to seguir(cam, c.tipo)?.first } }
-        val pendentesAgora = todos.filterNot { it.conferido }.map { conferirSozinho(it) }  // os guardados sozinhos ao salvar
+        // os guardados sozinhos ao salvar: achado pelo nome já é a prova (ficam os caminhos que chegam no mesmo lugar)
+        val pendentesAgora = todos.filterNot { it.conferido }.map { c ->
+            val addr = pelonome[c.nome] ?: return@map conferirSozinho(c)
+            c.copy(conferido = true, caminhos = c.caminhos.filter { cam -> seguir(cam, c.tipo)?.first == addr }.take(RESERVA))
+        }
         gravar(j.pacote, limpos.map { (c, ch) -> if (c.fixo) protegido(c, ch) else c.copy(caminhos = vivos(ch)) } + pendentesAgora)  // a cada abertura sobram só os vivos
         for ((c, ch) in limpos) {
             val vivo = vivos(ch).toSet(); val mortos = ch.filter { it.first !in vivo }
@@ -176,6 +216,7 @@ object Ponteiro {
                 lista5(mortos.map { "${it.first}  (${if (it.second == null) "quebrou" else "chegou em outro lugar"})" }, "– saiu"))
         }
         for ((c, ch) in limpos) {
+            if (c.nome in pelonome) continue  // já voltou pelo nome
             val cam = vivos(ch).firstOrNull() ?: continue
             val (addr, v) = seguir(cam, c.tipo) ?: continue
             if (c.congelar && c.valor.isNotEmpty()) Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") }
@@ -234,15 +275,19 @@ object Ponteiro {
         estadoAuto[s.addr] = "procurando caminhos…"
         Nucleo.semAviso {
             val t0 = System.currentTimeMillis()
+            // jogo Unity: de que objeto o valor faz parte (classe + campo + os textos dele). Ao reabrir, acha pelo nome
+            val unity = runCatching { Nucleo.cmd { it.cmd("classe ${s.addr}") }.let { r -> deClasse(r.linhas, r.status) } }.getOrNull()
+            if (unity != null) Registro.add("caminho", "${s.nome}: é um objeto do Unity (${rotuloUnity(unity)}) · ao reabrir acho pelo nome", listOf(unity))
             val c = runCatching { Nucleo.cmd { it.cmd("ptrscan ${s.addr} 8") }.linhas.filter { '+' in it }.take(AUTO) }.getOrDefault(emptyList())
-            if (c.isEmpty()) {
+            if (c.isEmpty() && unity == null) {
                 estadoAuto[s.addr] = "nenhum caminho achado"; aoTerminar?.invoke("${s.nome}: nenhum caminho achado")
                 Registro.add("caminho", "${s.nome}: nenhum caminho achado sozinho (vai precisar achar de novo ao reabrir)"); return@semAviso
             }
             val nome = Nucleo.salvos.firstOrNull { it.addr == s.addr }?.nome ?: s.nome  // pode ter sido renomeado enquanto procurava
-            gravar(j.pacote, juntar(lista(j.pacote), listOf(Caminho(nome, s.tipo, c, valor = s.valor, conferido = false, pid = j.pid))))
+            gravar(j.pacote, juntar(lista(j.pacote), listOf(Caminho(nome, s.tipo, c, valor = s.valor, conferido = false, pid = j.pid, unity = unity ?: ""))))
             Registro.add("caminho", "$nome: ${c.size} caminhos guardados sozinhos (${(System.currentTimeMillis() - t0) / 1000} s) · confiro na próxima abertura", lista5(c, "+ achado"))
-            estadoAuto[s.addr] = "${c.size} caminhos guardados · confere ao reabrir"; aoTerminar?.invoke("$nome: caminhos guardados ✓")
+            estadoAuto[s.addr] = (if (unity != null) "pelo nome ✓ · " else "") + "${c.size} caminhos guardados · confere ao reabrir"
+            aoTerminar?.invoke("$nome: " + if (unity != null) "achado pelo nome ✓" else "caminhos guardados ✓")
         }
     }
 
@@ -253,9 +298,7 @@ object Ponteiro {
         val votos = ok.groupingBy { it.second!!.first }.eachCount()
         val melhor = votos.maxByOrNull { it.value }
         val valor = melhor?.let { m -> ok.first { it.second!!.first == m.key }.second!!.second }
-        // o número achado tem que ser parecido com o último conhecido (o relatório mostrou um "conferido" com 0, e o jogo com 524)
-        val ultimo = c.valor.toDoubleOrNull()
-        val faz = valor?.toDoubleOrNull()?.let { v -> v.isFinite() && v >= 0 && (ultimo == null || ultimo <= 0 || (v > 0 && v in ultimo / 50..ultimo * 50 + 1000)) } == true
+        val faz = plausivel(c.valor, valor)  // parecido com o último conhecido
         // zero: a memória tem muito zero solto (o falso positivo do relatório era um 0): pede 5 caminhos concordando, não 3
         val precisa = if (valor?.toDoubleOrNull() == 0.0) 5 else 3
         if (melhor == null || melhor.value < precisa || !faz) {

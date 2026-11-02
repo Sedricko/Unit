@@ -15,6 +15,8 @@
 //   diff MODO                  mudou|igual|foto|aumentou|diminuiu (1ª vez compara com a foto) -> ok N
 //   ptrscan ENDEREÇO [NÍVEIS]  caminhos (ponteiros) de uma biblioteca até o endereço: "lib+OFF:o1:...:oN" -> ok N
 //   ptr CAMINHO                segue o caminho de agora                                     -> ok ENDEREÇO
+//   classe ENDEREÇO            classe do Unity do objeto do valor; "texto OFF HEX" = assinatura -> ok CLASSE ESPAÇO CAMPO
+//   pelonome CLASSE ESPAÇO CAMPO [OFF=HEX,...]  o valor achado pelo nome da classe e a assinatura -> ok ACHADOS OBJETOS
 //   vivo / fechar              o jogo ainda está aberto? / fecha o jogo
 //   android DESDE PACOTE       o que o Android anotou (logcat) sobre o jogo, o Unit, ANR e falhas -> ok N
 //   tirar A1,A2,...            tira endereços dos resultados (apagados pela pessoa)        -> ok SOBRARAM TIRADOS
@@ -526,6 +528,29 @@ static int eh_classe(uint64_t c) {
     }
     return 0;
 }
+// nome e espaço de nomes de uma ficha de classe (0 se não for ficha). O espaço de nomes vazio vira "-"
+static int nome_classe(uint64_t c, char *nome, char *esp) {
+    if (!eh_classe(c)) return 0;
+    uint64_t p[2]; if (ler(SEM_MARCA(c) + 0x10, p, 16)) return 0;
+    char b[64]; memset(b, 0, sizeof b);
+    if (ler(SEM_MARCA(p[0]), b, 63)) return 0;
+    snprintf(nome, 64, "%s", b);
+    memset(b, 0, sizeof b);
+    if (!SEM_MARCA(p[1]) || ler(SEM_MARCA(p[1]), b, 63) || !b[0]) snprintf(esp, 64, "-"); else snprintf(esp, 64, "%s", b);
+    for (char *x = esp; *x; x++) if (*x == ' ') *x = '_';
+    return 1;
+}
+// texto de um System.String do Unity (cabeçalho 16 bytes, tamanho int32 em +0x10, letras UTF-16 em +0x14), em hex. Só
+// textos curtos e legíveis (nomes de itens, ids): é a "assinatura" que separa objetos da mesma classe
+static int texto_unity(uint64_t s, char *hex, size_t nhex) {
+    char nome[64], esp[64]; uint64_t k; int32_t n; uint16_t u[64];
+    s = SEM_MARCA(s);
+    if (s < 0x10000 || ler(s, &k, 8) || !nome_classe(k, nome, esp) || strcmp(nome, "String") || strcmp(esp, "System")) return 0;
+    if (ler(s + 0x10, &n, 4) || n < 1 || n > 63 || ler(s + 0x14, u, (size_t)n * 2)) return 0;
+    if ((size_t)n * 2 + 1 > nhex) return 0;
+    for (int i = 0; i < n; i++) { if (u[i] < 0x20 || u[i] > 0x7e) return 0; snprintf(hex + i * 2, 3, "%02x", u[i]); }
+    return 1;
+}
 // é uma posição da tabela de classes? As vizinhas (−8 e +8) também são fichas de classe ou vazias, com pelo menos uma ficha.
 // Um campo qualquer de um objeto que por acaso aponta para uma classe (o cabeçalho de todo objeto aponta) tem lixo em volta
 static int eh_tabela(uint64_t pos) {
@@ -706,6 +731,71 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     printf("ok %d ponteiros=%zu/%zu%s fora=%" PRIu64 "MB pulou=%" PRIu64 "MB achados=%lu candidatos=%d passos=%d niveis=%d,%d,%d,%d,%d,%d,%d%s%s\n", saiu, np, PMAX, cheio ? "(cheio)" : "", fora >> 20, pulou >> 20, achados, nc, nn,
            pornivel[1], pornivel[2], pornivel[3], pornivel[4], pornivel[5], pornivel[6], pornivel[7], nn >= NMAX ? " (limite de passos)" : "", incluida);
 }
+// classe ENDEREÇO: de que objeto (classe do Unity) o valor faz parte. Todo objeto começa com o ponteiro para a ficha da classe:
+// procura para trás (até 4 KB) o 1º que aponta para uma ficha. Linhas "texto OFF HEX" = os textos do objeto (a assinatura,
+// para achar o mesmo objeto ao reabrir) -> ok CLASSE ESPAÇO CAMPO
+static void cmd_classe(const char *addr) {
+    uint64_t a = strtoull(addr, NULL, 16), base = a & ~7ULL; char nome[64], esp[64];
+    ler_mapa();
+    for (uint64_t off = 0; off <= 0x1000 && off <= base; off += 8) {
+        uint64_t k; if (ler(base - off, &k, 8) || !nome_classe(k, nome, esp)) continue;
+        if (!strcmp(nome, "String") && !strcmp(esp, "System")) break;  // caiu dentro de um texto: não é objeto do jogo
+        uint64_t obj = base - off;
+        for (uint64_t f = 0x10; f < 0x200; f += 8) {  // os campos que apontam para textos, até o começo do próximo objeto
+            uint64_t p; char hex[130];
+            if (ler(obj + f, &p, 8)) break;
+            if (f > a - obj && eh_classe(p)) break;  // outro ponteiro para ficha depois do valor: é o próximo objeto
+            if (texto_unity(p, hex, sizeof hex)) printf("texto %" PRIx64 " %s\n", f, hex);
+        }
+        printf("ok %s %s %" PRIx64 "\n", nome, esp, a - obj); return;
+    }
+    puts("err o valor não está dentro de um objeto do Unity");
+}
+
+// pelonome CLASSE ESPAÇO CAMPO [OFF=HEX,OFF=HEX...]: acha a ficha da classe pelas variáveis da libil2cpp (como os
+// TypeInfo do il2cpp), depois todos os objetos dela (começam com o ponteiro para a ficha) e fica com os que têm os mesmos
+// textos. Linhas: o endereço do valor (objeto + CAMPO) -> ok ACHADOS OBJETOS_DA_CLASSE
+static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass) {
+    char campo[32] = "", ass[1100] = ""; sscanf(campo_ass, "%31[^ ] %1099s", campo, ass);
+    uint64_t campo_off = strtoull(campo, NULL, 16); char nome[64], e[64];
+    ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
+    enum { BLOCO = 1 << 20 }; uint64_t *buf = malloc(BLOCO); if (!buf) { puts("err sem memória"); return; }
+    uint64_t klass = 0;
+    for (int r = 0; r < nrg && !klass; r++) {  // 1) a ficha: alguma variável da biblioteca do jogo aponta para ela
+        if (!rg[r].fixa) continue;
+        for (uint64_t a = rg[r].ini; a < rg[r].fim && !klass; a += BLOCO) {
+            size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
+            if (ler(a, buf, n)) continue;
+            for (size_t i = 0; i < n / 8 && !klass; i++) {
+                uint64_t v = SEM_MARCA(buf[i]); if (v < 0x10000 || (v & 7)) continue;
+                int k = achar_reg(v); if (k < 0 || !rg[k].rw) continue;
+                if (nome_classe(v, nome, e) && !strcmp(nome, cls) && !strcmp(e, esp)) klass = v;
+            }
+        }
+    }
+    if (!klass) { free(buf); printf("err a classe %s não foi achada (o jogo ainda não usou ela?)\n", cls); return; }
+    int achados = 0, objetos = 0;
+    for (int r = 0; r < nrg; r++) {  // 2) os objetos: começam com o ponteiro para a ficha (com ou sem a marca 0xb4)
+        if (!rg[r].usa || rg[r].fixa) continue;
+        for (uint64_t a = rg[r].ini; a < rg[r].fim; a += BLOCO) {
+            size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
+            if (ler(a, buf, n)) continue;
+            for (size_t i = 0; i < n / 8; i++) {
+                if (SEM_MARCA(buf[i]) != klass) continue;
+                uint64_t obj = a + i * 8; objetos++;
+                int bate = 1; char tmp[1100]; snprintf(tmp, sizeof tmp, "%s", ass); char *sv = NULL;
+                for (char *t = strtok_r(tmp, ",", &sv); t && bate; t = strtok_r(NULL, ",", &sv)) {  // 3) a assinatura
+                    char *ig = strchr(t, '='); if (!ig) continue; *ig = 0;
+                    uint64_t p; char hex[130];
+                    bate = !ler(obj + strtoull(t, NULL, 16), &p, 8) && texto_unity(p, hex, sizeof hex) && !strcmp(hex, ig + 1);
+                }
+                if (bate) { printf("%" PRIx64 "\n", obj + campo_off); achados++; }
+            }
+        }
+    }
+    free(buf);
+    printf("ok %d %d\n", achados, objetos);
+}
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor
 static void cmd_ptr(const char *cam) {
     char tmp[600]; snprintf(tmp, sizeof tmp, "%s", cam);
@@ -776,10 +866,10 @@ int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     pthread_t th; pthread_create(&th, NULL, congelador, NULL);
     printf("ok unitd 0.1 uid=%d\n", getuid());
-    char line[1600], c[32], a1[1100], a2[128], a3[128];  // a1 grande: o padrão do aob
+    char line[2400], c[32], a1[1100], a2[128], a3[128], quarto[1100];  // a1 grande: o padrão do aob; quarto: a assinatura do pelonome
     while (fgets(line, sizeof line, stdin)) {
-        c[0] = a1[0] = a2[0] = a3[0] = 0;
-        sscanf(line, "%31s %1099s %127s %127s", c, a1, a2, a3);
+        c[0] = a1[0] = a2[0] = a3[0] = quarto[0] = 0;
+        sscanf(line, "%31s %1099s %127s %127s %1099s", c, a1, a2, a3, quarto);
         if (!c[0]) continue;
         if (!strcmp(c, "quit")) break;
         if (!strcmp(c, "ps")) { cmd_ps(); continue; }
@@ -802,6 +892,8 @@ int main(void) {
         else if (!strcmp(c, "diff")) cmd_diff(a1);
         else if (!strcmp(c, "ptrscan")) cmd_ptrscan(a1, a2);
         else if (!strcmp(c, "ptr")) cmd_ptr(a1);
+        else if (!strcmp(c, "classe")) cmd_classe(a1);
+        else if (!strcmp(c, "pelonome")) { char ca[1200]; snprintf(ca, sizeof ca, "%s %s", a3, quarto); cmd_pelonome(a1, a2, ca); }
         else if (!strcmp(c, "vivo")) puts("ok");
         else if (!strcmp(c, "tirar")) cmd_tirar(a1);
         else if (!strcmp(c, "android")) cmd_android(a1, a2);

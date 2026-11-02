@@ -70,4 +70,27 @@ class PonteiroTest {
         assertFalse(Ponteiro.bate("i32", "58", 57.0))
         assertFalse(Ponteiro.bate("i32", "?", 57.0))
     }
+
+    @Test fun deClasseMontaOPedidoDoPelonome() {
+        // a resposta do motor: os textos do objeto (a assinatura) e a classe, o espaço de nomes e o campo
+        assertEquals("ItemRecurso Jogo 30 10=436f627265,20=31", Ponteiro.deClasse(listOf("texto 10 436f627265", "texto 20 31"), "ItemRecurso Jogo 30"))
+        assertEquals("Moedas - 18", Ponteiro.deClasse(emptyList(), "Moedas - 18"))  // sem textos: só a classe
+        assertEquals(null, Ponteiro.deClasse(emptyList(), ""))  // não é objeto do Unity
+        assertEquals("ItemRecurso, campo +0x30", Ponteiro.rotuloUnity("ItemRecurso Jogo 30 10=436f627265"))
+    }
+
+    @Test fun fundirNaoPerdeOPeloNome() {
+        val velho = Caminho("Cobre", "f32", listOf("v1"), unity = "ItemRecurso Jogo 30 10=436f627265")
+        assertEquals(velho.unity, Ponteiro.fundir(velho, Caminho("Cobre", "f32", listOf("n1"), conferido = false)).unity)
+        val a = Caminho("Cobre", "f32", listOf("a"), conferido = false, pid = 1, unity = "X - 8")
+        assertEquals("X - 8", Ponteiro.fundir(a, Caminho("Cobre", "f32", listOf("b"), conferido = false, pid = 2)).unity)  // sem caminho em comum
+        assertEquals("X - 8", Ponteiro.fundir(a, Caminho("Cobre", "f32", listOf("a"), conferido = false, pid = 2)).unity)  // cruzadas
+    }
+
+    @Test fun plausivelComparaComOUltimo() {
+        assertTrue(Ponteiro.plausivel("51", "58"))
+        assertFalse(Ponteiro.plausivel("524", "0"))       // o falso "conferido" com 0 do relatório
+        assertTrue(Ponteiro.plausivel("0", "40"))         // começou em 0 e subiu
+        assertFalse(Ponteiro.plausivel("51", "NaN"))
+    }
 }
