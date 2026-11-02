@@ -357,7 +357,7 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; "mudanca" -> "Busca por mudança"; "caminho" -> "Caminhos"; else -> "" },
+            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; "mudanca" -> "Busca por mudança"; "caminho" -> "Caminhos"; "autoteste" -> "Autoteste"; "registro" -> "Registro"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
             // os controles na ordem que a pessoa arrumou (Laboratório: Arrumar.kt)
             Row(Modifier.onGloballyPositioned { Arrumar.areaCima = it.boundsInRoot() }.then(if (Arrumar.editando) Modifier.border(1.dp, Color(0x6667C6FF), RoundedCornerShape(12.dp)).padding(2.dp) else Modifier),
@@ -391,6 +391,8 @@ class Balao : Service() {
             "nome" -> Nome()
             "lab" -> Laboratorio.Tela(this@Balao)
             "caminho" -> Ponteiro.Tela()
+            "autoteste" -> Registro.TelaAutoteste(this@Balao) { tela = "registro" }
+            "registro" -> Registro.TelaRegistro(this@Balao)
             "mudanca" -> Mudanca.Tela(this@Balao) { a -> Nucleo.escolhido = a; tela = "editar" }
             "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
             "opcoes" -> Opcoes()
@@ -431,6 +433,13 @@ class Balao : Service() {
             Rotulo("Salvos")
             Nucleo.salvos.take(4).forEach { s -> LinhaSalvo(s) }
         } else Text("Toque em Achar e digite um número que o jogo mostra.", color = Cor.apagado, fontSize = 13.sp)
+        // LABORATÓRIO: o que acontece dentro do Unit, para compartilhar. Some junto com o Registro.kt se não der certo
+        Linha(Modifier.toque { tela = "autoteste" }) {
+            Column(Modifier.weight(1f)) {
+                Text("Autoteste e registro", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("confere o Unit e compartilha o que aconteceu", color = Cor.apagado, fontSize = 12.sp)
+            }
+        }
         Linha(Modifier.toque { tela = "opcoes" }) {
             Column(Modifier.weight(1f)) {
                 Text("Opções", color = Cor.texto, fontWeight = FontWeight.SemiBold)

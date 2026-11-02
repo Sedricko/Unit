@@ -64,8 +64,10 @@ object Ponteiro {
     // ---- motor ----
     fun procurar(a: Achado, nome: String) = Nucleo.rodar {
         aviso = "Procurando o caminho… pode levar até 1 minuto."
+        val t0 = System.currentTimeMillis()
         val r = Nucleo.cmd { it.cmd("ptrscan ${a.addr} 8") }  // até 8 níveis; o motor manda o mais confiável primeiro
         pendente = Caminho(nome, a.tipo, r.linhas.filter { '+' in it }, valor = a.valor)
+        Registro.add("caminho", "$nome: ${pendente!!.caminhos.size} caminhos achados (${(System.currentTimeMillis() - t0) / 1000} s)", lista5(pendente!!.caminhos, "+ achado"))
         aviso = if (pendente!!.caminhos.isEmpty()) "Nenhum caminho achado para esse valor." else ""
     }
 
@@ -77,12 +79,15 @@ object Ponteiro {
     fun conferir(tela: Double) = Nucleo.rodar {
         val p = pendente ?: return@rodar
         pendente = p.copy(caminhos = p.caminhos.filter { c -> seguir(c, p.tipo)?.let { bate(p.tipo, it.second, tela) } == true })
+        val ficou = pendente!!.caminhos
+        Registro.add("caminho", "${p.nome}: conferido com ${EmVolta.texto(tela)} · ${p.caminhos.size} → ${ficou.size}", lista5(p.caminhos - ficou.toSet(), "– saiu"))
     }
 
     /** Guarda no jogo de agora (até 5 caminhos: se um quebrar numa atualização, outro pode valer). */
     fun usar(congelar: Boolean) {
         val p = pendente ?: return; val j = Nucleo.jogo ?: return
         gravar(j.pacote, juntar(lista(j.pacote), listOf(p.copy(caminhos = p.caminhos.take(RESERVA), congelar = congelar))))
+        Registro.add("caminho", "${p.nome}: guardado com ${p.caminhos.take(RESERVA).size} caminho(s)" + if (congelar) ", volta congelado em ${p.valor}" else "")
         pendente = null; aplicar()
     }
 
@@ -107,12 +112,18 @@ object Ponteiro {
         val limpos = guardados.map { c -> c to c.caminhos.map { cam -> cam to seguir(cam, c.tipo)?.first } }
         gravar(j.pacote, limpos.map { (c, ch) -> c.copy(caminhos = vivos(ch)) })  // a cada abertura sobram só os vivos
         for ((c, ch) in limpos) {
+            val vivo = vivos(ch).toSet(); val mortos = ch.filter { it.first !in vivo }
+            if (mortos.isNotEmpty() || ch.isNotEmpty()) Registro.add("caminho", "${c.nome}: ${vivo.size} vivos, ${mortos.size} mortos apagados",
+                lista5(mortos.map { "${it.first}  (${if (it.second == null) "quebrou" else "chegou em outro lugar"})" }, "– saiu"))
+        }
+        for ((c, ch) in limpos) {
             val cam = vivos(ch).firstOrNull() ?: continue
             val (addr, v) = seguir(cam, c.tipo) ?: continue
             if (c.congelar && c.valor.isNotEmpty()) Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") }
             val s = Salvo(addr, c.tipo, c.nome, if (c.congelar && c.valor.isNotEmpty()) c.valor else v, c.congelar && c.valor.isNotEmpty(), caminho = true)
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
             if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+            Registro.add("caminho", "${c.nome} pelo caminho $cam = ${s.valor}")
         }
         // auto-alimentar: com poucos caminhos vivos, procura caminhos novos a partir do endereço que um vivo achou agora
         for ((c, ch) in limpos) {
@@ -124,9 +135,14 @@ object Ponteiro {
             if (addr.value < 2 && ch.size > 1) continue
             renovados += c.nome
             aviso = "Renovando os caminhos de ${c.nome}… (até 1 minuto)"
+            Registro.add("caminho", "${c.nome}: só ${addr.value} vivo(s) → renovando")
+            val t0 = System.currentTimeMillis()
             val novos = runCatching { Nucleo.cmd { it.cmd("ptrscan ${addr.key} 8") }.linhas.filter { '+' in it } }.getOrDefault(emptyList())
             val atual = lista(j.pacote).firstOrNull { it.nome == c.nome } ?: continue
-            gravar(j.pacote, juntar(lista(j.pacote), listOf(atual.copy(caminhos = alimentar(atual.caminhos, novos)))))
+            val depois = alimentar(atual.caminhos, novos)
+            gravar(j.pacote, juntar(lista(j.pacote), listOf(atual.copy(caminhos = depois))))
+            val entraram = depois - atual.caminhos.toSet()
+            Registro.add("caminho", "${c.nome}: +${entraram.size} caminhos novos (reserva ${depois.size}/$RESERVA, ${(System.currentTimeMillis() - t0) / 1000} s)", lista5(entraram, "+ entrou"))
             aviso = ""
         }
     }
@@ -137,6 +153,9 @@ object Ponteiro {
 
     /** Os vivos primeiro (já provados), depois os novos na ordem de confiança do motor, sem repetir, até a reserva. */
     fun alimentar(vivos: List<String>, novos: List<String>) = (vivos + novos).distinct().take(RESERVA)
+
+    /** Detalhe do registro: até 30 caminhos com o sinal (+ entrou / – saiu); o resto vira "… e mais N". */
+    fun lista5(l: List<String>, sinal: String) = l.take(30).map { "$sinal $it" } + if (l.size > 30) listOf("… e mais ${l.size - 30}") else emptyList()
 
     fun renomear(antigo: String, novo: String) {
         val j = Nucleo.jogo ?: return

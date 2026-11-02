@@ -70,7 +70,7 @@ object Nucleo {
     var ocupado by mutableStateOf(false)
     var jogoFechou by mutableStateOf(false)  // o motor disse "o jogo fechou": o painel pergunta se quer reabrir
 
-    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); Ponteiro.init(ctx); java.io.File(ctx.cacheDir, "foto.bin").delete() }
+    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); Ponteiro.init(ctx); Registro.init(ctx); java.io.File(ctx.cacheDir, "foto.bin").delete() }
 
     private val abrindo = Any()
     // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
@@ -87,7 +87,7 @@ object Nucleo {
     /** Roda uma ação do motor; o erro vira o aviso na tela, em vez de fechar o app. */
     fun rodar(f: suspend () -> Unit) = scope.launch {
         ocupado = true
-        try { f(); aviso = "" } catch (e: Exception) { aviso = e.message ?: "erro" } finally { ocupado = false }
+        try { f(); aviso = "" } catch (e: Exception) { aviso = e.message ?: "erro"; Registro.add("erro", "Erro: $aviso") } finally { ocupado = false }
     }
 
     /** Os apps abertos que o usuário instalou (jogos); sem nome legível, mostra o pacote. */
@@ -113,30 +113,32 @@ object Nucleo {
         if (pausado) runCatching { cmd { it.cmd("resume") } }  // não deixa o jogo de antes parado
         cmd { it.cmd("attach ${j.pid}") }
         jogo = j; pausado = false; zerar(); salvos.clear()
+        Registro.add("jogo", "Ligado a ${j.nome} (pid ${j.pid})")
         Ponteiro.aplicar()  // LABORATÓRIO: os salvos guardados com caminho aparecem sozinhos
     }
 
     /** A cada 2 s (balão aberto): o jogo ainda está aberto? Sem aviso na tela; só liga o jogoFechou. */
     fun verificar() = scope.launch {
         if (jogo == null || ocupado || jogoFechou) return@launch
-        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou") { jogoFechou = true; pausado = false } }
+        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou") { jogoFechou = true; pausado = false; Registro.add("jogo", "${jogo?.nome} fechou") } }
     }
 
     /** Fecha o jogo (para conferir um caminho, ou recomeçar limpo). */
-    fun fecharJogo() = rodar { cmd { it.cmd("fechar") }; jogoFechou = true; pausado = false }
+    fun fecharJogo() = rodar { cmd { it.cmd("fechar") }; jogoFechou = true; pausado = false; Registro.add("jogo", "Fechei ${jogo?.nome}") }
 
     /** Abre o jogo de novo e se liga a ele sozinho (espera até 30 s o processo aparecer). Os salvos com caminho voltam. */
     fun reabrir(ctx: Context) = rodar {
         val j = jogo ?: return@rodar
         val abrir = ctx.packageManager.getLaunchIntentForPackage(j.pacote) ?: throw IllegalStateException("Não achei como abrir ${j.nome}.")
         ctx.startActivity(abrir.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-        aviso = "Abrindo ${j.nome}…"
+        aviso = "Abrindo ${j.nome}…"; Registro.add("jogo", "Reabrindo ${j.nome}")
         repeat(60) {
             kotlinx.coroutines.delay(500)
             val pid = cmd { it.cmd("ps") }.linhas.firstNotNullOfOrNull { l -> l.split(' ', limit = 2).takeIf { p -> p.size == 2 && p[1] == j.pacote }?.get(0)?.toIntOrNull() }
             if (pid != null) {
                 cmd { it.cmd("attach $pid") }
                 jogo = j.copy(pid = pid); jogoFechou = false; pausado = false; zerar(); salvos.clear()
+                Registro.add("jogo", "${j.nome} reaberto (pid $pid)")
                 aviso = "Esperando ${j.nome} carregar…"; kotlinx.coroutines.delay(5000); aviso = ""  // recém-aberto: os caminhos ainda não existem
                 Ponteiro.aplicar()
                 return@rodar
@@ -150,17 +152,20 @@ object Nucleo {
     /** A 1ª vez busca; depois refina com o número novo da tela. Com 1 sobrando, ele já fica escolhido. */
     fun buscar(texto: String) = rodar {
         val v = texto.trim().replace(',', '.')
-        cmd { it.cmd(if (total == null) "search $v" else "refine $v") }
+        val refinar = total != null; val t0 = System.currentTimeMillis()
+        cmd { it.cmd(if (!refinar) "search $v" else "refine $v") }
         val r = cmd { it.cmd("list 50") }
         total = r.status.toLongOrNull()
         achados.clear()
         if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.let { ordenar(juntar(it), aprendido) }
         escolhido = achados.singleOrNull()
+        Registro.add("busca", "${if (refinar) "Refinar" else "Buscar"} $v → ${total ?: 0} resultado(s) (${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s)")
     }
 
     /** Escreve o valor novo; com congelar, o motor segura ele. Fica nos salvos para o mini painel. */
     fun editar(addr: String, tipo: String, texto: String, congelar: Boolean) = rodar {
         aprender(tipo, if (congelar) 2 else 1)
+        Registro.add("busca", "${if (congelar) "Congelou" else "Escreveu"} $addr ($tipo) = ${texto.trim()}")
         val v = texto.trim().replace(',', '.')
         val i = salvos.indexOfFirst { it.addr == addr }
         if (congelar) cmd { it.cmd("freeze $addr $tipo $v") }
