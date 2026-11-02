@@ -69,11 +69,19 @@ object Nucleo {
     var aviso by mutableStateOf("")
     var ocupado by mutableStateOf(false)
 
-    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); Ponteiro.init(ctx) }
+    fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); Ponteiro.init(ctx); java.io.File(ctx.cacheDir, "foto.bin").delete() }
 
     private val abrindo = Any()
     // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
-    internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) { f(synchronized(abrindo) { motor ?: Motor(lib).also { motor = it } }) }
+    internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) {
+        // motor novo (o primeiro, ou depois de um que caiu/fechou): já se liga ao jogo escolhido
+        val m = synchronized(abrindo) { motor ?: Motor(lib).also { n -> motor = n; jogo?.let { j -> runCatching { n.cmd("attach ${j.pid}") } } } }
+        try { f(m) } catch (e: java.io.IOException) {
+            // o motor caiu (falta de memória, su fechado): solta ele para o próximo comando abrir outro, em vez de falhar sempre
+            if (e.message == "O motor fechou." || e.message?.contains("pipe", ignoreCase = true) == true) synchronized(abrindo) { if (motor === m) { m.fechar(); motor = null } }
+            throw e
+        }
+    }
 
     /** Roda uma ação do motor; o erro vira o aviso na tela, em vez de fechar o app. */
     fun rodar(f: suspend () -> Unit) = scope.launch {
@@ -161,10 +169,18 @@ object Nucleo {
     fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }
 
     // troca o estado na hora e manda o estado de agora: dois toques seguidos (ou a pausa automática) nunca invertem a tela e o jogo
-    fun pausar() { pausado = !pausado; rodar { cmd { it.cmd(if (pausado) "pause" else "resume") } } }
+    fun pausar() {
+        pausado = !pausado
+        rodar { val quer = pausado; try { cmd { it.cmd(if (quer) "pause" else "resume") } } catch (e: Exception) { if (pausado == quer) pausado = !quer; throw e } }
+    }
 
     /** O Unit está fechando: o jogo nunca pode ficar congelado sem ele (o Android mostraria "não está respondendo"). */
-    fun soltarAoFechar() { if (pausado) { pausado = false; Thread { runCatching { motor?.cmd("resume") } }.start() } }
+    fun soltarAoFechar() {
+        pausado = false
+        val m = motor ?: return; motor = null
+        Thread { runCatching { m.cmd("unfreeze all") }; runCatching { m.cmd("resume") }; m.fechar() }.start()
+        salvos.replaceAll { it.copy(congelado = false) }
+    }
 
     /** Os resultados da busca (até 20, os que aparecem) e o valor aberto no Editar, relidos ao vivo: a lista não fica parada no valor da hora da busca. */
     fun atualizarAchados() = scope.launch {
@@ -182,7 +198,7 @@ object Nucleo {
         if (jogo == null || ocupado) return@launch
         runCatching {
             val novos = salvos.toList().map { s -> s.copy(valor = runCatching { cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }.getOrDefault(s.valor)) }
-            novos.forEach { n -> val i = salvos.indexOfFirst { it.addr == n.addr }; if (i >= 0 && salvos[i].valor != n.valor) salvos[i] = n }
+            novos.forEach { n -> val i = salvos.indexOfFirst { it.addr == n.addr }; if (i >= 0 && salvos[i].valor != n.valor) salvos[i] = salvos[i].copy(valor = n.valor) }
         }
     }
 }

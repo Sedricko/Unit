@@ -459,10 +459,10 @@ class Balao : Service() {
             if (novos.isNotEmpty() && Nucleo.achados.size <= 50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 novos.take(20).forEach { a ->
                     Linha(Modifier.toque { Nucleo.escolhido = a; tela = "editar" }) {
-                        Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
+                        Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto, maxLines = 1); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1) }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp)
-                            if (a.tipo == Nucleo.aprendido) Text("o que você mais usa neste jogo", color = Cor.ok, fontSize = 11.sp)
+                            Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp, maxLines = 1)
+                            if (a.tipo == Nucleo.aprendido) Text("mais usado", color = Cor.ok, fontSize = 11.sp, maxLines = 1)  // curto: a linha é estreita deitado
                         }
                         val ja = Nucleo.salvos.any { it.addr == a.addr }
                         Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(if (ja) Ic.SALVO else Ic.SALVAR, 20.dp, if (ja) Cor.a2 else Cor.icone) }

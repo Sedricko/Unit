@@ -70,6 +70,8 @@ $got2
 $got3
 $got4
 $got5"
+got="$got
+ordem: $(tr '\n' ' ' <<<"$got2")"  # numa linha só, para conferir a ordem das respostas
 confere "sem jogo, recusa" "err escolha o jogo primeiro"
 confere "attach" "ok $pid"
 confere "acha o ouro (Dword)" "$aouro i32 987654321"
@@ -81,6 +83,7 @@ confere "Double arredondado da tela (4321 acha 4321.25)" "ok 1"
 confere "congelar segura o valor" "ok 555"
 confere "bytes: 16 bytes do xp em hex" "ok ea16b04c02000000"
 confere "aob acha o xp pelo desenho" "$axp"
+confere "aob: o endereço vem antes do ok (o app para de ler no ok)" "$axp ok 1"
 confere "bytes recusa mais de 4096" "err quantidade de 1 a 4096"
 confere "faixa Float 87~88 acha a vida 87.5" "$avida f32"
 confere "grupo 123456789;87.5 acha o ouro" "$aouro i32 123456789"

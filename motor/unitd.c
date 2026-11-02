@@ -153,9 +153,10 @@ static void cmd_grupo(const char *texto, int refinar) {
     #define JA(a) (!refinar || bsearch(&(uint64_t){a}, antes, na, 8, cmpu64))
     uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
     if (nr < 0) { puts("err não li o mapa de memória do jogo"); free(antes); return; }
-    nres = 0; size_t grupos = 0;
+    nres = 0;
     enum { BLOCO = 1 << 20 };
     unsigned char *buf = malloc(BLOCO + 8);
+    if (!buf) { free(ini); free(fim); puts("err sem memória"); return; }
     for (int r = 0; r < nr; r++)
         for (uint64_t a = ini[r]; a < fim[r]; a += BLOCO) {
             size_t n = fim[r] - a < BLOCO ? fim[r] - a : BLOCO;
@@ -175,7 +176,6 @@ static void cmd_grupo(const char *texto, int refinar) {
                         }
                     }
                     if (!ok) continue;
-                    grupos++;
                     for (int j = 0; j < ni; j++) guardar(mem[j], tp[j]);
                     break;  // este lugar já virou grupo: não testa os outros tipos nele
                 }
@@ -183,7 +183,6 @@ static void cmd_grupo(const char *texto, int refinar) {
     #undef JA
     free(buf); free(ini); free(fim); free(antes);
     printf("ok %zu\n", nres);
-    fprintf(stderr, "grupos %zu\n", grupos);
 }
 
 static void cmd_search(const char *valor, const char *tipos) {
@@ -201,6 +200,7 @@ static void cmd_search(const char *valor, const char *tipos) {
     nres = 0;
     enum { BLOCO = 1 << 20 };
     unsigned char *buf = malloc(BLOCO + 8);
+    if (!buf) { free(ini); free(fim); puts("err sem memória"); return; }
     for (int r = 0; r < nr; r++)
         for (uint64_t a = ini[r]; a < fim[r]; a += BLOCO) {
             size_t n = fim[r] - a < BLOCO ? fim[r] - a : BLOCO;
@@ -297,6 +297,7 @@ static void cmd_aob(const char *hex) {
     if (nr < 0) { puts("err não li o mapa de memória do jogo"); return; }
     enum { BLOCO = 1 << 20 };
     unsigned char *buf = malloc(BLOCO + 512);
+    if (!buf) { free(ini); free(fim); puts("err sem memória"); return; }
     uint64_t achados[20]; size_t na = 0, total = 0;
     for (int r = 0; r < nr; r++)
         for (uint64_t a = ini[r]; a < fim[r]; a += BLOCO) {
@@ -309,8 +310,8 @@ static void cmd_aob(const char *hex) {
             }
         }
     free(buf); free(ini); free(fim);
+    for (size_t i = 0; i < na; i++) printf("%" PRIx64 "\n", achados[i]);  // antes do "ok": depois dele iria para o próximo comando
     printf("ok %zu\n", total);
-    for (size_t i = 0; i < na; i++) printf("%" PRIx64 "\n", achados[i]);
 }
 
 // ---- busca por mudança: foto da memória num arquivo e depois "mudou / igual / igual à foto / aumentou / diminuiu" ----
@@ -329,6 +330,7 @@ static void cmd_snap(const char *arq) {
     if (nr < 0) { puts("err não li o mapa de memória do jogo"); return; }
     FILE *f = fopen(arq, "wb"); if (!f) { printf("err não gravei a foto: %s\n", strerror(errno)); free(ini); free(fim); return; }
     enum { BLOCO = 1 << 20 }; unsigned char *buf = malloc(BLOCO); uint64_t total = 0;
+    if (!buf) { fclose(f); free(ini); free(fim); puts("err sem memória"); return; }
     for (int r = 0; r < nr; r++)
         for (uint64_t a = ini[r]; a < fim[r]; a += BLOCO) {
             uint64_t n = fim[r] - a < BLOCO ? fim[r] - a : BLOCO;
@@ -361,6 +363,7 @@ static void cmd_diff(const char *m) {
         enum { BLOCO = 1 << 20 }; unsigned char *velho = malloc(BLOCO), *novo = malloc(BLOCO);
         uint64_t a, n; int cheio = 0;
         free(vb); free(vp); vb = malloc(DMAX * 4); vp = malloc(DMAX * 4);
+        if (!vb || !vp || !velho || !novo) { free(vb); free(vp); vb = vp = NULL; free(velho); free(novo); fclose(f); difat = 0; puts("err sem memória"); return; }
         while (!cheio && fread(&a, 8, 1, f) == 1 && fread(&n, 8, 1, f) == 1 && n <= BLOCO && fread(velho, 1, n, f) == n) {
             if (ler(a, novo, n)) continue;
             for (uint64_t o = 0; o + 4 <= n; o += 4) {
@@ -447,6 +450,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     free(buf);
     qsort(pt, np, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
+    if (!no) { free(pt); puts("err sem memória para os caminhos"); return; }
     no[nn++] = (no_t){alvo, -1, 0};
     int ini = 0;
     for (int nivel = 1; nivel <= nmax && nc < CMAX; nivel++) {

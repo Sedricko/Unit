@@ -51,7 +51,7 @@ object Mudanca {
             color = Cor.apagado, fontSize = 12.sp)
         if (!foto) {
             Botao("Tirar a foto", true, Modifier.fillMaxWidth(), !Nucleo.ocupado) {
-                Nucleo.rodar { Nucleo.cmd { it.cmd("snap ${File(ctx.cacheDir, "foto.bin").absolutePath}") }; foto = true; total = null; lista.clear() }
+                Nucleo.zerar(); Nucleo.rodar { Nucleo.cmd { it.cmd("snap ${File(ctx.cacheDir, "foto.bin").absolutePath}") }; foto = true; total = null; lista.clear() }  // o motor tem uma lista só: a busca do Achar recomeça
             }
             return@Column
         }
@@ -70,9 +70,10 @@ object Mudanca {
         novos.forEach { m ->
             val a = Achado(m.addr, m.tipo, m.valor)
             Linha(Modifier.toque { abrir(a) }) {
-                Text(m.addr, color = Cor.texto, fontSize = 13.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                Text(NOME_TIPO[m.tipo] ?: m.tipo, color = Cor.a2, fontSize = 11.sp, modifier = Modifier.padding(end = 8.dp))
-                Text("${m.foto} → ${m.valor}", color = Cor.texto, fontSize = 13.sp)
+                Column(Modifier.weight(1f)) {
+                    Text("${m.foto} → ${m.valor}", color = Cor.texto, fontSize = 14.sp, maxLines = 1)
+                    Text("${m.addr} · ${NOME_TIPO[m.tipo] ?: m.tipo}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+                }
                 Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(Ic.SALVAR, 20.dp) }
                 // congelar no valor de agora (vai para os Salvos já congelado)
                 Box(Modifier.padding(start = 10.dp).toque { Nucleo.editar(a.addr, a.tipo, a.valor, true) }) { Icone(Ic.CONGELAR, 20.dp) }
@@ -83,6 +84,6 @@ object Mudanca {
             Botao("Congelar todos", false, Modifier.weight(1f)) { novos.forEach { Nucleo.editar(it.addr, it.tipo, it.valor, true) } }
         }
         if ((total ?: 0) > 50) Text("Ainda são muitos: espere o número mudar de novo e filtre outra vez.", color = Cor.apagado, fontSize = 12.sp)
-        Botao("Recomeçar", false, Modifier.fillMaxWidth()) { zerar() }
+        Botao("Recomeçar", false, Modifier.fillMaxWidth()) { zerar(); File(ctx.cacheDir, "foto.bin").delete() }
     }
 }

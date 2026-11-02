@@ -37,6 +37,7 @@ object Atualizador {
             if (atual.endsWith("-lab")) return@runCatching  // APK de teste do Laboratório: não se troca sozinho pela versão normal
             val j = JSONObject(URL(API).readText())
             val v = j.getString("tag_name").removePrefix("v")
+            if (!Regex("[0-9.]+").matches(v)) return@runCatching  // o nome vai para um comando do root: só números e pontos
             val a = j.getJSONArray("assets")
             apk = (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.getString("name").endsWith(".apk") }?.getString("browser_download_url") ?: return@runCatching
             if (!maior(v, atual)) return@runCatching
