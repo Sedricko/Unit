@@ -220,7 +220,9 @@ object Ponteiro {
         // o número achado tem que ser parecido com o último conhecido (o relatório mostrou um "conferido" com 0, e o jogo com 524)
         val ultimo = c.valor.toDoubleOrNull()
         val faz = valor?.toDoubleOrNull()?.let { v -> v.isFinite() && v >= 0 && (ultimo == null || ultimo <= 0 || (v > 0 && v in ultimo / 50..ultimo * 50 + 1000)) } == true
-        if (melhor == null || melhor.value < 3 || !faz) {
+        // zero: a memória tem muito zero solto (o falso positivo do relatório era um 0): pede 5 caminhos concordando, não 3
+        val precisa = if (valor?.toDoubleOrNull() == 0.0) 5 else 3
+        if (melhor == null || melhor.value < precisa || !faz) {
             Registro.add("decisao", "${c.nome}: não deu para conferir sozinho (${melhor?.value ?: 0} caminho(s) concordam, de ${c.caminhos.size}); guardei todos e tento de novo daqui a pouco e na próxima abertura")
             return c  // não apaga nada: se o jogo ainda estava carregando, os bons pareciam quebrados
         }
