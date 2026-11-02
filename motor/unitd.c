@@ -16,7 +16,7 @@
 //   ptrscan ENDEREÇO [NÍVEIS]  caminhos (ponteiros) de uma biblioteca até o endereço: "lib+OFF:o1:...:oN" -> ok N
 //   ptr CAMINHO                segue o caminho de agora                                     -> ok ENDEREÇO
 //   vivo / fechar              o jogo ainda está aberto? / fecha o jogo
-//   info                       regiões e MB legíveis do jogo                               -> ok N MB
+//   info                       regiões, MB legíveis, memória do motor e do jogo (KB)       -> ok N MB KBMOTOR KBJOGO
 //   sleep MS                   espera (testes e scripts: dá tempo ao congelador)
 //   quit
 #define _GNU_SOURCE
@@ -556,7 +556,13 @@ int main(void) {
             uint64_t *ini, *fim; int nr = regioes(&ini, &fim); uint64_t tot = 0;
             if (nr < 0) { puts("err não li o mapa de memória do jogo"); continue; }
             for (int i = 0; i < nr; i++) tot += fim[i] - ini[i];
-            free(ini); free(fim); printf("ok %d %" PRIu64 "\n", nr, tot >> 20);
+            free(ini); free(fim);
+            // + memória real (RSS, em KB) do próprio motor e do jogo: o relatório acompanha para achar vazamento
+            long rm = 0, rj = 0; char st[64], ln[256]; FILE *f;
+            if ((f = fopen("/proc/self/status", "r"))) { while (fgets(ln, sizeof ln, f)) sscanf(ln, "VmRSS: %ld", &rm); fclose(f); }
+            snprintf(st, sizeof st, "/proc/%d/status", target);
+            if ((f = fopen(st, "r"))) { while (fgets(ln, sizeof ln, f)) sscanf(ln, "VmRSS: %ld", &rj); fclose(f); }
+            printf("ok %d %" PRIu64 " %ld %ld\n", nr, tot >> 20, rm, rj);
         }  // o teste "o jogo fechou" já foi feito acima, antes de qualquer comando
         else if (!strcmp(c, "fechar")) { kill(target, SIGCONT); puts(kill(target, SIGKILL) ? "err não fechei o jogo" : "ok"); }
         else if (!strcmp(c, "read") || !strcmp(c, "write") || !strcmp(c, "freeze")) {

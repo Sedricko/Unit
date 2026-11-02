@@ -76,7 +76,7 @@ object Nucleo {
     // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
     internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) {
         // motor novo (o primeiro, ou depois de um que caiu/fechou): já se liga ao jogo escolhido
-        val m = synchronized(abrindo) { motor ?: Motor(lib).also { n -> motor = n; Registro.aberturas++; Registro.add("outro", "Motor abriu (${n.ola})" + if (Registro.aberturas > 1) " · ${Registro.aberturas}ª vez: ele tinha caído" else ""); jogo?.let { j -> runCatching { n.cmd("attach ${j.pid}") } } } }
+        val m = synchronized(abrindo) { motor ?: Motor(lib).also { n -> motor = n; Registro.aberturas++; Registro.add("outro", "Motor abriu (${n.ola})" + if (Registro.aberturas > 1) " · ${Registro.aberturas}ª vez: ele tinha caído" else ""); jogo?.let { j -> runCatching { n.cmd("attach ${j.pid}") }.onSuccess { if (Registro.aberturas > 1) Registro.add("decisao", "Religuei o motor novo a ${j.nome} sozinho") } } } }
         try { f(m) } catch (e: java.io.IOException) {
             // o motor caiu (falta de memória, su fechado): solta ele para o próximo comando abrir outro, em vez de falhar sempre
             if (e.message == "O motor fechou." || e.message?.contains("pipe", ignoreCase = true) == true) synchronized(abrindo) { if (motor === m) { m.fechar(); motor = null } }
@@ -162,8 +162,18 @@ object Nucleo {
         val r = cmd { it.cmd("list 50") }
         total = r.status.toLongOrNull()
         achados.clear()
-        if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.let { ordenar(juntar(it), aprendido) }
+        if ((total ?: 0) <= 50) {
+            val crus = r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }
+            val juntos = juntar(crus)
+            if (juntos.size < crus.size) Registro.add("decisao", "Juntei ${crus.size - juntos.size} resultado(s) Dword/Qword repetidos (mesmo endereço e número)")
+            val ordem = ordenar(juntos, aprendido)
+            if (aprendido != null && ordem.firstOrNull()?.tipo == aprendido && juntos.firstOrNull()?.tipo != aprendido) Registro.add("decisao", "Mostrei ${NOME_TIPO[aprendido] ?: aprendido} primeiro: é o tipo que você mais usa neste jogo")
+            achados += ordem
+        }
+        if (!refinar) { buscaDesde = t0; passos = 0 } else passos++
+        if (total == 1L && buscaDesde > 0) { Registro.add("busca", "Achou o valor em ${passos} refino(s), ${(System.currentTimeMillis() - buscaDesde) / 1000} s desde o primeiro Buscar"); buscaDesde = 0 }
         escolhido = achados.singleOrNull()
+        if (escolhido != null) Registro.add("decisao", "Sobrou 1: já deixei ${escolhido!!.addr} escolhido para editar")
         Registro.add("busca", "${if (refinar) "Refinar" else "Buscar"} $v → ${total ?: 0} resultado(s) (${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s, jogo pausado durante a busca)")
         when {
             total == 0L -> Registro.add("aviso", "Nenhum resultado para $v: o número pode estar em outro tipo, ter mudado antes da busca, ou ser só desenho na tela")
@@ -172,6 +182,7 @@ object Nucleo {
         }
     }
 
+    private var buscaDesde = 0L; private var passos = 0  // tempo e refinos do primeiro Buscar até sobrar 1
     private var porDigitar = false  // quem pausou foi o 1º número digitado no Achar (sair sem buscar solta)
     fun pausarAoDigitar() {
         if (pausado || jogo == null) return

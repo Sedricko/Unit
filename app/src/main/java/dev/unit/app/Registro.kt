@@ -51,6 +51,10 @@ object Registro {
     private var app: Context? = null
 
     private var iniciou = false
+    private var base: Triple<Long, Long, Long>? = null  // memória (Unit, motor, jogo) no 1º pulso: a régua do vazamento
+    private var engasgos = 0; private var maiorEngasgo = 0L
+    /** A tela ficou parada mais de 100 ms (o Balao mede enquanto o painel está aberto). */
+    @Synchronized fun engasgo(ms: Long) { engasgos++; if (ms > maiorEngasgo) maiorEngasgo = ms; if (ms > 700) add("aviso", "A tela travou $ms ms", listOf(painel)) }
 
     /** Ligou num jogo: autoteste rápido em segundo plano, só o resultado vai para o registro. */
     fun autotesteRapido() { val c = app ?: return; Nucleo.semAviso { autoteste(c) } }
@@ -59,8 +63,18 @@ object Registro {
     suspend fun pulso() {
         val j = Nucleo.jogo ?: return
         val info = runCatching { Nucleo.cmd { it.cmd("info") }.status.split(' ') }.getOrNull()
+        val rt = Runtime.getRuntime(); val unitMb = (rt.totalMemory() - rt.freeMemory()) shr 20
+        val motorMb = info?.getOrNull(2)?.toLongOrNull()?.div(1024); val jogoMb = info?.getOrNull(3)?.toLongOrNull()?.div(1024)
+        if (base == null) base = Triple(unitMb, motorMb ?: 0, jogoMb ?: 0)
+        base?.let { (u, m, jj) ->
+            fun cresceu(nome: String, de: Long, para: Long?, limite: Long) { if (para != null && para - de > limite) add("aviso", "Possível vazamento: $nome foi de $de MB para $para MB desde o começo", listOf("comparado com o 1º pulso desta sessão")) }
+            cresceu("o Unit", u, unitMb, 80); cresceu("o motor", m, motorMb, 300); cresceu("o jogo", jj, jogoMb, 800)
+        }
+        val (eng, maior) = synchronized(this) { val x = engasgos to maiorEngasgo; engasgos = 0; maiorEngasgo = 0; x }
+        if (eng > 0) add("aviso", "A tela engasgou $eng vez(es) nos últimos 5 min (o maior: $maior ms)")
         val congelados = runCatching { Nucleo.cmd { it.cmd("frozen") }.status }.getOrDefault("?")
-        add("outro", "Pulso: ${j.nome} " + (info?.let { "aberto · ${it.getOrNull(1)} MB" } ?: "não respondeu") +
+        add("outro", "Pulso: ${j.nome} " + (info?.let { "aberto · ${it.getOrNull(1)} MB legíveis" } ?: "não respondeu") +
+            " · memória: Unit $unitMb MB, motor ${motorMb ?: "?"} MB, jogo ${jogoMb ?: "?"} MB" +
             " · ${Nucleo.salvos.size} salvos · $congelados congelados · ${if (Nucleo.pausado) "pausado" else "rodando"} · motor ${comandos} cmds/${erros} erros")
         // congelado que não segura: o jogo conseguiu mudar o valor mesmo congelado
         Nucleo.salvos.filter { it.congelado }.forEach { s ->
@@ -261,7 +275,7 @@ object Registro {
         ctx.startActivity(Intent.createChooser(envio, "Compartilhar relatório do Unit").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    private fun cor(tipo: String) = when (tipo) { "erro" -> Cor.ruim; "aviso" -> Color(0xFFFFB86B); "jogo" -> Color(0xFFB8C4FF); "caminho" -> Cor.a2; else -> Cor.texto }
+    private fun cor(tipo: String) = when (tipo) { "erro" -> Cor.ruim; "aviso" -> Color(0xFFFFB86B); "jogo" -> Color(0xFFB8C4FF); "caminho" -> Cor.a2; "decisao" -> Color(0xFFC9A7FF); "tela" -> Cor.apagado; else -> Cor.texto }
 
     @Composable
     fun TelaAutoteste(ctx: Context, verRegistro: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -301,7 +315,7 @@ object Registro {
         var filtro by remember { mutableStateOf("tudo") }
         val abertos = remember { mutableStateListOf<Evento>() }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("tudo" to "Tudo", "busca" to "Busca", "caminho" to "Caminhos", "erro" to "Erros").forEach { (f, n) -> Selo(n, filtro == f) { filtro = f } }
+            listOf("tudo" to "Tudo", "busca" to "Busca", "caminho" to "Caminhos", "decisao" to "Decisões", "erro" to "Erros").forEach { (f, n) -> Selo(n, filtro == f) { filtro = f } }
         }
         val vistos = linhas.filter { filtro == "tudo" || it.tipo == filtro || (filtro == "busca" && it.tipo == "jogo") || (filtro == "erro" && it.tipo == "aviso") }
         if (vistos.isEmpty()) Text("Nada registrado ainda.", color = Cor.apagado, fontSize = 12.sp)

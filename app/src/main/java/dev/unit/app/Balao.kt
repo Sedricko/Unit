@@ -282,6 +282,26 @@ class Balao : Service() {
         LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
         LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
         LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); Nucleo.semAviso { Registro.pulso() } } }  // pulso a cada 5 min
+        // engasgos: com o painel aberto, mede o intervalo entre os quadros da tela; mais de 100 ms = a tela travou
+        androidx.compose.runtime.DisposableEffect(modo) {
+            val coreo = android.view.Choreographer.getInstance(); var ultimo = 0L; var ligado = modo != "balao"
+            val cb = object : android.view.Choreographer.FrameCallback {
+                override fun doFrame(t: Long) {
+                    if (!ligado) return
+                    if (ultimo > 0) { val ms = (t - ultimo) / 1_000_000; if (ms > 100) Registro.engasgo(ms) }
+                    ultimo = t; coreo.postFrameCallback(this)
+                }
+            }
+            if (ligado) coreo.postFrameCallback(cb)
+            onDispose { ligado = false; coreo.removeFrameCallback(cb) }
+        }
+        // navegação: cada troca de tela, com quanto tempo ficou na anterior
+        val desde = remember { longArrayOf(System.currentTimeMillis()) }
+        val anterior = remember { arrayOf(tela) }
+        LaunchedEffect(tela) {
+            if (anterior[0] != tela) Registro.add("tela", "${anterior[0]} → $tela (ficou ${(System.currentTimeMillis() - desde[0]) / 1000} s em ${anterior[0]})")
+            anterior[0] = tela; desde[0] = System.currentTimeMillis()
+        }
         LaunchedEffect(Nucleo.jogoFechou) { if (Nucleo.jogoFechou && modo != "painel") mudar("painel") }  // abre o painel para perguntar
         LaunchedEffect(modo, cheio, tela, opcaoPausa) { Registro.painel = "modo=$modo · tela cheia=$cheio · tela=$tela · pausa automática=$opcaoPausa" }  // vai no relatório
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }

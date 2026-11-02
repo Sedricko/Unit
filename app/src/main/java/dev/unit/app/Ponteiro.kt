@@ -114,6 +114,9 @@ object Ponteiro {
         gravar(j.pacote, limpos.map { (c, ch) -> c.copy(caminhos = vivos(ch)) })  // a cada abertura sobram só os vivos
         for ((c, ch) in limpos) {
             val vivo = vivos(ch).toSet(); val mortos = ch.filter { it.first !in vivo }
+            val votos = ch.mapNotNull { it.second }.groupingBy { it }.eachCount()
+            if (votos.size > 1) Registro.add("decisao", "${c.nome}: os caminhos chegaram em ${votos.size} lugares; fiquei com o da maioria", votos.entries.sortedByDescending { it.value }.map { "${it.key}: ${it.value} voto(s)" })
+            if (vivo.size == ch.size && ch.any { it.second == null }) Registro.add("decisao", "${c.nome}: sem maioria clara, não apaguei nada (espero a próxima abertura)")
             if (mortos.isNotEmpty() || ch.isNotEmpty()) Registro.add("caminho", "${c.nome}: ${vivo.size} vivos, ${mortos.size} mortos apagados",
                 lista5(mortos.map { "${it.first}  (${if (it.second == null) "quebrou" else "chegou em outro lugar"})" }, "– saiu"))
         }
@@ -130,10 +133,11 @@ object Ponteiro {
         for ((c, ch) in limpos) {
             val chegou = ch.mapNotNull { it.second }
             val addr = chegou.groupingBy { it }.eachCount().maxByOrNull { it.value } ?: continue
-            if (addr.value >= POUCOS || c.nome in renovados) continue
+            if (addr.value >= POUCOS) continue
+            if (c.nome in renovados) { Registro.add("decisao", "${c.nome}: não renovei, já renovei uma vez desde que o Unit abriu"); continue }
             // só alimenta com prova: 2+ caminhos concordam, ou o único guardado (já conferido) ainda chega. Senão um caminho
             // errado sozinho viraria "maioria" com os novos que nasceram dele
-            if (addr.value < 2 && ch.size > 1) continue
+            if (addr.value < 2 && ch.size > 1) { Registro.add("decisao", "${c.nome}: não renovei, pouca prova (só 1 caminho em cada endereço)"); continue }
             renovados += c.nome
             aviso = "Renovando os caminhos de ${c.nome}… (até 1 minuto)"
             Registro.add("caminho", "${c.nome}: só ${addr.value} vivo(s) → renovando")
