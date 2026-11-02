@@ -439,8 +439,11 @@ typedef struct { uint64_t t; int pai; uint32_t o; } no_t;  // um passo do caminh
 static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)->v, y = ((const pt_t *)b)->v; return x < y ? -1 : x > y; }
 // DIST: salto entre estruturas (até 4 KB, como o Cheat Engine). DISTFIXA: o salto que sai da biblioteca pode ser grande: nos
 // jogos Unity ele entra numa tabela (biblioteca → tabela[índice] → classe → dados); com 1 KB o caminho certo ficava de fora
-enum { PMAX = 12000000, NMAX = 400000, CMAX = 1000, DIST = 0x1000, DISTFIXA = 0x20000 };
-// shortcut: até 12 milhões de ponteiros, 400 mil passos e 1000 caminhos (memória do celular); jogos maiores podem perder caminhos
+// CMAX: caminhos que saem; CPOOL: candidatos juntados antes de escolher (uma biblioteca só não enche tudo - o relatório
+// mostrou 1000 caminhos do Firebase e nenhum do jogo); POR_LIB: no máximo isso de cada biblioteca na saída.
+// DISTFIXA 512 KB: jogos Unity têm dezenas de milhares de classes, e o salto entra na tabela delas (índice × 8)
+enum { PMAX = 12000000, NMAX = 400000, CMAX = 1000, CPOOL = 20000, POR_LIB = 250, DIST = 0x1000, DISTFIXA = 0x80000 };
+// shortcut: até 12 milhões de ponteiros, 400 mil passos, 20 mil candidatos e 1000 caminhos na saída (memória do celular); jogos maiores podem perder caminhos
 // nota de um caminho (menor = mais confiável): cada pulo a mais é uma chance de quebrar; começar no código do jogo
 // (il2cpp/unity/main) é melhor que noutra biblioteca; pulos pequenos são campos de verdade, grandes costumam ser acaso
 typedef struct { char txt[240]; unsigned nota; } cam_t;
@@ -471,17 +474,17 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     free(buf);
     qsort(pt, np, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
-    cam_t *cams = malloc(CMAX * sizeof *cams);
+    cam_t *cams = malloc(CPOOL * sizeof *cams);
     if (!no || !cams) { free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
     no[nn++] = (no_t){alvo, -1, 0};
     int ini = 0;
-    for (int nivel = 1; nivel <= nmax && nc < CMAX; nivel++) {
+    for (int nivel = 1; nivel <= nmax && nc < CPOOL; nivel++) {
         int fim = nn;
-        for (int i = ini; i < fim && nc < CMAX; i++) {
+        for (int i = ini; i < fim && nc < CPOOL; i++) {
             uint64_t t = no[i].t, de = t >= DISTFIXA ? t - DISTFIXA : 0;
             size_t lo = 0, hi = np;  // 1º ponteiro com valor >= t - DISTFIXA (o salto longo só vale saindo da biblioteca)
             while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
-            for (size_t j = lo; j < np && pt[j].v <= t && nc < CMAX; j++) {
+            for (size_t j = lo; j < np && pt[j].v <= t && nc < CPOOL; j++) {
                 int k = achar_reg(pt[j].onde);
                 uint32_t o = (uint32_t)(t - pt[j].v);
                 int fixa = k >= 0 && rg[k].fixa;
@@ -491,17 +494,26 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
                     cam_t *c = &cams[nc++]; int len = snprintf(c->txt, sizeof c->txt, "%s+%" PRIx64 ":%x", rg[k].lib, pt[j].onde - base_lib(rg[k].lib), o);
                     unsigned soma = o;
                     for (int x = i; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }
-                    c->nota = nota(nivel, rg[k].lib, soma);
-                } else if (nn < NMAX && nivel < nmax) no[nn++] = (no_t){pt[j].onde, i, o};
+                    c->nota = nota(nivel, rg[k].lib, soma) + (o > DIST ? 800 : 0);  // salto longo direto da biblioteca: vale, mas é menos certo
+                } else if (o <= DIST && nn < NMAX && nivel < nmax) no[nn++] = (no_t){pt[j].onde, i, o};  // salto longo só saindo da biblioteca
             }
         }
         ini = fim;
     }
     free(no); free(pt);
     qsort(cams, nc, sizeof *cams, cmp_cam);  // o mais confiável primeiro
-    for (int i = 0; i < nc; i++) puts(cams[i].txt);
+    // saída: até CMAX, no máximo POR_LIB de cada biblioteca (variedade: se uma biblioteca for ruim, as outras ainda estão lá)
+    int saiu = 0; char libs[64][64]; int quantos[64] = {0}, nl = 0;
+    for (int i = 0; i < nc && saiu < CMAX; i++) {
+        char lib[64]; snprintf(lib, sizeof lib, "%.*s", (int)strcspn(cams[i].txt, "+"), cams[i].txt);
+        int k = 0; while (k < nl && strcmp(libs[k], lib)) k++;
+        if (k == nl && nl < 64) { snprintf(libs[nl], 64, "%s", lib); nl++; }
+        if (k < 64 && quantos[k] >= POR_LIB) continue;
+        if (k < 64) quantos[k]++;
+        puts(cams[i].txt); saiu++;
+    }
     free(cams);
-    printf("ok %d\n", nc);
+    printf("ok %d\n", saiu);
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor
 static void cmd_ptr(const char *cam) {

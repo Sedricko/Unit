@@ -127,7 +127,7 @@ object Ponteiro {
     /** Jogo escolhido: cada valor guardado aparece nos Salvos pelo caminho da maioria; os caminhos mortos são apagados. */
     fun aplicar() = Nucleo.rodar {
         val j = Nucleo.jogo ?: return@rodar
-        val todos = lista(j.pacote)
+        val todos = lista(j.pacote).groupBy { it.nome }.values.map { it.reduce(::fundir) }  // nomes repetidos de antes viram um só
         val guardados = todos.filter { it.conferido }
         val limpos = guardados.map { c -> c to c.caminhos.map { cam -> cam to seguir(cam, c.tipo)?.first } }
         val pendentesAgora = todos.filterNot { it.conferido }.map { conferirSozinho(it) }  // os guardados sozinhos ao salvar
@@ -250,7 +250,8 @@ object Ponteiro {
 
     fun renomear(antigo: String, novo: String) {
         val j = Nucleo.jogo ?: return
-        gravar(j.pacote, lista(j.pacote).map { if (it.nome == antigo) it.copy(nome = novo) else it })
+        // renomear para um nome que já existe funde os dois (o relatório mostrou 3 "Cobre" separados, de "Valor 1/2" renomeados)
+        gravar(j.pacote, lista(j.pacote).map { if (it.nome == antigo) it.copy(nome = novo) else it }.groupBy { it.nome }.values.map { it.reduce(::fundir) })
     }
 
     fun esquecer(nome: String) { val j = Nucleo.jogo ?: return; gravar(j.pacote, lista(j.pacote).filter { it.nome != nome }) }
