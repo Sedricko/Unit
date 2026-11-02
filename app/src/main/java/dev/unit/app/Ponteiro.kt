@@ -28,7 +28,9 @@ import kotlin.math.abs
 
 /** Um valor achado pelo caminho: o nome, o tipo, os caminhos que ainda valem e se volta congelado. */
 /** conferido = false: guardado sozinho ao salvar; a próxima abertura do jogo confere pela maioria. */
-data class Caminho(val nome: String, val tipo: String, val caminhos: List<String>, val congelar: Boolean = false, val valor: String = "", val conferido: Boolean = true)
+/** fixo = a pessoa fixou: caminho que falha só sai depois de 3 aberturas seguidas (falhas conta), e a reserva é mantida cheia. */
+data class Caminho(val nome: String, val tipo: String, val caminhos: List<String>, val congelar: Boolean = false, val valor: String = "", val conferido: Boolean = true,
+                   val fixo: Boolean = false, val falhas: Map<String, Int> = emptyMap())
 
 /**
  * LABORATÓRIO (teste): ponteiros. Achou um valor uma vez → o motor procura o caminho (biblioteca + deslocamentos) até
@@ -45,11 +47,13 @@ object Ponteiro {
     /** O que está sendo conferido agora (um por vez): achado num jogo, esperando a reabertura. */
     var pendente by mutableStateOf<Caminho?>(null)
     var aviso by mutableStateOf("")
+    private var recarga by mutableStateOf(0)
 
     // ---- guardar: JSON por jogo (pacote → lista) ----
-    fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido) })
+    fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido).put("fixo", c.fixo).put("falhas", JSONObject(c.falhas)) })
     fun deJson(a: JSONArray) = (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
-        Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor"), o.optBoolean("conferido", true)) } }
+        Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor"), o.optBoolean("conferido", true), o.optBoolean("fixo"),
+            o.optJSONObject("falhas")?.let { f -> f.keys().asSequence().associateWith { k -> f.getInt(k) } }.orEmpty()) } }
     fun lista(pacote: String) = runCatching { deJson(JSONArray(prefs.getString(pacote, "[]"))) }.getOrDefault(emptyList())
     // o arquivo (unit-ponteiros.json) acompanha sempre: limpou os mortos, usou, importou, renomeou → já sai atualizado
     private fun gravar(pacote: String, l: List<Caminho>) { prefs.edit().putString(pacote, paraJson(l).toString()).commit(); runCatching { exportar() } }
@@ -114,7 +118,7 @@ object Ponteiro {
         val guardados = todos.filter { it.conferido }
         val limpos = guardados.map { c -> c to c.caminhos.map { cam -> cam to seguir(cam, c.tipo)?.first } }
         val pendentesAgora = todos.filterNot { it.conferido }.map { conferirSozinho(it) }  // os guardados sozinhos ao salvar
-        gravar(j.pacote, limpos.map { (c, ch) -> c.copy(caminhos = vivos(ch)) } + pendentesAgora)  // a cada abertura sobram só os vivos
+        gravar(j.pacote, limpos.map { (c, ch) -> if (c.fixo) protegido(c, ch) else c.copy(caminhos = vivos(ch)) } + pendentesAgora)  // a cada abertura sobram só os vivos
         for ((c, ch) in limpos) {
             val vivo = vivos(ch).toSet(); val mortos = ch.filter { it.first !in vivo }
             val votos = ch.mapNotNull { it.second }.groupingBy { it }.eachCount()
@@ -136,7 +140,9 @@ object Ponteiro {
         for ((c, ch) in limpos) {
             val chegou = ch.mapNotNull { it.second }
             val addr = chegou.groupingBy { it }.eachCount().maxByOrNull { it.value } ?: continue
-            if (addr.value >= POUCOS) continue
+            val atual0 = lista(j.pacote).firstOrNull { it.nome == c.nome }
+            val limite = if (atual0?.fixo == true) RESERVA / 2 else POUCOS  // fixado: mantém a reserva cheia
+            if ((atual0?.caminhos?.size ?: addr.value) >= limite && addr.value >= POUCOS) continue
             if (c.nome in renovados) { Registro.add("decisao", "${c.nome}: não renovei, já renovei uma vez desde que o Unit abriu"); continue }
             // só alimenta com prova: 2+ caminhos concordam, ou o único guardado (já conferido) ainda chega. Senão um caminho
             // errado sozinho viraria "maioria" com os novos que nasceram dele
@@ -201,6 +207,23 @@ object Ponteiro {
         Registro.add("decisao", "${c.nome}: conferi sozinho · ${melhor.value} de ${c.caminhos.size} caminhos chegam em ${melhor.key} (valor $valor)",
             votos.entries.sortedByDescending { it.value }.take(5).map { "${it.key}: ${it.value} voto(s)" })
         return c.copy(caminhos = bons.take(RESERVA), conferido = true)
+    }
+
+    /** Fixado: o caminho que falhou só sai na 3ª abertura seguida com falha; o que funcionou zera a conta. */
+    fun protegido(c: Caminho, ch: List<Pair<String, String?>>): Caminho {
+        val vivo = vivos(ch).toSet()
+        val falhas = c.caminhos.associateWith { cam -> if (cam in vivo) 0 else (c.falhas[cam] ?: 0) + 1 }
+        val saem = falhas.filter { it.value >= 3 }.keys
+        val tropecos = falhas.filter { it.value in 1..2 }
+        if (tropecos.isNotEmpty()) Registro.add("decisao", "${c.nome} (fixado): ${tropecos.size} caminho(s) falharam agora, mas ficam até a 3ª falha seguida", tropecos.map { "${it.key}: ${it.value}ª falha" }.take(30))
+        if (saem.isNotEmpty()) Registro.add("caminho", "${c.nome} (fixado): ${saem.size} caminho(s) saíram depois de 3 falhas seguidas", lista5(saem.toList(), "– saiu"))
+        return c.copy(caminhos = c.caminhos.filter { it !in saem }, falhas = falhas.filter { it.key !in saem && it.value > 0 })
+    }
+
+    fun fixar(nome: String, sim: Boolean) {
+        val j = Nucleo.jogo ?: return
+        gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(fixo = sim, falhas = emptyMap()) else it })
+        Registro.add("caminho", "$nome: ${if (sim) "fixado (protegido e realimentado)" else "não está mais fixado"}")
     }
 
     fun renomear(antigo: String, novo: String) {
@@ -288,6 +311,7 @@ object Ponteiro {
 
         val j = Nucleo.jogo
         Rotulo("Guardados neste jogo")
+        @Suppress("UNUSED_EXPRESSION") recarga  // relê a lista quando fixa/desfixa
         val guardados = j?.let { lista(it.pacote) }.orEmpty()
         if (guardados.isEmpty()) Text("Nenhum ainda. No Editar de um valor, toque em Achar o caminho.", color = Cor.apagado, fontSize = 12.sp)
         guardados.forEach { c ->
@@ -296,7 +320,8 @@ object Ponteiro {
                     Text(c.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
                     Text("${NOME_TIPO[c.tipo] ?: c.tipo} · ${c.caminhos.size} caminho(s)" + (if (!c.conferido) " · a conferir na próxima abertura" else "") + if (c.congelar) " · volta congelado" else "", color = Cor.apagado, fontSize = 12.sp)
                 }
-                Box(Modifier.padding(start = 8.dp).toque { esquecer(c.nome); aviso = "${c.nome} esquecido." }) { Text("Esquecer", color = Cor.ruim, fontSize = 13.sp) }
+                if (c.conferido) Box(Modifier.padding(start = 8.dp).toque { fixar(c.nome, !c.fixo); recarga++ }) { Text(if (c.fixo) "📌 Fixado" else "Fixar", color = Cor.a2, fontSize = 13.sp) }
+                Box(Modifier.padding(start = 10.dp).toque { esquecer(c.nome); aviso = "${c.nome} esquecido." }) { Text("Esquecer", color = Cor.ruim, fontSize = 13.sp) }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

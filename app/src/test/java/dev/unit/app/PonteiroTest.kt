@@ -32,6 +32,17 @@ class PonteiroTest {
         assertEquals(Ponteiro.RESERVA, Ponteiro.alimentar(emptyList(), (1..50).map { "n$it" }).size)
     }
 
+    @Test fun fixadoSoTiraNaTerceiraFalha() {
+        val c = Caminho("Cobre", "f32", listOf("bom", "ruim"), fixo = true, falhas = mapOf("ruim" to 2))
+        // "bom" e um 2º caminho chegam em "x" (maioria); "ruim" quebrou de novo: 3ª falha, sai
+        val r = Ponteiro.protegido(c, listOf("bom" to "x", "ruim" to null, "outro" to "x"))
+        assertEquals(listOf("bom"), r.caminhos)
+        val c2 = Caminho("Cobre", "f32", listOf("bom", "ruim"), fixo = true)
+        val r2 = Ponteiro.protegido(c2, listOf("bom" to "x", "ruim" to null, "outro" to "x"))
+        assertEquals(listOf("bom", "ruim"), r2.caminhos)  // 1ª falha: fica
+        assertEquals(1, r2.falhas["ruim"])
+    }
+
     @Test fun bateComOArredondamentoDaTela() {
         assertTrue(Ponteiro.bate("f32", "100.37", 100.0))
         assertFalse(Ponteiro.bate("f32", "101", 100.0))
