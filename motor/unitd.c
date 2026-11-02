@@ -531,13 +531,13 @@ static void cmd_android(const char *desde, const char *pac) {
     FILE *p = popen(c, "r"); if (!p) { puts("err não li o logcat"); return; }
     static const char *chaves[] = {"ANR in", "Input dispatching timed out", "lowmemorykiller", "am_kill", "am_anr", "am_crash",
                                     "FATAL EXCEPTION", "Fatal signal", "dev.unit.app", "unitd", NULL};
-    char ln[600]; int n = 0;
+    char ln[1200]; int n = 0;
     while (fgets(ln, sizeof ln, p)) {
         int bate = strstr(ln, pac) != NULL;
         for (int i = 0; !bate && chaves[i]; i++) bate = strstr(ln, chaves[i]) != NULL;
         if (!bate || n >= 80) continue;
         ln[strcspn(ln, "\n")] = 0;
-        if (!strncmp(ln, "ok", 2) || !strncmp(ln, "err ", 4)) continue;  // não confunde o fim da resposta
+        if (!isdigit((unsigned char)ln[strspn(ln, " ")])) continue;  // pedaço de outra mensagem (ex.: as listas de .dex): ruído
         puts(ln); n++;
     }
     pclose(p);

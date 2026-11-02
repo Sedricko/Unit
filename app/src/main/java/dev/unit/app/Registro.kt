@@ -66,7 +66,7 @@ object Registro {
         if (l.any { ("lowmemorykiller" in it || "am_kill" in it) && pac in it }) add("aviso", "O Android fechou $nome por falta de memória")
         if (l.any { ("FATAL EXCEPTION" in it || "Fatal signal" in it || "am_crash" in it) && pac in it }) add("aviso", "$nome fechou com erro (falha do próprio jogo)")
         if (l.any { "dev.unit.app" in it && ("ANR in" in it || "FATAL" in it || "am_crash" in it) }) add("aviso", "O Android anotou um problema do próprio Unit")
-        add("android", "Android: ${l.size} mensagem(ns) sobre $nome/Unit", l.takeLast(40).map { it.take(200) })
+        add("android", "Android: ${l.size} mensagem(ns) sobre $nome/Unit", l.takeLast(40).map { it.trim().take(400) })  // 400: o motivo do ANR inteiro
     }
     private var base: Triple<Long, Long, Long>? = null  // memória (Unit, motor, jogo) no 1º pulso: a régua do vazamento
     private var engasgos = 0; private var maiorEngasgo = 0L

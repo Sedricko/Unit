@@ -104,8 +104,6 @@ class Balao : Service() {
         // o escudo entra antes do painel: fica embaixo dele e por cima do jogo
         val esc = android.view.View(this).apply {
             setOnTouchListener { _, e -> if (e.action == android.view.MotionEvent.ACTION_DOWN) soltarPausa(); true }
-            isFocusable = true; isFocusableInTouchMode = true
-            setOnKeyListener { _, _, e -> if (e.action == android.view.KeyEvent.ACTION_UP) soltarPausa(); true }
         }
         escudo = esc
         wm.addView(esc, pEscudo)
@@ -122,7 +120,9 @@ class Balao : Service() {
         LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT
     ).apply { alpha = 0f; gravity = Gravity.TOP or Gravity.START }
     private fun ligarEscudo(on: Boolean) {
-        pEscudo.flags = if (on) LayoutParams.FLAG_LAYOUT_IN_SCREEN else LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        // nunca pega o foco: tirar o foco do jogo pausado faz o Android mandar "perdeu o foco" para ele, e o jogo parado não
+        // responde → "não está respondendo" 5 s depois (o relatório mostrou: um ANR 5 s depois de cada pausa)
+        pEscudo.flags = if (on) LayoutParams.FLAG_LAYOUT_IN_SCREEN or LayoutParams.FLAG_NOT_FOCUSABLE else LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN
         // desligado: 1 pixel no canto. Do Android 12 em diante uma janela de outro app cobrindo a tela bloqueia o toque no jogo
         // mesmo "não tocável" (proteção contra toque enganado); só cobre tudo quando precisa segurar o toque (jogo pausado)
         pEscudo.width = if (on) LayoutParams.MATCH_PARENT else 1; pEscudo.height = if (on) LayoutParams.MATCH_PARENT else 1
@@ -302,7 +302,12 @@ class Balao : Service() {
             if (anterior[0] != tela) Registro.add("tela", "${anterior[0]} → $tela (ficou ${(System.currentTimeMillis() - desde[0]) / 1000} s em ${anterior[0]})")
             anterior[0] = tela; desde[0] = System.currentTimeMillis()
         }
-        LaunchedEffect(Nucleo.jogoFechou) { if (Nucleo.jogoFechou && modo != "painel") mudar("painel") }  // abre o painel para perguntar
+        // o jogo fechou: abre o painel para perguntar; reabriu: volta a ser balão (senão o painel em tela cheia cobre o jogo)
+        val perguntou = remember { booleanArrayOf(false) }
+        LaunchedEffect(Nucleo.jogoFechou) {
+            if (Nucleo.jogoFechou) { if (modo != "painel") mudar("painel"); perguntou[0] = true }
+            else if (perguntou[0]) { perguntou[0] = false; if (Nucleo.jogo != null) { mudar("balao"); Registro.add("decisao", "O jogo reabriu: voltei para o balão, para o painel não cobrir o jogo") } }
+        }
         LaunchedEffect(modo, cheio, tela, opcaoPausa) { Registro.painel = "modo=$modo · tela cheia=$cheio · tela=$tela · pausa automática=$opcaoPausa" }  // vai no relatório
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }
         // pausa automática: entra ao digitar (ou com o painel aberto) e sai ao sair dessas telas / minimizar
