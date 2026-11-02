@@ -189,13 +189,14 @@ testa "B: com a lista cheia, o caminho certo fica entre os 3000 que o app guarda
 cenario D d 8 ':b8:10:d38:10:38:30' '[anon:libc_malloc]'
 # ===== achar pelo nome (como os scripts do GameGuardian, mas sozinho): classe do objeto + assinatura (os textos dele) =====
 # 3 itens da mesma classe (Ferro, Cobre, Ouro) com o MESMO valor: só a assinatura separa. Ao reabrir, sem caminho nenhum
-pelonome() {  # nome cenário semente-salvar semente-reabrir campo
-    local nome=$1 cen=$2 campo=$5
+pelonome() {  # nome cenário semente-salvar semente-reabrir campo assinatura-esperada
+    local nome=$1 cen=$2 campo=$5 esperada=$6
     abre "$cen" "$3"
     local cl; cl=$(printf 'attach %s\nclasse %s\n' "$gp" "$gcobre" | "$out/unitd" | tail -n +3)
-    local ass; ass=$(awk '/^texto / { printf "%s%s=%s", (n++ ? "," : ""), $2, $3 }' <<<"$cl")
+    # a assinatura: os textos ("OFF=HEX") e os números fixos ("nOFF=HEX"), como o app monta
+    local ass; ass=$(awk '/^texto / { printf "%s%s=%s", (n++ ? "," : ""), $2, $3 } /^numeros / { printf "%s%s", (n++ ? "," : ""), $2 }' <<<"$cl")
     testa "$nome: ao salvar, descobre a classe do valor (ItemRecurso, campo +$campo)" "grep -qx 'ok ItemRecurso Jogo $campo' <<<\"\$cl\""
-    testa "$nome: a assinatura é só o nome do item (sem textos dos objetos vizinhos): $ass" "[ '$ass' = '10=436f627265' ]"
+    testa "$nome: a assinatura é a esperada, sem nada dos objetos vizinhos: $ass" "[ '$ass' = '$esperada' ]"
     fecha
     abre "$cen" "$4"
     local t0 r r0; t0=$(date +%s%N)
@@ -203,14 +204,22 @@ pelonome() {  # nome cenário semente-salvar semente-reabrir campo
     local ms=$(( ($(date +%s%N) - t0) / 1000000 ))
     r0=$(printf 'attach %s\npelonome ItemRecurso Jogo %s\npelonome NaoExiste Jogo %s\n' "$gp" "$campo" "$campo" | "$out/unitd" | tail -n +3)
     echo "$nome: reaberto, pelo nome: $(tr '\n' ' ' <<<"$r")(${ms} ms) · sem assinatura: $(grep '^ok' <<<"$r0" | head -1)"
-    testa "$nome: reaberto, acha o cobre só pelo nome e pela assinatura (1 de 3 itens, no endereço novo)" "[ \"\$(head -1 <<<\"\$r\")\" = '$gcobre' ] && grep -qx 'ok 1 3' <<<\"\$r\""
-    testa "$nome: sem a assinatura vêm os 3 itens (a assinatura é que separa)" "grep -qx 'ok 3 3' <<<\"\$r0\""
+    testa "$nome: reaberto, acha o cobre só pelo nome e pela assinatura (1 objeto, no endereço novo)" "[ \"\$(head -1 <<<\"\$r\")\" = '$gcobre' ] && grep -qE '^ok 1 [0-9]+\$' <<<\"\$r\""
+    testa "$nome: sem a assinatura vêm vários objetos (a assinatura é que separa)" "grep -qE '^ok ([3-9]|[1-9][0-9]+) ' <<<\"\$r0\""
     testa "$nome: classe que não existe dá erro claro" "grep -q '^err a classe NaoExiste não foi achada' <<<\"\$r0\""
     testa "$nome: rápido (${ms} ms, até 20000)" "[ $ms -le 20000 ]"
     fecha
 }
-pelonome "nome A" a 1 2 30
-pelonome "nome B" b 3 4 34
+pelonome "nome A" a 1 2 30 '10=436f627265'
+pelonome "nome B" b 3 4 34 '10=436f627265'
+# E: itens sem texto (como o "Item" do Orecraft): só os números fixos (o código do item) separam os 3
+pelonome "nome E" e 9 10 18 'n10=00000007,n14=00000001'
+
+# E: 200 mil objetos da classe do item (cabeçalhos apontando para a ficha): no Orecraft isso afogou a procura (8 min)
+cenario E e 9 ':b8:10:d38:10:38:18' '[anon:libc_malloc]'
+ecab=$(grep -o 'cabecalhos=[0-9]*' <<<"$gres" | cut -d= -f2)
+testa "E: pulou os cabeçalhos dos objetos da classe (${ecab:-?} pulados)" "[ '${ecab:-0}' -ge 100000 ]"
+testa "E: o pagemap respondeu" "grep -q 'pagemap=abriu([1-9]' <<<\"\$gres\""
 # C: a memória do caminho colada logo depois da .bss da libil2cpp. Sem nome, o Linux junta as duas numa linha do mapa, e o
 # motor via a arena como se fosse da biblioteca (falha que aparecia às vezes, conforme onde o sistema punha cada região)
 cenario C c 7 ':b8:10:d38:10:38:30' '-'

@@ -85,11 +85,14 @@ object Ponteiro {
             fixo = v.fixo || n.fixo, falhas = v.falhas + n.falhas, unity = n.unity.ifEmpty { v.unity })
     }
 
-    /** Resposta do "classe" do motor ("texto OFF HEX"... + "ok CLASSE ESPAÇO CAMPO") → o que o "pelonome" pede. */
+    /** Resposta do "classe" do motor ("texto OFF HEX", "numeros nOFF=HEX,..." + "ok CLASSE ESPAÇO CAMPO") → o que o "pelonome" pede. */
     fun deClasse(linhas: List<String>, status: String): String? {
         val p = status.split(' ').filter { it.isNotEmpty() }
         if (p.size != 3) return null
-        val ass = linhas.filter { it.startsWith("texto ") }.mapNotNull { l -> l.split(' ').takeIf { it.size == 3 }?.let { "${it[1]}=${it[2]}" } }.joinToString(",")
+        val textos = linhas.filter { it.startsWith("texto ") }.mapNotNull { l -> l.split(' ').takeIf { it.size == 3 }?.let { "${it[1]}=${it[2]}" } }
+        // números fixos do objeto (o código do item…): separam objetos da mesma classe sem texto, como o "Item" do Orecraft
+        val numeros = linhas.filter { it.startsWith("numeros ") }.flatMap { it.removePrefix("numeros ").split(',') }.filter { it.isNotBlank() }
+        val ass = (textos + numeros).joinToString(",")
         return (p + listOfNotNull(ass.ifEmpty { null })).joinToString(" ")
     }
     /** Para o registro e a tela: "ItemRecurso, campo +0x30". */

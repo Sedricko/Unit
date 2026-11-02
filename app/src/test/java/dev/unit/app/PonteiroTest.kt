@@ -75,6 +75,8 @@ class PonteiroTest {
         // a resposta do motor: os textos do objeto (a assinatura) e a classe, o espaço de nomes e o campo
         assertEquals("ItemRecurso Jogo 30 10=436f627265,20=31", Ponteiro.deClasse(listOf("texto 10 436f627265", "texto 20 31"), "ItemRecurso Jogo 30"))
         assertEquals("Moedas - 18", Ponteiro.deClasse(emptyList(), "Moedas - 18"))  // sem textos: só a classe
+        // sem texto, com números fixos (o "Item" do Orecraft): vão na assinatura com o "n" na frente
+        assertEquals("Item - 18 n10=00000007,n14=00000001", Ponteiro.deClasse(listOf("numeros n10=00000007,n14=00000001"), "Item - 18"))
         assertEquals(null, Ponteiro.deClasse(emptyList(), ""))  // não é objeto do Unity
         assertEquals("ItemRecurso, campo +0x30", Ponteiro.rotuloUnity("ItemRecurso Jogo 30 10=436f627265"))
     }

@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/uio.h>
+#include <time.h>
 #include <unistd.h>
 
 enum { T_I32, T_F32, T_I64, T_F64, NT };
@@ -629,7 +630,8 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     int cheio = 0;
     // pt[0..n1): bibliotecas com salto longo (libil2cpp); pt[n1..nf): outras bibliotecas; o resto: heap
     size_t n1 = 0, nf = 0; uint64_t fora = 0, pulou = 0;
-    char pmc[64]; snprintf(pmc, sizeof pmc, "/proc/%d/pagemap", target); int pmfd = open(pmc, O_RDONLY);
+    char pmc[64]; snprintf(pmc, sizeof pmc, "/proc/%d/pagemap", target); int pmfd = open(pmc, O_RDONLY); long pmsim = 0, pmnao = 0;  // blocos em que o pagemap respondeu / falhou
+    struct timespec ts0, ts1, ts2; clock_gettime(CLOCK_MONOTONIC, &ts0);
     for (int passo = 0; passo < 3; n1 = passo == 0 ? np : n1, nf = passo == 1 ? np : nf, passo++)
     for (int r = 0; r < nrg && np < PMAX; r++) {
         if (passo == 0 && rg[r].rw && !rg[r].usa) fora += rg[r].fim - rg[r].ini;
@@ -638,7 +640,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
             size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
             // pagemap (como o GameGuardian): página anônima nunca usada não está na memória nem no swap; é só zero, nem lê
             uint64_t pm[BLOCO / 4096]; size_t npg = (n + 4095) / 4096; int temmapa = 0;
-            if (pmfd >= 0 && rg[r].anon && pread(pmfd, pm, npg * 8, (off_t)(a / 4096 * 8)) == (ssize_t)(npg * 8)) temmapa = 1;
+            if (pmfd >= 0 && rg[r].anon) { if (pread(pmfd, pm, npg * 8, (off_t)(a / 4096 * 8)) == (ssize_t)(npg * 8)) { temmapa = 1; pmsim++; } else pmnao++; }
             for (size_t pg = 0; pg < npg && np < PMAX;) {
                 size_t fimpg = pg;  // um trecho de páginas seguidas: usadas (lê) ou nunca usadas (pula)
                 int usada = !temmapa || (pm[pg] & (3ULL << 62));
@@ -659,6 +661,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     free(buf);
     kill(target, SIGCONT);
     cheio = np >= PMAX;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     qsort(pt, n1, sizeof *pt, cmp_pt); qsort(pt + n1, nf - n1, sizeof *pt, cmp_pt); qsort(pt + nf, np - nf, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
     cam_t *cams = malloc(CPOOL * sizeof *cams); achados = 0;
@@ -675,7 +678,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     #define CUSTO(x) no[fila[x]].custo
     #define POR(x, i_) do { int _p = (x); fila[_p] = (i_); while (_p && CUSTO((_p - 1) / 2) > CUSTO(_p)) { int _q = (_p - 1) / 2, _t = fila[_q]; fila[_q] = fila[_p]; fila[_p] = _t; _p = _q; } } while (0)
     no[nn++] = (no_t){alvo, -1, 0, 0, 0}; fila[nf2++] = 0;
-    int pornivel[9] = {0}, nvisto = 0;
+    int pornivel[9] = {0}, nvisto = 0; uint64_t cabec = 0;
     ligar(pt, n1, nf, alvo, 0, 0, 0, 1, no, cams, &nc);
     while (nf2) {
         int i = fila[0]; fila[0] = fila[--nf2];  // tira o mais barato
@@ -697,7 +700,15 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
         while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
         size_t ub = lo; hi = np;  // 1º ponteiro com valor > t: anda para trás, do mais perto para o mais longe
         while (ub < hi) { size_t m = (ub + hi) / 2; if (pt[m].v <= t) ub = m + 1; else hi = m; }
+        uint64_t ultv = ~0ULL;
         for (size_t j = ub; j-- > lo;) {
+            // muitos apontando para o mesmo endereço e ele é uma ficha de classe: são os cabeçalhos dos objetos dela (todo objeto
+            // do Unity começa assim). Não são caminho; no Orecraft afogavam a procura (8 minutos)
+            if (pt[j].v != ultv) {
+                ultv = pt[j].v; size_t l0 = lo, h0 = j;  // o 1º com esse valor
+                while (l0 < h0) { size_t m = (l0 + h0) / 2; if (pt[m].v < ultv) l0 = m + 1; else h0 = m; }
+                if (j - l0 + 1 > 256 && eh_classe(ultv)) { cabec += j - l0 + 1; j = l0; continue; }
+            }
             uint32_t o = (uint32_t)(t - pt[j].v), c = no[i].custo + o + PENA;
             // tabela de vistos cheia (e os passos também): continua só ligando às bibliotecas. Antes a procura parava aqui, e
             // o passo de um campo longe (+d38) nunca era visto
@@ -715,6 +726,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     #undef CUSTO
     #undef POR
     free(no); free(pt); free(visto); free(vo);
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
     qsort(cams, nc, sizeof *cams, cmp_cam);  // o mais confiável primeiro
     // saída: até CMAX, no máximo POR_LIB de cada biblioteca (variedade: se uma biblioteca for ruim, as outras ainda estão lá)
     int saiu = 0; char libs[64][64]; int quantos[64] = {0}, nl = 0;
@@ -728,7 +740,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     }
     free(cams);
     // números da procura para o relatório (o app só usa as linhas com "+"): ponteiros lidos, se encheu, passos por nível
-    printf("ok %d ponteiros=%zu/%zu%s fora=%" PRIu64 "MB pulou=%" PRIu64 "MB achados=%lu candidatos=%d passos=%d niveis=%d,%d,%d,%d,%d,%d,%d%s%s\n", saiu, np, PMAX, cheio ? "(cheio)" : "", fora >> 20, pulou >> 20, achados, nc, nn,
+    printf("ok %d ponteiros=%zu/%zu%s pagemap=%s(%ld/%ld) leitura=%lds procura=%lds cabecalhos=%" PRIu64 " fora=%" PRIu64 "MB pulou=%" PRIu64 "MB achados=%lu candidatos=%d passos=%d niveis=%d,%d,%d,%d,%d,%d,%d%s%s\n", saiu, np, PMAX, cheio ? "(cheio)" : "", pmfd >= 0 || pmsim ? "abriu" : "não abriu", pmsim, pmsim + pmnao, (long)(ts1.tv_sec - ts0.tv_sec), (long)(ts2.tv_sec - ts1.tv_sec), cabec, fora >> 20, pulou >> 20, achados, nc, nn,
            pornivel[1], pornivel[2], pornivel[3], pornivel[4], pornivel[5], pornivel[6], pornivel[7], nn >= NMAX ? " (limite de passos)" : "", incluida);
 }
 // classe ENDEREÇO: de que objeto (classe do Unity) o valor faz parte. Todo objeto começa com o ponteiro para a ficha da classe:
@@ -740,13 +752,22 @@ static void cmd_classe(const char *addr) {
     for (uint64_t off = 0; off <= 0x1000 && off <= base; off += 8) {
         uint64_t k; if (ler(base - off, &k, 8) || !nome_classe(k, nome, esp)) continue;
         if (!strcmp(nome, "String") && !strcmp(esp, "System")) break;  // caiu dentro de um texto: não é objeto do jogo
-        uint64_t obj = base - off;
+        uint64_t obj = base - off; char nums[1024] = ""; int nn = 0, ln = 0;
         for (uint64_t f = 0x10; f < 0x200; f += 8) {  // os campos que apontam para textos, até o começo do próximo objeto
             uint64_t p; char hex[130];
             if (ler(obj + f, &p, 8)) break;
             if (f > a - obj && eh_classe(p)) break;  // outro ponteiro para ficha depois do valor: é o próximo objeto
-            if (texto_unity(p, hex, sizeof hex)) printf("texto %" PRIx64 " %s\n", f, hex);
+            if (texto_unity(p, hex, sizeof hex)) { printf("texto %" PRIx64 " %s\n", f, hex); continue; }
+            if (achar_reg(SEM_MARCA(p)) >= 0) continue;  // ponteiro: muda a cada abertura, não serve de assinatura
+            // números do objeto (de 4 em 4 bytes), menos o próprio valor: o código do item, o tipo… separam objetos da
+            // mesma classe que não têm texto (o "Item" do Orecraft). Ao reabrir, fica o objeto mais parecido
+            for (int h = 0; h < 2 && nn < 24; h++) {
+                uint64_t fo = f + 4 * (uint64_t)h; uint32_t w = (uint32_t)(p >> (32 * h));
+                if (!w || (fo + 4 > a - obj && fo < a - obj + 8)) continue;
+                ln += snprintf(nums + ln, sizeof nums - ln, "%sn%" PRIx64 "=%08x", nn ? "," : "", fo, w); nn++;
+            }
         }
+        if (nn) printf("numeros %s\n", nums);
         printf("ok %s %s %" PRIx64 "\n", nome, esp, a - obj); return;
     }
     puts("err o valor não está dentro de um objeto do Unity");
@@ -774,7 +795,9 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
         }
     }
     if (!klass) { free(buf); printf("err a classe %s não foi achada (o jogo ainda não usou ela?)\n", cls); return; }
-    int achados = 0, objetos = 0;
+    int achados = 0, objetos = 0, temnum = strstr(ass, "n") != NULL, melhor = 0;
+    enum { MAXO = 4096 }; uint64_t *cand = malloc(MAXO * 8); int *nota_o = malloc(MAXO * sizeof *nota_o), nc = 0;
+    if (!cand || !nota_o) { free(buf); free(cand); free(nota_o); puts("err sem memória"); return; }
     for (int r = 0; r < nrg; r++) {  // 2) os objetos: começam com o ponteiro para a ficha (com ou sem a marca 0xb4)
         if (!rg[r].usa || rg[r].fixa) continue;
         for (uint64_t a = rg[r].ini; a < rg[r].fim; a += BLOCO) {
@@ -783,17 +806,28 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
             for (size_t i = 0; i < n / 8; i++) {
                 if (SEM_MARCA(buf[i]) != klass) continue;
                 uint64_t obj = a + i * 8; objetos++;
-                int bate = 1; char tmp[1100]; snprintf(tmp, sizeof tmp, "%s", ass); char *sv = NULL;
+                int bate = 1, pontos = 0; char tmp[1100]; snprintf(tmp, sizeof tmp, "%s", ass); char *sv = NULL;
                 for (char *t = strtok_r(tmp, ",", &sv); t && bate; t = strtok_r(NULL, ",", &sv)) {  // 3) a assinatura
                     char *ig = strchr(t, '='); if (!ig) continue; *ig = 0;
-                    uint64_t p; char hex[130];
+                    if (t[0] == 'n') {  // número: conta pontos (um campo que muda não elimina, só pontua menos)
+                        uint32_t w; if (!ler(obj + strtoull(t + 1, NULL, 16), &w, 4) && w == (uint32_t)strtoul(ig + 1, NULL, 16)) pontos++;
+                        continue;
+                    }
+                    uint64_t p; char hex[130];  // texto: tem que ser igual
                     bate = !ler(obj + strtoull(t, NULL, 16), &p, 8) && texto_unity(p, hex, sizeof hex) && !strcmp(hex, ig + 1);
                 }
-                if (bate) { printf("%" PRIx64 "\n", obj + campo_off); achados++; }
+                if (!bate) continue;
+                // guarda só os de maior pontuação até agora: com milhares de objetos da classe, a lista enchia antes dos
+                // certos aparecerem (o teste com 200 mil objetos mostrou)
+                if (temnum && pontos > melhor) { melhor = pontos; nc = 0; }
+                if ((!temnum || pontos == melhor) && nc < MAXO) { cand[nc] = obj; nota_o[nc++] = pontos; }
             }
         }
     }
     free(buf);
+    // com números: só os de maior pontuação (se mais de um empatar, vão todos e o app decide)
+    for (int i = 0; i < nc; i++) { printf("%" PRIx64 "\n", cand[i] + campo_off); achados++; }
+    free(cand); free(nota_o);
     printf("ok %d %d\n", achados, objetos);
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor

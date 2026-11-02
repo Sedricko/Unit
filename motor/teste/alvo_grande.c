@@ -89,6 +89,9 @@ int main(int argc, char **argv) {
     // cenário D: o gerenciador do caminho é um objeto popular, apontado por 5000 objetos do heap (como um gerenciador de
     // verdade, que todo mundo usa). O ponteiro verdadeiro (dos campos estáticos) é só um entre 5001
     if (cen == 'd') for (int k = 0; k < 5000; k++) obj[sorte() % NOBJ][sorte() % 2] = (uint64_t)nos[2];
+    // cenário E: 200 mil objetos da classe do item (o cabeçalho de cada um aponta para a ficha), como num jogo cheio de itens.
+    // No Orecraft isso afogou a procura (8 minutos): o motor tem que pular esses cabeçalhos
+    if (cen == 'e') { uint64_t cls; memcpy(&cls, nos[5], 8); for (int k = 0; k < 200000; k++) obj[k * 37 % NOBJ][4] = cls; }
     // ponteiros para o meio do objeto grande (listas de memória livre, partes de vetores). No Orecraft, com o limite de 8
     // objetos vizinhos, isso fez a procura parar cedo e achar 0
     for (int k = 1; k < 32; k++) obj[sorte() % NOBJ][sorte() % 2] = (uint64_t)nos[2] + k * 0x60;
