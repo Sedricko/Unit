@@ -49,7 +49,7 @@ class PonteiroTest {
         assertEquals(listOf("bom"), f.caminhos)  // só o que aparece nas duas aberturas
         assertTrue(f.conferido)
         // mesma abertura (mesmo pid): não cruza, junta
-        assertEquals(3, Ponteiro.fundir(a, b.copy(pid = 100)).caminhos.size)
+        assertEquals(listOf("bom", "falso1", "falso2", "falso3"), Ponteiro.fundir(a, b.copy(pid = 100)).caminhos)  // os 4, sem repetir
     }
 
     @Test fun fixadoSoTiraNaTerceiraFalha() {
