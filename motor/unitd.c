@@ -16,6 +16,7 @@
 //   ptrscan ENDEREÇO [NÍVEIS]  caminhos (ponteiros) de uma biblioteca até o endereço: "lib+OFF:o1:...:oN" -> ok N
 //   ptr CAMINHO                segue o caminho de agora                                     -> ok ENDEREÇO
 //   vivo / fechar              o jogo ainda está aberto? / fecha o jogo
+//   android DESDE PACOTE       o que o Android anotou (logcat) sobre o jogo, o Unit, ANR e falhas -> ok N
 //   info                       regiões, MB legíveis, memória do motor e do jogo (KB)       -> ok N MB KBMOTOR KBJOGO
 //   sleep MS                   espera (testes e scripts: dá tempo ao congelador)
 //   quit
@@ -521,6 +522,28 @@ static int aberto(pid_t p) {
     return fim && fim[1] == ' ' && fim[2] != 'Z' && fim[2] != 'X';
 }
 
+// android DESDE PACOTE: o que o Android anotou (logcat) desde DESDE (segundos, ex. 1730510000.5) sobre o jogo, o Unit, ANR,
+// falhas e falta de memória. Só números/ponto e letras/ponto: os dois vão para um comando do sistema.
+static int seguro(const char *s, const char *ok) { if (!*s) return 0; for (; *s; s++) if (!isalnum((unsigned char)*s) && !strchr(ok, *s)) return 0; return 1; }
+static void cmd_android(const char *desde, const char *pac) {
+    if (!seguro(desde, ".") || !seguro(pac, "._")) { puts("err uso: android SEGUNDOS PACOTE"); return; }
+    char c[256]; snprintf(c, sizeof c, "logcat -d -v epoch -b main,system,crash,events -T '%s' '*:W' 2>/dev/null", desde);
+    FILE *p = popen(c, "r"); if (!p) { puts("err não li o logcat"); return; }
+    static const char *chaves[] = {"ANR in", "Input dispatching timed out", "lowmemorykiller", "am_kill", "am_anr", "am_crash",
+                                    "FATAL EXCEPTION", "Fatal signal", "dev.unit.app", "unitd", NULL};
+    char ln[600]; int n = 0;
+    while (fgets(ln, sizeof ln, p)) {
+        int bate = strstr(ln, pac) != NULL;
+        for (int i = 0; !bate && chaves[i]; i++) bate = strstr(ln, chaves[i]) != NULL;
+        if (!bate || n >= 80) continue;
+        ln[strcspn(ln, "\n")] = 0;
+        if (!strncmp(ln, "ok", 2) || !strncmp(ln, "err ", 4)) continue;  // não confunde o fim da resposta
+        puts(ln); n++;
+    }
+    pclose(p);
+    printf("ok %d\n", n);
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     pthread_t th; pthread_create(&th, NULL, congelador, NULL);
@@ -552,6 +575,7 @@ int main(void) {
         else if (!strcmp(c, "ptrscan")) cmd_ptrscan(a1, a2);
         else if (!strcmp(c, "ptr")) cmd_ptr(a1);
         else if (!strcmp(c, "vivo")) puts("ok");
+        else if (!strcmp(c, "android")) cmd_android(a1, a2);
         else if (!strcmp(c, "info")) {  // para o autoteste: quantas regiões e quantos MB do jogo o Unit consegue ler
             uint64_t *ini, *fim; int nr = regioes(&ini, &fim); uint64_t tot = 0;
             if (nr < 0) { puts("err não li o mapa de memória do jogo"); continue; }

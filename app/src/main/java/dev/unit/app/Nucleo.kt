@@ -123,7 +123,7 @@ object Nucleo {
     /** A cada 2 s (balão aberto): o jogo ainda está aberto? Sem aviso na tela; só liga o jogoFechou. */
     fun verificar() = scope.launch {
         if (jogo == null || ocupado || jogoFechou) return@launch
-        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou") { jogoFechou = true; pausado = false; Registro.add("jogo", "${jogo?.nome} fechou") } }
+        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou") { jogoFechou = true; pausado = false; Registro.add("jogo", "${jogo?.nome} fechou"); Registro.lerAndroid() } }  // o Android diz por quê
     }
 
     /** Fecha o jogo (para conferir um caminho, ou recomeçar limpo). */

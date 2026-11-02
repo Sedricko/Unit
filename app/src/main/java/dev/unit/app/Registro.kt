@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -51,6 +52,22 @@ object Registro {
     private var app: Context? = null
 
     private var iniciou = false
+    private var androidDesde = System.currentTimeMillis() / 1000.0  // o logcat é lido daqui em diante (sem repetir)
+
+    /** O que o Android anotou (logcat, pelo motor com root) sobre o jogo e o Unit: ANR, falhas, morto por memória. */
+    suspend fun lerAndroid() {
+        val pac = Nucleo.jogo?.pacote ?: "dev.unit.app"
+        val agora = System.currentTimeMillis() / 1000.0
+        val l = runCatching { Nucleo.cmd { it.cmd("android ${"%.3f".format(Locale.ROOT, androidDesde)} $pac") }.linhas }.getOrNull() ?: return
+        androidDesde = agora
+        if (l.isEmpty()) return
+        val nome = Nucleo.jogo?.nome ?: pac
+        if (l.any { "ANR in $pac" in it || ("am_anr" in it && pac in it) }) add("aviso", "O Android marcou $nome como \"não está respondendo\" (ANR)")
+        if (l.any { ("lowmemorykiller" in it || "am_kill" in it) && pac in it }) add("aviso", "O Android fechou $nome por falta de memória")
+        if (l.any { ("FATAL EXCEPTION" in it || "Fatal signal" in it || "am_crash" in it) && pac in it }) add("aviso", "$nome fechou com erro (falha do próprio jogo)")
+        if (l.any { "dev.unit.app" in it && ("ANR in" in it || "FATAL" in it || "am_crash" in it) }) add("aviso", "O Android anotou um problema do próprio Unit")
+        add("android", "Android: ${l.size} mensagem(ns) sobre $nome/Unit", l.takeLast(40).map { it.take(200) })
+    }
     private var base: Triple<Long, Long, Long>? = null  // memória (Unit, motor, jogo) no 1º pulso: a régua do vazamento
     private var engasgos = 0; private var maiorEngasgo = 0L
     /** A tela ficou parada mais de 100 ms (o Balao mede enquanto o painel está aberto). */
@@ -70,6 +87,7 @@ object Registro {
             fun cresceu(nome: String, de: Long, para: Long?, limite: Long) { if (para != null && para - de > limite) add("aviso", "Possível vazamento: $nome foi de $de MB para $para MB desde o começo", listOf("comparado com o 1º pulso desta sessão")) }
             cresceu("o Unit", u, unitMb, 80); cresceu("o motor", m, motorMb, 300); cresceu("o jogo", jj, jogoMb, 800)
         }
+        lerAndroid()
         val (eng, maior) = synchronized(this) { val x = engasgos to maiorEngasgo; engasgos = 0; maiorEngasgo = 0; x }
         if (eng > 0) add("aviso", "A tela engasgou $eng vez(es) nos últimos 5 min (o maior: $maior ms)")
         val congelados = runCatching { Nucleo.cmd { it.cmd("frozen") }.status }.getOrDefault("?")
@@ -195,6 +213,7 @@ object Registro {
     /** O relatório completo, em partes, com tudo o que ajuda a achar um defeito sem print. */
     suspend fun texto(testes: List<Teste>?): String {
         val ctx = app
+        lerAndroid()  // o que o Android anotou até agora entra no registro antes de montar o relatório
         val se = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { selinux() }  // roda um programa: fora da tela
         val j = Nucleo.jogo
         val jogoInfo = if (j != null) runCatching { Nucleo.cmd { it.cmd("info") }.status }.getOrElse { "erro: ${it.message}" } else ""
@@ -275,7 +294,7 @@ object Registro {
         ctx.startActivity(Intent.createChooser(envio, "Compartilhar relatório do Unit").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    private fun cor(tipo: String) = when (tipo) { "erro" -> Cor.ruim; "aviso" -> Color(0xFFFFB86B); "jogo" -> Color(0xFFB8C4FF); "caminho" -> Cor.a2; "decisao" -> Color(0xFFC9A7FF); "tela" -> Cor.apagado; else -> Cor.texto }
+    private fun cor(tipo: String) = when (tipo) { "erro" -> Cor.ruim; "aviso" -> Color(0xFFFFB86B); "android" -> Color(0xFF8FE3B0); "jogo" -> Color(0xFFB8C4FF); "caminho" -> Cor.a2; "decisao" -> Color(0xFFC9A7FF); "tela" -> Cor.apagado; else -> Cor.texto }
 
     @Composable
     fun TelaAutoteste(ctx: Context, verRegistro: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -314,8 +333,8 @@ object Registro {
     fun TelaRegistro(ctx: Context) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         var filtro by remember { mutableStateOf("tudo") }
         val abertos = remember { mutableStateListOf<Evento>() }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("tudo" to "Tudo", "busca" to "Busca", "caminho" to "Caminhos", "decisao" to "Decisões", "erro" to "Erros").forEach { (f, n) -> Selo(n, filtro == f) { filtro = f } }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("tudo" to "Tudo", "busca" to "Busca", "caminho" to "Caminhos", "decisao" to "Decisões", "android" to "Android", "erro" to "Erros").forEach { (f, n) -> Selo(n, filtro == f) { filtro = f } }
         }
         val vistos = linhas.filter { filtro == "tudo" || it.tipo == filtro || (filtro == "busca" && it.tipo == "jogo") || (filtro == "erro" && it.tipo == "aviso") }
         if (vistos.isEmpty()) Text("Nada registrado ainda.", color = Cor.apagado, fontSize = 12.sp)
