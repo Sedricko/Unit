@@ -400,7 +400,7 @@ static void cmd_diff(const char *m) {
 // "fixas"; a base de cada biblioteca é o começo da 1ª região dela.
 // No Android ARM64 os ponteiros do heap vêm com uma marca no byte de cima (0xb4…): ela é tirada antes de comparar.
 #define SEM_MARCA(v) ((v) & 0x00ffffffffffffffULL)
-typedef struct { uint64_t ini, fim; int rw, fixa; char lib[64]; } reg_t;
+typedef struct { uint64_t ini, fim; int rw, fixa, longe; char lib[64]; } reg_t;
 static reg_t *rg; static int nrg;
 static void ler_mapa(void) {
     char p[64]; snprintf(p, sizeof p, "/proc/%d/maps", target);
@@ -431,7 +431,11 @@ static void ler_mapa(void) {
     int unity = 0;
     for (int i = 0; i < nrg; i++) if (strstr(rg[i].lib, "libil2cpp")) unity = 1;
     if (unity) for (int i = 0; i < nrg; i++)
-        if (rg[i].fixa && !strstr(rg[i].lib, "il2cpp") && !strstr(rg[i].lib, "unity") && !strstr(rg[i].lib, "libmain")) rg[i].fixa = 0;
+        if (rg[i].fixa && !strstr(rg[i].lib, "il2cpp")) rg[i].fixa = 0;  // os campos C# do jogo vêm da libil2cpp; a libunity é o
+        // motor gráfico e o gerenciador de memória: aponta para o heap todo e enchia os candidatos (Orecraft: 1500 caminhos, todos quebraram)
+    // salto longo (tabela[índice]) só saindo da libil2cpp, onde ficam as tabelas de classes. A libunity guarda ponteiros do
+    // gerenciador de memória para o heap todo: com salto longo, qualquer coisa virava caminho (Orecraft: 1500, todos quebraram)
+    for (int i = 0; i < nrg; i++) rg[i].longe = rg[i].fixa && (!unity || strstr(rg[i].lib, "il2cpp"));
 }
 static int achar_reg(uint64_t v) {  // as regiões vêm em ordem no mapa: busca binária
     int lo = 0, hi = nrg - 1;
@@ -465,10 +469,12 @@ static unsigned nota(int nivel, const char *lib, unsigned soma) {
 static int cmp_cam(const void *a, const void *b) { unsigned x = ((const cam_t *)a)->nota, y = ((const cam_t *)b)->nota; return x < y ? -1 : x > y; }
 // liga o endereço t às bibliotecas: cada ponteiro de biblioteca até DISTFIXA antes de t vira um caminho
 // "lib+OFF:oLib[:oExtra]:(deslocamentos de pai até o alvo)". O salto longo só vale saindo da biblioteca (tabelas do Unity)
-static void ligar(const pt_t *pt, size_t nf, uint64_t t, int pai, uint32_t oext, int temext, int nivel, const no_t *no, cam_t *cams, int *nc) {
-    uint64_t de = t >= DISTFIXA ? t - DISTFIXA : 0; size_t lo = 0, hi = nf;
+static void ligar(const pt_t *pt, size_t n1, size_t nf, uint64_t t, int pai, uint32_t oext, int temext, int nivel, const no_t *no, cam_t *cams, int *nc) {
+    for (int parte = 0; parte < 2; parte++) {  // libil2cpp com janela longa; as outras bibliotecas só DIST
+    size_t ini = parte ? n1 : 0, fim = parte ? nf : n1; uint64_t w = parte ? DIST : DISTFIXA;
+    uint64_t de = t >= w ? t - w : 0; size_t lo = ini, hi = fim;
     while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
-    for (size_t j = lo; j < nf && pt[j].v <= t && *nc < CPOOL; j++) {
+    for (size_t j = lo; j < fim && pt[j].v <= t && *nc < CPOOL; j++) {
         int k = achar_reg(pt[j].onde); if (k < 0 || !rg[k].fixa) continue;
         uint64_t off = pt[j].onde - base_lib(rg[k].lib);
         if (off >= 0x10000000ULL) continue;  // a mais de 256 MB do começo da biblioteca: não é parte dela
@@ -477,6 +483,7 @@ static void ligar(const pt_t *pt, size_t nf, uint64_t t, int pai, uint32_t oext,
         if (temext) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", oext); soma += oext; }
         for (int x = pai; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }
         c->nota = nota(nivel, rg[k].lib, soma) + (o > DIST ? 0x400 : 0);  // salto longo direto da biblioteca: vale, mas é menos certo
+    }
     }
 }
 // quantos ponteiros cabem: um quarto da memória livre (MemAvailable), entre 12 e 100 milhões. Fixo em 12 milhões, num jogo
@@ -501,16 +508,17 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     // as bibliotecas primeiro: se o limite encher no meio do heap, os ponteiros de onde os caminhos começam já estão lá
     // (antes o mapa era lido em ordem e o limite podia acabar antes das bibliotecas: 0 caminhos)
     int cheio = 0;
-    size_t nf = 0;  // pt[0..nf): ponteiros que moram nas bibliotecas; o resto: heap
-    for (int passo = 0; passo < 2; nf = passo == 0 ? np : nf, passo++)
+    // pt[0..n1): bibliotecas com salto longo (libil2cpp); pt[n1..nf): outras bibliotecas; o resto: heap
+    size_t n1 = 0, nf = 0;
+    for (int passo = 0; passo < 3; n1 = passo == 0 ? np : n1, nf = passo == 1 ? np : nf, passo++)
     for (int r = 0; r < nrg && np < PMAX; r++) {
-        if (!rg[r].rw || rg[r].fixa != (passo == 0)) continue;
+        if (!rg[r].rw || (passo == 0 ? !rg[r].longe : passo == 1 ? !rg[r].fixa || rg[r].longe : rg[r].fixa)) continue;
         for (uint64_t a = rg[r].ini; a < rg[r].fim && np < PMAX; a += BLOCO) {
             size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
             if (ler(a, buf, n)) continue;
             for (size_t o = 0; o + 8 <= n && np < PMAX; o += 8) {
                 uint64_t v; memcpy(&v, buf + o, 8); v = SEM_MARCA(v);
-                if (v < 0x10000) continue;
+                if (v < 0x10000 || (v & 7)) continue;  // objeto começa alinhado: endereço ímpar é texto/byte, não objeto
                 int k = achar_reg(v); if (k < 0 || !rg[k].rw) continue;
                 pt[np].v = v; pt[np].onde = a + o; np++;
             }
@@ -519,7 +527,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     free(buf);
     kill(target, SIGCONT);
     cheio = np >= PMAX;
-    qsort(pt, nf, sizeof *pt, cmp_pt); qsort(pt + nf, np - nf, sizeof *pt, cmp_pt);
+    qsort(pt, n1, sizeof *pt, cmp_pt); qsort(pt + n1, nf - n1, sizeof *pt, cmp_pt); qsort(pt + nf, np - nf, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
     cam_t *cams = malloc(CPOOL * sizeof *cams);
     if (!no || !cams) { free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
@@ -536,7 +544,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     #define POR(x, i_) do { int _p = (x); fila[_p] = (i_); while (_p && CUSTO((_p - 1) / 2) > CUSTO(_p)) { int _q = (_p - 1) / 2, _t = fila[_q]; fila[_q] = fila[_p]; fila[_p] = _t; _p = _q; } } while (0)
     no[nn++] = (no_t){alvo, -1, 0, 0, 0}; fila[nf2++] = 0;
     int pornivel[9] = {0}, nvisto = 0;
-    ligar(pt, nf, alvo, 0, 0, 0, 1, no, cams, &nc);
+    ligar(pt, n1, nf, alvo, 0, 0, 0, 1, no, cams, &nc);
     while (nf2 && nc < CPOOL) {
         int i = fila[0]; fila[0] = fila[--nf2];  // tira o mais barato
         for (int p = 0;;) { int l = 2 * p + 1, r = l + 1, m = p;
@@ -564,13 +572,13 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
             uint32_t o = (uint32_t)(t - pt[j].v), c = no[i].custo + o + PENA;
             // tabela de vistos cheia (e os passos também): continua só ligando às bibliotecas. Antes a procura parava aqui, e
             // o passo de um campo longe (+d38) nunca era visto
-            if (nvisto >= HCAP / 2) { ligar(pt, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc); filhos++; continue; }
+            if (nvisto >= HCAP / 2) { ligar(pt, n1, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc); filhos++; continue; }
             uint64_t h = (pt[j].onde >> 3) * 0x9E3779B97F4A7C15ULL >> (64 - 23);
             while (visto[h] && visto[h] != pt[j].onde) h = (h + 1) & (HCAP - 1);
             if (visto[h] && vo[h] <= c) continue;  // já chegou aqui mais barato
             if (!visto[h]) nvisto++;
             visto[h] = pt[j].onde; vo[h] = c; filhos++;
-            ligar(pt, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc);  // uma biblioteca aponta para cá? vira caminho
+            ligar(pt, n1, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc);  // uma biblioteca aponta para cá? vira caminho
             if (nn < NMAX) { no[nn] = (no_t){pt[j].onde, i, o, c, nivel}; POR(nf2, nn); nf2++; nn++; pornivel[nivel]++; }
         }
     }

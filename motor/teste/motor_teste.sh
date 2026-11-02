@@ -107,7 +107,8 @@ confere "ponteiro: biblioteca que não existe, recusa" "err biblioteca naoexiste
 # (atalhos de deslocamento grande que quebram ao reabrir) e outros objetos apontando para cada passo. O caminho de verdade
 # tem 6 níveis: libil2cpp → classe +b8 → estáticos +10 → gerenciador +d38 → lista +10 → itens +38 → item +30 = cobre
 cc -O2 -shared -fPIC -o "$out/libil2cpp.so" motor/teste/il2cpp_teste.c
-cc -O0 -o "$out/alvo_grande" motor/teste/alvo_grande.c -L"$out" -lil2cpp -Wl,-rpath,"$out"
+cc -O2 -shared -fPIC -o "$out/libunity.so" motor/teste/unity_teste.c
+cc -O0 -o "$out/alvo_grande" motor/teste/alvo_grande.c -L"$out" -lil2cpp -lunity -Wl,-rpath,"$out"
 "$out/alvo_grande" > "$out/info_g" & gpid=$!
 for _ in $(seq 200); do [ -s "$out/info_g" ] && break; sleep 0.1; done
 read -r gp gcobre _ < "$out/info_g"
@@ -120,12 +121,13 @@ camg=$(grep -m1 '^libil2cpp.so+[0-9a-f]*:b8:10:d38:10:38:30$' <<<"$got6" || true
 got7=$(printf 'attach %s\nptr %s\n' "$gp" "$camg" | "$out/unitd")
 got="$got6
 $got7"
-confere "jogo grande: com a memória do celular, cabem os 16 milhões de ponteiros" "ponteiros=16"
+if grep -q '(cheio)' <<<"$got6"; then echo "FALHA jogo grande: o limite de ponteiros encheu"; falhou=1; else echo "OK   jogo grande: com a memória do celular, cabem os 16 milhões de ponteiros"; fi
 confere "jogo grande: acha o caminho de verdade de 6 níveis do Unity" ":b8:10:d38:10:38:30"
 got="$(grep -m1 '^libil2cpp' <<<"$got6")"
 confere "jogo grande: o caminho de verdade vem primeiro (na frente dos atalhos)" ":b8:10:d38:10:38:30"
 got="$got6
 $got7"
 confere "jogo grande: seguir o caminho chega no cobre" "ok $gcobre"
+if grep -q '^libunity' <<<"$got6"; then echo "FALHA jogo grande: caminhos da libunity (gerenciador de memória) não deviam sair"; falhou=1; else echo "OK   jogo grande: a libunity (gerenciador de memória) não vira caminho"; fi
 if [ "$seg" -le 60 ]; then echo "OK   jogo grande: procura em ${seg} s (até 60)"; else echo "FALHA jogo grande: procura levou ${seg} s"; falhou=1; fi
 exit $falhou
