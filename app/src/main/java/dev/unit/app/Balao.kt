@@ -412,7 +412,7 @@ class Balao : Service() {
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
         // valor a conferir depois de reabrir: convida a digitar o número da tela (certeza; sem isso, a votação continua sozinha)
-        val aConferir = Nucleo.jogo?.let { j -> Ponteiro.lista(j.pacote).filter { !it.conferido }.map { it.nome } }.orEmpty().filter { n -> Nucleo.salvos.none { it.nome == n && it.caminho } }
+        val aConferir = Ponteiro.precisaNumero.filter { n -> Nucleo.salvos.none { it.nome == n && it.caminho } }  // só depois das 3 tentativas sozinho
         if (!Nucleo.jogoFechou && aConferir.isNotEmpty() && tela != "caminho") Linha(Modifier.toque { tela = "caminho" }) {
             Text("${aConferir.joinToString()}: digite o número que está na tela para confirmar", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Text("›", color = Cor.a2, fontSize = 18.sp)

@@ -113,6 +113,7 @@ object Ponteiro {
         val s = Salvo(addr, c.tipo, nome, v, false, caminho = true)
         val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
         if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+        precisaNumero.remove(nome)
         Registro.add("caminho", "$nome: confirmado pelo número da tela (${EmVolta.texto(tela)}) · ${bons.size} de ${c.caminhos.size} caminhos chegam nele",
             lista5(c.caminhos - bons.toSet(), "– saiu"))
         recarga++
@@ -278,6 +279,7 @@ object Ponteiro {
     /** Ainda há valor a conferir: tenta de novo em 20 s e em 60 s (o jogo pode montar as estruturas depois de abrir). */
     fun tentarDeNovo() {
         val j = Nucleo.jogo ?: return
+        precisaNumero.clear()
         Nucleo.semAviso {
             for (espera in listOf(20_000L, 40_000L)) {
                 kotlinx.coroutines.delay(espera)
@@ -285,8 +287,19 @@ object Ponteiro {
                 Registro.add("decisao", "Conferindo os caminhos de novo (${if (espera == 20_000L) "20" else "60"} s depois de abrir)")
                 aplicar()
             }
+            kotlinx.coroutines.delay(3_000)  // espera a 3ª tentativa terminar
+            // não achou sozinho nas 3 tentativas: aí sim pede o número da tela
+            val faltam = lista(j.pacote).filter { !it.conferido }.map { it.nome }
+            if (Nucleo.jogo?.pid == j.pid && faltam.isNotEmpty()) {
+                precisaNumero += faltam
+                Registro.add("decisao", "Não achei sozinho: ${faltam.joinToString()} · pedindo o número da tela")
+                aoTerminar?.invoke("${faltam.joinToString()}: não achei sozinho — toque no aviso do painel para digitar o número")
+            }
         }
     }
+
+    /** Valores que a conferência sozinha não achou nas 3 tentativas: o painel pede o número da tela. */
+    val precisaNumero = mutableStateListOf<String>()
 
     fun renomear(antigo: String, novo: String) {
         val j = Nucleo.jogo ?: return
