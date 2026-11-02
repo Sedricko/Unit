@@ -136,7 +136,8 @@ object Nucleo {
             val pid = cmd { it.cmd("ps") }.linhas.firstNotNullOfOrNull { l -> l.split(' ', limit = 2).takeIf { p -> p.size == 2 && p[1] == j.pacote }?.get(0)?.toIntOrNull() }
             if (pid != null) {
                 cmd { it.cmd("attach $pid") }
-                jogo = j.copy(pid = pid); jogoFechou = false; pausado = false; zerar(); salvos.clear(); aviso = ""
+                jogo = j.copy(pid = pid); jogoFechou = false; pausado = false; zerar(); salvos.clear()
+                aviso = "Esperando ${j.nome} carregar…"; kotlinx.coroutines.delay(5000); aviso = ""  // recém-aberto: os caminhos ainda não existem
                 Ponteiro.aplicar()
                 return@rodar
             }

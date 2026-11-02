@@ -85,11 +85,29 @@ object Ponteiro {
         pendente = null; aplicar()
     }
 
-    /** Jogo escolhido: cada valor guardado aparece nos Salvos pelo 1º caminho que chega nele. */
+    /**
+     * Dos caminhos que funcionaram agora, quais ficam: os que chegam no endereço da maioria (o mais confiável desempata).
+     * Quebrados e os que chegam em outro lugar são mortos. Sem maioria (nenhum ou só 1 por endereço) = guarda todos.
+     */
+    fun vivos(chegadas: List<Pair<String, String?>>): List<String> {
+        val ok = chegadas.filter { it.second != null }
+        if (ok.isEmpty()) return chegadas.map { it.first }
+        val votos = ok.groupingBy { it.second }.eachCount()
+        // só um caminho a favor de cada endereço (ex.: o jogo ainda carregando): pouca prova, não apaga nada
+        if (votos.values.max() < 2 && chegadas.size > 1) return chegadas.map { it.first }
+        val melhor = ok.first { votos[it.second] == votos.values.max() }.second
+        return ok.filter { it.second == melhor }.map { it.first }
+    }
+
+    /** Jogo escolhido: cada valor guardado aparece nos Salvos pelo caminho da maioria; os caminhos mortos são apagados. */
     fun aplicar() = Nucleo.rodar {
         val j = Nucleo.jogo ?: return@rodar
-        for (c in lista(j.pacote)) {
-            val (addr, v) = c.caminhos.firstNotNullOfOrNull { seguir(it, c.tipo) } ?: continue
+        val guardados = lista(j.pacote)
+        val limpos = guardados.map { c -> c to c.caminhos.map { cam -> cam to seguir(cam, c.tipo)?.first } }
+        gravar(j.pacote, limpos.map { (c, ch) -> c.copy(caminhos = vivos(ch)) })  // a cada abertura sobram só os vivos
+        for ((c, ch) in limpos) {
+            val cam = vivos(ch).firstOrNull() ?: continue
+            val (addr, v) = seguir(cam, c.tipo) ?: continue
             if (c.congelar && c.valor.isNotEmpty()) Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") }
             val s = Salvo(addr, c.tipo, c.nome, if (c.congelar && c.valor.isNotEmpty()) c.valor else v, c.congelar && c.valor.isNotEmpty(), caminho = true)
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
