@@ -178,7 +178,7 @@ object Ponteiro {
     val estadoAuto = androidx.compose.runtime.mutableStateMapOf<String, String>()
     /** Avisa na tela quando a procura termina (o Balao mostra como um aviso rápido do Android). */
     var aoTerminar: ((String) -> Unit)? = null
-    const val AUTO = 300  // caminhos guardados para a conferência (a maioria escolhe; depois sobram até RESERVA)
+    const val AUTO = 1000  // todos os que o motor acha (o limite dele): o certo pode não estar entre os primeiros; depois sobram até RESERVA
 
     fun autoAchar(s: Salvo) {
         val j = Nucleo.jogo ?: return
