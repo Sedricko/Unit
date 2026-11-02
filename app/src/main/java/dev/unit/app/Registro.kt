@@ -62,6 +62,16 @@ object Registro {
         val congelados = runCatching { Nucleo.cmd { it.cmd("frozen") }.status }.getOrDefault("?")
         add("outro", "Pulso: ${j.nome} " + (info?.let { "aberto · ${it.getOrNull(1)} MB" } ?: "não respondeu") +
             " · ${Nucleo.salvos.size} salvos · $congelados congelados · ${if (Nucleo.pausado) "pausado" else "rodando"} · motor ${comandos} cmds/${erros} erros")
+        // congelado que não segura: o jogo conseguiu mudar o valor mesmo congelado
+        Nucleo.salvos.filter { it.congelado }.forEach { s ->
+            val agora = runCatching { Nucleo.cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }.getOrNull()
+            if (agora != null && agora.toDoubleOrNull() != s.valor.toDoubleOrNull()) add("aviso", "Congelado não segurou: ${s.nome} está $agora (congelado em ${s.valor})", listOf("${s.addr} ${s.tipo}"))
+        }
+        app?.let { c ->
+            val m = android.app.ActivityManager.MemoryInfo(); c.getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(m)
+            if (m.lowMemory) add("aviso", "Aparelho com pouca memória: ${mb(m.availMem)} livres (o Android pode fechar o jogo ou o Unit)")
+            if (!Settings.canDrawOverlays(c)) add("aviso", "A permissão de sobrepor sumiu: o balão pode não aparecer")
+        }
     }
 
     /** O estado do painel (o Balao escreve): modo, tela cheia, tela aberta, pausa automática. */
@@ -75,6 +85,9 @@ object Registro {
     private val REPETITIVOS = setOf("read", "vivo", "bytes", "frozen", "sleep", "info", "ptr")
     @Synchronized fun comando(cmd: String, resposta: String, ms: Long, erro: Boolean) {
         comandos++; somaMs += ms; if (ms > maxMs) maxMs = ms; if (erro) erros++
+        val verbo = cmd.substringBefore(' ')
+        if (ms > 1500 && verbo != "ptrscan") add("aviso", "Comando lento: $verbo (${"%.1f".format(ms / 1000.0)} s)", listOf(cmd.take(120)))
+        if (erro && verbo !in REPETITIVOS && verbo != "vivo") add("erro", "Motor: $verbo → ${resposta.removePrefix("err ").take(120)}", listOf(cmd.take(160)))
         if (erro || cmd.substringBefore(' ') !in REPETITIVOS) {
             // o mesmo comando com a mesma resposta seguidas (ex.: 1000 "ptr … → o caminho quebrou") viram uma linha com a conta
             val chave = cmd.substringBefore(' ') + " → " + resposta.take(120)
@@ -156,7 +169,8 @@ object Registro {
         val livre = espacoLivre()
         t += Teste(livre > 1024L * 1024 * 1024, "Espaço livre", "${mb(livre)} (a foto da busca por mudança pode precisar de algumas centenas de MB)")
         val ultimoErro = linhas.firstOrNull { it.tipo == "erro" }
-        t += Teste(linhas.take(50).none { it.tipo == "erro" }, "Erros recentes", ultimoErro?.let { "último: ${it.hora} · ${it.texto}" } ?: "nenhum erro registrado")
+        val avisos = linhas.take(100).count { it.tipo == "aviso" }
+        t += Teste(linhas.take(50).none { it.tipo == "erro" }, "Erros recentes", (ultimoErro?.let { "último: ${it.hora} · ${it.texto}" } ?: "nenhum erro registrado") + if (avisos > 0) " · $avisos aviso(s) recentes" else "")
         val falhou = File(dados, "falha-vista.txt").exists()
         t += Teste(!falhou, "Fechou com erro", if (falhou) "o Unit já fechou com erro (o erro técnico vai no relatório)" else "nunca fechou com erro")
         t += Teste(Atualizador.nova == null, "Atualização", if (Atualizador.nova == null) "versão $versao" else "${Atualizador.nova} disponível" + if (versao.endsWith("-lab")) " (este é um APK de laboratório)" else "")
@@ -247,7 +261,7 @@ object Registro {
         ctx.startActivity(Intent.createChooser(envio, "Compartilhar relatório do Unit").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    private fun cor(tipo: String) = when (tipo) { "erro" -> Cor.ruim; "jogo" -> Color(0xFFFFB86B); "caminho" -> Cor.a2; else -> Cor.texto }
+    private fun cor(tipo: String) = when (tipo) { "erro" -> Cor.ruim; "aviso" -> Color(0xFFFFB86B); "jogo" -> Color(0xFFB8C4FF); "caminho" -> Cor.a2; else -> Cor.texto }
 
     @Composable
     fun TelaAutoteste(ctx: Context, verRegistro: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -289,7 +303,7 @@ object Registro {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("tudo" to "Tudo", "busca" to "Busca", "caminho" to "Caminhos", "erro" to "Erros").forEach { (f, n) -> Selo(n, filtro == f) { filtro = f } }
         }
-        val vistos = linhas.filter { filtro == "tudo" || it.tipo == filtro || (filtro == "busca" && it.tipo == "jogo") }
+        val vistos = linhas.filter { filtro == "tudo" || it.tipo == filtro || (filtro == "busca" && it.tipo == "jogo") || (filtro == "erro" && it.tipo == "aviso") }
         if (vistos.isEmpty()) Text("Nada registrado ainda.", color = Cor.apagado, fontSize = 12.sp)
         vistos.take(200).forEach { e ->
             Column(Modifier.fillMaxWidth().toque(e.detalhe.isNotEmpty()) { if (e in abertos) abertos.remove(e) else abertos += e }.padding(vertical = 3.dp)) {

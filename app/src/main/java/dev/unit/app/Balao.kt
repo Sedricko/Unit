@@ -149,7 +149,8 @@ class Balao : Service() {
 
     override fun onDestroy() { Registro.add("outro", "Unit fechado (✕)"); ativo = false; Nucleo.soltarAoFechar(); Atualizador.instalarAoFechar(); escudo?.let { runCatching { wm.removeView(it) } }; vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
 
-    override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
+    override fun onTrimMemory(nivel: Int) { super.onTrimMemory(nivel); if (nivel >= TRIM_MEMORY_RUNNING_LOW) Registro.add("aviso", "O Android pediu memória de volta (nível $nivel)") }
+    override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); Registro.add("outro", "Tela: ${if (c.orientation == Configuration.ORIENTATION_LANDSCAPE) "deitado" else "em pé"}"); posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
 
     private fun tela(): Pair<Int, Int> =
         if (Build.VERSION.SDK_INT >= 30) wm.currentWindowMetrics.bounds.let { it.width() to it.height() }
@@ -280,7 +281,7 @@ class Balao : Service() {
         // os salvos ao vivo enquanto o mini ou o painel está à vista
         LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
         LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
-        LaunchedEffect(Unit) { while (true) { delay(10 * 60_000L); Nucleo.semAviso { Registro.pulso() } } }  // pulso a cada 10 min
+        LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); Nucleo.semAviso { Registro.pulso() } } }  // pulso a cada 5 min
         LaunchedEffect(Nucleo.jogoFechou) { if (Nucleo.jogoFechou && modo != "painel") mudar("painel") }  // abre o painel para perguntar
         LaunchedEffect(modo, cheio, tela, opcaoPausa) { Registro.painel = "modo=$modo · tela cheia=$cheio · tela=$tela · pausa automática=$opcaoPausa" }  // vai no relatório
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }

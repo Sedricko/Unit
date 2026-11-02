@@ -156,7 +156,7 @@ object Nucleo {
     fun buscar(texto: String) = rodar { try { buscarJa(texto) } finally { soltarSePausado() } }
     private suspend fun buscarJa(texto: String) {
         val v = texto.trim().replace(',', '.')
-        val refinar = total != null; val t0 = System.currentTimeMillis()
+        val refinar = total != null; val t0 = System.currentTimeMillis(); val antes = total
         pausarParaBuscar()
         cmd { it.cmd(if (!refinar) "search $v" else "refine $v") }
         val r = cmd { it.cmd("list 50") }
@@ -165,6 +165,11 @@ object Nucleo {
         if ((total ?: 0) <= 50) achados += r.linhas.map { it.split(' ') }.filter { it.size == 3 }.map { Achado(it[0], it[1], it[2]) }.let { ordenar(juntar(it), aprendido) }
         escolhido = achados.singleOrNull()
         Registro.add("busca", "${if (refinar) "Refinar" else "Buscar"} $v → ${total ?: 0} resultado(s) (${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s, jogo pausado durante a busca)")
+        when {
+            total == 0L -> Registro.add("aviso", "Nenhum resultado para $v: o número pode estar em outro tipo, ter mudado antes da busca, ou ser só desenho na tela")
+            refinar && antes != null && total == antes && antes > 1 -> Registro.add("aviso", "Refinar $v não diminuiu nada ($antes): o valor pode não ter mudado no jogo")
+            (total ?: 0) > 10_000_000 -> Registro.add("aviso", "Mais de 10 milhões de resultados: o próximo refino vai ser lento; use um número mais raro ou uma faixa menor")
+        }
     }
 
     private var porDigitar = false  // quem pausou foi o 1º número digitado no Achar (sair sem buscar solta)
@@ -259,10 +264,13 @@ object Nucleo {
     }
 
     /** Os valores salvos de agora (o mini painel mostra ao vivo). Sem aviso: roda a cada segundo. */
+    private val falhouLer = mutableSetOf<String>()  // cada salvo que não deu para ler só vira aviso uma vez
     fun atualizarSalvos() = scope.launch {
         if (jogo == null || ocupado) return@launch
         runCatching {
-            val novos = salvos.toList().map { s -> s.copy(valor = runCatching { cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }.getOrDefault(s.valor)) }
+            val novos = salvos.toList().map { s -> s.copy(valor = runCatching { cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }
+                .onFailure { e -> if (falhouLer.add(s.addr)) Registro.add("aviso", "Não consegui ler ${s.nome} (${s.addr}): ${e.message} · o endereço pode ter morrido") }
+                .getOrDefault(s.valor)) }
             novos.forEach { n -> val i = salvos.indexOfFirst { it.addr == n.addr }; if (i >= 0 && salvos[i].valor != n.valor) salvos[i] = salvos[i].copy(valor = n.valor) }
         }
     }

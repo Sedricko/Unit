@@ -50,7 +50,7 @@ object Atualizador {
                 if (!tmp.renameTo(f)) throw IOException("não consegui guardar o APK")
             }
             arquivo = f; pronto = true; estado = ""
-        }.onFailure { if (nova != null) estado = "Não deu para baixar: ${it.message}" }
+        }.onFailure { if (nova != null) { estado = "Não deu para baixar: ${it.message}"; Registro.add("aviso", "Atualização ${nova}: $estado") } }
     }
 
     /** O Unit foi fechado (✕) com uma versão pronta: instala sem esperar (o su segue sozinho). */
