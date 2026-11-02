@@ -463,7 +463,10 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
     pt_t *pt = malloc((size_t)PMAX * sizeof *pt); size_t np = 0;
     enum { BLOCO = 1 << 20 }; unsigned char *buf = malloc(BLOCO);
+    // retrato parado: o jogo pausa só enquanto os ponteiros são lidos (uns segundos); montar os caminhos usa o retrato,
+    // com o jogo já rodando. Assim um objeto criado/apagado no meio da leitura não deixa o retrato pela metade
     if (!pt || !buf) { free(pt); free(buf); puts("err sem memória para os ponteiros"); return; }
+    kill(target, SIGSTOP);  // depois da conferência de memória: a saída de erro acima nunca deixa o jogo parado
     for (int r = 0; r < nrg && np < PMAX; r++) {
         if (!rg[r].rw) continue;
         for (uint64_t a = rg[r].ini; a < rg[r].fim && np < PMAX; a += BLOCO) {
@@ -478,6 +481,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
         }
     }
     free(buf);
+    kill(target, SIGCONT);
     qsort(pt, np, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
     cam_t *cams = malloc(CPOOL * sizeof *cams);
