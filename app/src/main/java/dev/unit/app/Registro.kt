@@ -50,6 +50,20 @@ object Registro {
     private var codigo = 0L
     private var app: Context? = null
 
+    private var iniciou = false
+
+    /** Ligou num jogo: autoteste rápido em segundo plano, só o resultado vai para o registro. */
+    fun autotesteRapido() { val c = app ?: return; Nucleo.semAviso { autoteste(c) } }
+
+    /** Pulso: uma linha de como estão o jogo e os valores (a cada 10 min, para ver o que houve entre um evento e outro). */
+    suspend fun pulso() {
+        val j = Nucleo.jogo ?: return
+        val info = runCatching { Nucleo.cmd { it.cmd("info") }.status.split(' ') }.getOrNull()
+        val congelados = runCatching { Nucleo.cmd { it.cmd("frozen") }.status }.getOrDefault("?")
+        add("outro", "Pulso: ${j.nome} " + (info?.let { "aberto · ${it.getOrNull(1)} MB" } ?: "não respondeu") +
+            " · ${Nucleo.salvos.size} salvos · $congelados congelados · ${if (Nucleo.pausado) "pausado" else "rodando"} · motor ${comandos} cmds/${erros} erros")
+    }
+
     /** O estado do painel (o Balao escreve): modo, tela cheia, tela aberta, pausa automática. */
     @Volatile var painel = ""
 
@@ -82,6 +96,7 @@ object Registro {
         // o Unit fechou com erro da última vez? (o pegador abaixo grava o erro técnico completo)
         val falha = File(ctx.filesDir, "falha.txt")
         if (falha.exists()) { add("erro", "O Unit fechou com erro na última vez (detalhes no relatório)", falha.readLines().take(4)); falha.renameTo(File(ctx.filesDir, "falha-vista.txt")) }
+        if (!iniciou) { iniciou = true; add("outro", "Unit abriu · $versao · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}") }
         val antes = Thread.getDefaultUncaughtExceptionHandler()
         if (antes !is Pegador) Thread.setDefaultUncaughtExceptionHandler(Pegador(antes))
     }

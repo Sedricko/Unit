@@ -147,7 +147,7 @@ class Balao : Service() {
         return START_NOT_STICKY
     }
 
-    override fun onDestroy() { ativo = false; Nucleo.soltarAoFechar(); Atualizador.instalarAoFechar(); escudo?.let { runCatching { wm.removeView(it) } }; vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
+    override fun onDestroy() { Registro.add("outro", "Unit fechado (✕)"); ativo = false; Nucleo.soltarAoFechar(); Atualizador.instalarAoFechar(); escudo?.let { runCatching { wm.removeView(it) } }; vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
 
     override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
 
@@ -273,13 +273,14 @@ class Balao : Service() {
             color = Cor.apagado, fontSize = 12.sp)
     }
 
-    private fun mudar(m: String, lembrar: Boolean = true) { modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) }; if (lembrar) guardar() }
+    private fun mudar(m: String, lembrar: Boolean = true) { if (m != modo) Registro.add("outro", "Painel: ${mapOf("balao" to "balão", "mini" to "mini painel", "painel" to "painel")[m] ?: m}"); modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) }; if (lembrar) guardar() }
 
     @Composable
     private fun Conteudo() {
         // os salvos ao vivo enquanto o mini ou o painel está à vista
         LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
         LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
+        LaunchedEffect(Unit) { while (true) { delay(10 * 60_000L); Nucleo.semAviso { Registro.pulso() } } }  // pulso a cada 10 min
         LaunchedEffect(Nucleo.jogoFechou) { if (Nucleo.jogoFechou && modo != "painel") mudar("painel") }  // abre o painel para perguntar
         LaunchedEffect(modo, cheio, tela, opcaoPausa) { Registro.painel = "modo=$modo · tela cheia=$cheio · tela=$tela · pausa automática=$opcaoPausa" }  // vai no relatório
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }

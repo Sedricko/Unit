@@ -76,7 +76,7 @@ object Nucleo {
     // um motor só: dois pedidos ao mesmo tempo (o app e o balão abrindo juntos) não podem abrir dois pedidos de root
     internal suspend fun <T> cmd(f: (Motor) -> T): T = withContext(Dispatchers.IO) {
         // motor novo (o primeiro, ou depois de um que caiu/fechou): já se liga ao jogo escolhido
-        val m = synchronized(abrindo) { motor ?: Motor(lib).also { n -> motor = n; Registro.aberturas++; jogo?.let { j -> runCatching { n.cmd("attach ${j.pid}") } } } }
+        val m = synchronized(abrindo) { motor ?: Motor(lib).also { n -> motor = n; Registro.aberturas++; Registro.add("outro", "Motor abriu (${n.ola})" + if (Registro.aberturas > 1) " · ${Registro.aberturas}ª vez: ele tinha caído" else ""); jogo?.let { j -> runCatching { n.cmd("attach ${j.pid}") } } } }
         try { f(m) } catch (e: java.io.IOException) {
             // o motor caiu (falta de memória, su fechado): solta ele para o próximo comando abrir outro, em vez de falhar sempre
             if (e.message == "O motor fechou." || e.message?.contains("pipe", ignoreCase = true) == true) synchronized(abrindo) { if (motor === m) { m.fechar(); motor = null } }
@@ -85,6 +85,8 @@ object Nucleo {
     }
 
     /** Roda uma ação do motor; o erro vira o aviso na tela, em vez de fechar o app. */
+    fun semAviso(f: suspend () -> Unit) = scope.launch { runCatching { f() } }
+
     fun rodar(f: suspend () -> Unit) = scope.launch {
         ocupado = true
         try { f(); aviso = "" } catch (e: Exception) { aviso = e.message ?: "erro"; Registro.add("erro", "Erro: $aviso") } finally { ocupado = false }
@@ -115,6 +117,7 @@ object Nucleo {
         jogo = j; pausado = false; zerar(); salvos.clear()
         Registro.add("jogo", "Ligado a ${j.nome} (pid ${j.pid})")
         Ponteiro.aplicar()  // LABORATÓRIO: os salvos guardados com caminho aparecem sozinhos
+        Registro.autotesteRapido()
     }
 
     /** A cada 2 s (balão aberto): o jogo ainda está aberto? Sem aviso na tela; só liga o jogoFechou. */
@@ -167,25 +170,25 @@ object Nucleo {
     private var porDigitar = false  // quem pausou foi o 1º número digitado no Achar (sair sem buscar solta)
     fun pausarAoDigitar() {
         if (pausado || jogo == null) return
-        pausado = true; porDigitar = true
+        pausado = true; porDigitar = true; Registro.add("jogo", "Pausou ao digitar no Achar")
         scope.launch { runCatching { cmd { it.cmd("pause") } }.onFailure { if (porDigitar) { pausado = false; porDigitar = false } } }
     }
     fun soltarDigitacao() {
         if (!porDigitar || !pausado) { porDigitar = false; return }
-        porDigitar = false; pausado = false
+        porDigitar = false; pausado = false; Registro.add("jogo", "Soltou: apagou tudo ou saiu do Achar sem buscar")
         scope.launch { runCatching { cmd { it.cmd("resume") } } }
     }
 
     /** Começo da busca: o jogo para, para o valor não mudar no meio (o soltarSePausado solta no fim). */
     internal suspend fun pausarParaBuscar() {
         if (pausado || jogo == null) return
-        runCatching { cmd { it.cmd("pause") } }.onSuccess { pausado = true }
+        runCatching { cmd { it.cmd("pause") } }.onSuccess { pausado = true; Registro.add("jogo", "Pausou para a busca") }
     }
 
     /** Terminou uma busca: o jogo volta a rodar (pausado muito tempo, o Android mostra "não está respondendo"). */
     internal suspend fun soltarSePausado() {
         if (!pausado) return
-        runCatching { cmd { it.cmd("resume") } }.onSuccess { pausado = false; porDigitar = false }
+        runCatching { cmd { it.cmd("resume") } }.onSuccess { pausado = false; porDigitar = false; Registro.add("jogo", "Busca terminou: soltou o jogo") }
     }
 
     /** Escreve o valor novo; com congelar, o motor segura ele. Fica nos salvos para o mini painel. */
@@ -232,6 +235,7 @@ object Nucleo {
     // troca o estado na hora e manda o estado de agora: dois toques seguidos (ou a pausa automática) nunca invertem a tela e o jogo
     fun pausar() {
         pausado = !pausado
+        Registro.add("jogo", if (pausado) "Você pausou o jogo (⏸)" else "Você soltou o jogo (▷)")
         rodar { val quer = pausado; try { cmd { it.cmd(if (quer) "pause" else "resume") } } catch (e: Exception) { if (pausado == quer) pausado = !quer; throw e } }
     }
 
