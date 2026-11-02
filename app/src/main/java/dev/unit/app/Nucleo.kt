@@ -247,6 +247,7 @@ object Nucleo {
     /** Dá nome a um valor (Ouro, Cobre…); se ainda não estava nos salvos, entra com o nome. */
     fun renomear(a: Achado, nome: String) {
         val n = nome.trim().ifEmpty { return }
+        salvos.removeAll { it.perdido && it.nome == n && it.addr != a.addr }  // o "Cobre" de antes (sem endereço) dá lugar ao novo
         val i = salvos.indexOfFirst { it.addr == a.addr }
         if (i >= 0) Ponteiro.renomear(salvos[i].nome, n)  // o caminho guardado (conferido ou ainda a conferir) muda de nome junto
         if (i >= 0) salvos[i] = salvos[i].copy(nome = n) else salvos += Salvo(a.addr, a.tipo, n, a.valor, false)

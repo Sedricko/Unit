@@ -437,7 +437,9 @@ static uint64_t base_lib(const char *lib) { for (int i = 0; i < nrg; i++) if (!s
 typedef struct { uint64_t v, onde; } pt_t;        // um ponteiro: o valor (para onde aponta) e onde ele mora
 typedef struct { uint64_t t; int pai; uint32_t o; } no_t;  // um passo do caminho: o alvo, quem veio antes e o deslocamento
 static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)->v, y = ((const pt_t *)b)->v; return x < y ? -1 : x > y; }
-enum { PMAX = 12000000, NMAX = 400000, CMAX = 1000, DIST = 0x400 };
+// DIST: salto entre estruturas (até 4 KB, como o Cheat Engine). DISTFIXA: o salto que sai da biblioteca pode ser grande: nos
+// jogos Unity ele entra numa tabela (biblioteca → tabela[índice] → classe → dados); com 1 KB o caminho certo ficava de fora
+enum { PMAX = 12000000, NMAX = 400000, CMAX = 1000, DIST = 0x1000, DISTFIXA = 0x20000 };
 // shortcut: até 12 milhões de ponteiros, 400 mil passos e 1000 caminhos (memória do celular); jogos maiores podem perder caminhos
 // nota de um caminho (menor = mais confiável): cada pulo a mais é uma chance de quebrar; começar no código do jogo
 // (il2cpp/unity/main) é melhor que noutra biblioteca; pulos pequenos são campos de verdade, grandes costumam ser acaso
@@ -476,12 +478,14 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     for (int nivel = 1; nivel <= nmax && nc < CMAX; nivel++) {
         int fim = nn;
         for (int i = ini; i < fim && nc < CMAX; i++) {
-            uint64_t t = no[i].t, de = t >= DIST ? t - DIST : 0;
-            size_t lo = 0, hi = np;  // 1º ponteiro com valor >= t - DIST
+            uint64_t t = no[i].t, de = t >= DISTFIXA ? t - DISTFIXA : 0;
+            size_t lo = 0, hi = np;  // 1º ponteiro com valor >= t - DISTFIXA (o salto longo só vale saindo da biblioteca)
             while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
             for (size_t j = lo; j < np && pt[j].v <= t && nc < CMAX; j++) {
                 int k = achar_reg(pt[j].onde);
                 uint32_t o = (uint32_t)(t - pt[j].v);
+                int fixa = k >= 0 && rg[k].fixa;
+                if (o > DIST && !fixa) continue;
                 // chegou numa biblioteca: um caminho (a menos de 256 MB do começo dela; mais longe não é parte dela)
                 if (k >= 0 && rg[k].fixa && pt[j].onde - base_lib(rg[k].lib) < 0x10000000ULL) {
                     cam_t *c = &cams[nc++]; int len = snprintf(c->txt, sizeof c->txt, "%s+%" PRIx64 ":%x", rg[k].lib, pt[j].onde - base_lib(rg[k].lib), o);

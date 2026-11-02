@@ -8,7 +8,7 @@ cc -O2 -Wall -Werror -pthread -o "$out/unitd" motor/unitd.c -lm
 cc -O0 -o "$out/alvo" motor/teste/alvo.c
 "$out/alvo" > "$out/info" & tpid=$!
 for _ in $(seq 50); do [ -s "$out/info" ] && break; sleep 0.1; done
-read -r pid aouro avida axp atempo arec acobre < "$out/info"
+read -r pid aouro avida axp atempo arec acobre aferro < "$out/info"
 falhou=0
 confere() { if grep -qF -- "$2" <<<"$got"; then echo "OK   $1"; else echo "FALHA $1 (esperava: $2)"; falhou=1; fi; }
 
@@ -62,7 +62,7 @@ CMDS
 } | "$out/unitd")
 echo "$got3"
 # ponteiro: do global "jogo" (fixo, no próprio programa) até o cobre no heap; o caminho achado leva ao mesmo endereço
-got4=$(printf 'attach %s\nptrscan %s 3\n' "$pid" "$acobre" | "$out/unitd")
+got4=$(printf 'attach %s\nptrscan %s 3\nptrscan %s 3\n' "$pid" "$acobre" "$aferro" | "$out/unitd")
 echo "$got4"
 cam=$(grep -m1 '^alvo+' <<<"$got4" || true)
 got5=$(printf 'attach %s\nptr %s\nptr naoexiste+10:8\ninfo\nandroid 1;rm x\nandroid 100.5 com.jogo\nvivo\nfechar\nsleep 200\nvivo\n' "$pid" "$cam" | "$out/unitd")  # fechar por último: mata o alvo
@@ -96,6 +96,7 @@ confere "mudança: mudou e voltou ao da foto acha o valor" "$arec f32 0 0"
 confere "ponteiro: acha um caminho a partir do programa" "alvo+"
 confere "ponteiro: o caminho termina em +40 e +8" ":40:8"
 confere "ponteiro: seguir o caminho chega no cobre" "ok $acobre"
+confere "ponteiro: salto longo da biblioteca para a tabela (Unity), item 700" ":15e0:30"
 if grep -qE '^ok [1-9][0-9]* [0-9]+ [1-9][0-9]* [1-9][0-9]*$' <<<"$got5"; then echo "OK   info: regiões e MB do jogo"; else echo "FALHA info: regiões e MB do jogo"; falhou=1; fi
 confere "android: recusa texto que iria para o sistema" "err uso: android SEGUNDOS PACOTE"
 confere "fechar: depois de fechar, o motor avisa" "err o jogo fechou"

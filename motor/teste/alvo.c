@@ -13,11 +13,15 @@ volatile float recarga = 0.0f;   // a busca por mudança mexe nela pelo motor
 struct recursos { char antes[0x8]; float cobre; };
 struct inventario { char antes[0x40]; struct recursos *rec; };
 struct inventario *volatile jogo;
+// como no Unity: a biblioteca guarda uma tabela grande; o item 700 aponta para o objeto; o valor fica em +0x30 dele
+struct objeto { char antes[0x30]; float ferro; };
+void **volatile tabela;
 
 int main(void) {
     jogo = calloc(1, sizeof *jogo); jogo->rec = calloc(1, sizeof *jogo->rec); jogo->rec->cobre = 777.25f;
-    printf("%d %lx %lx %lx %lx %lx %lx\n", getpid(), (unsigned long)&ouro, (unsigned long)&vida, (unsigned long)&xp, (unsigned long)&tempo,
-           (unsigned long)&recarga, (unsigned long)&jogo->rec->cobre);
+    tabela = calloc(1000, sizeof *tabela); struct objeto *ob = calloc(1, sizeof *ob); ob->ferro = 4321.5f; tabela[700] = ob;
+    printf("%d %lx %lx %lx %lx %lx %lx %lx\n", getpid(), (unsigned long)&ouro, (unsigned long)&vida, (unsigned long)&xp, (unsigned long)&tempo,
+           (unsigned long)&recarga, (unsigned long)&jogo->rec->cobre, (unsigned long)&ob->ferro);
     fflush(stdout);
     for (;;) sleep(1);
 }
