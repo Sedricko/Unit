@@ -50,7 +50,8 @@ object Ponteiro {
     fun deJson(a: JSONArray) = (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
         Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor")) } }
     fun lista(pacote: String) = runCatching { deJson(JSONArray(prefs.getString(pacote, "[]"))) }.getOrDefault(emptyList())
-    private fun gravar(pacote: String, l: List<Caminho>) = prefs.edit().putString(pacote, paraJson(l).toString()).apply()
+    // o arquivo (unit-ponteiros.json) acompanha sempre: limpou os mortos, usou, importou, renomeou → já sai atualizado
+    private fun gravar(pacote: String, l: List<Caminho>) { prefs.edit().putString(pacote, paraJson(l).toString()).commit(); runCatching { exportar() } }
     /** Junta sem perder nada: mesmo nome no mesmo jogo é trocado; o resto fica. */
     fun juntar(velha: List<Caminho>, nova: List<Caminho>) = velha.filter { v -> nova.none { it.nome == v.nome } } + nova
 
@@ -215,6 +216,6 @@ object Ponteiro {
             Botao("Exportar", false, Modifier.weight(1f)) { aviso = "Salvo em ${exportar()}" }
             Botao("Importar", false, Modifier.weight(1f)) { marcados.clear(); importando = lerArquivo() }
         }
-        Text("O arquivo tem os caminhos de todos os jogos. Para levar a outro celular, copie ele para a mesma pasta lá.", color = Cor.apagado, fontSize = 12.sp)
+        Text("O arquivo é atualizado sozinho e tem os caminhos de todos os jogos. Para levar a outro celular, copie ele para a mesma pasta lá.", color = Cor.apagado, fontSize = 12.sp)
     }
 }
