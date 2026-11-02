@@ -31,7 +31,7 @@ import kotlin.math.abs
 /** conferido = false: guardado sozinho ao salvar; a próxima abertura do jogo confere pela maioria. */
 /** fixo = a pessoa fixou: caminho que falha só sai depois de 3 aberturas seguidas (falhas conta), e a reserva é mantida cheia. */
 data class Caminho(val nome: String, val tipo: String, val caminhos: List<String>, val congelar: Boolean = false, val valor: String = "", val conferido: Boolean = true,
-                   val fixo: Boolean = false, val falhas: Map<String, Int> = emptyMap())
+                   val fixo: Boolean = false, val falhas: Map<String, Int> = emptyMap(), val pid: Int = 0)  // pid: a abertura em que foi procurado
 
 /**
  * LABORATÓRIO (teste): ponteiros. Achou um valor uma vez → o motor procura o caminho (biblioteca + deslocamentos) até
@@ -51,10 +51,10 @@ object Ponteiro {
     private var recarga by mutableStateOf(0)
 
     // ---- guardar: JSON por jogo (pacote → lista) ----
-    fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido).put("fixo", c.fixo).put("falhas", JSONObject(c.falhas)) })
+    fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido).put("fixo", c.fixo).put("falhas", JSONObject(c.falhas)).put("pid", c.pid) })
     fun deJson(a: JSONArray) = (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
         Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor"), o.optBoolean("conferido", true), o.optBoolean("fixo"),
-            o.optJSONObject("falhas")?.let { f -> f.keys().asSequence().associateWith { k -> f.getInt(k) } }.orEmpty()) } }
+            o.optJSONObject("falhas")?.let { f -> f.keys().asSequence().associateWith { k -> f.getInt(k) } }.orEmpty(), o.optInt("pid")) } }
     fun lista(pacote: String) = runCatching { deJson(JSONArray(prefs.getString(pacote, "[]"))) }.getOrDefault(emptyList())
     // o arquivo (unit-ponteiros.json) acompanha sempre: limpou os mortos, usou, importou, renomeou → já sai atualizado
     private fun gravar(pacote: String, l: List<Caminho>) { prefs.edit().putString(pacote, paraJson(l).toString()).commit(); runCatching { exportar() } }
@@ -68,6 +68,17 @@ object Ponteiro {
     }
 
     fun fundir(v: Caminho, n: Caminho): Caminho {
+        // duas procuras de aberturas diferentes (o "rescan" do Cheat Engine): o caminho verdadeiro aparece nas duas, os
+        // falsos quase nunca se repetem. Os que estão nas duas viram conferidos, sem votação e sem chute
+        if (!v.conferido && !n.conferido && v.pid != 0 && n.pid != 0 && v.pid != n.pid) {
+            val antes = v.caminhos.toSet(); val comum = n.caminhos.filter { it in antes }
+            if (comum.isNotEmpty()) {
+                Registro.add("caminho", "${n.nome}: cruzei duas procuras · ${comum.size} caminho(s) aparecem nas duas aberturas (de ${v.caminhos.size} e ${n.caminhos.size})", lista5(comum, "+ nas duas"))
+                return n.copy(caminhos = comum.take(RESERVA), conferido = true)
+            }
+            Registro.add("decisao", "${n.nome}: as duas procuras não têm caminho em comum; guardei os da mais nova para conferir")
+            return n
+        }
         val ordem = if (v.conferido) v.caminhos + n.caminhos else n.caminhos + v.caminhos  // o provado vem primeiro (desempata a votação)
         return n.copy(caminhos = ordem.distinct().take(AUTO), conferido = v.conferido || n.conferido, congelar = v.congelar || n.congelar,
             fixo = v.fixo || n.fixo, falhas = v.falhas + n.falhas)
@@ -214,11 +225,12 @@ object Ponteiro {
     val estadoAuto = androidx.compose.runtime.mutableStateMapOf<String, String>()
     /** Avisa na tela quando a procura termina (o Balao mostra como um aviso rápido do Android). */
     var aoTerminar: ((String) -> Unit)? = null
-    const val AUTO = 1000  // todos os que o motor acha (o limite dele): o certo pode não estar entre os primeiros; depois sobram até RESERVA
+    const val AUTO = 3000  // todos os que o motor acha (o limite dele): o certo pode não estar entre os primeiros; depois sobram até RESERVA
 
     fun autoAchar(s: Salvo) {
         val j = Nucleo.jogo ?: return
-        if (s.caminho || s.perdido || !autoFeitos.add(s.addr) || lista(j.pacote).any { it.nome == s.nome }) return
+        // procura mesmo se já houver um "a conferir" com esse nome: a nova procura cruza com a anterior (fundir)
+        if (s.caminho || s.perdido || !autoFeitos.add(s.addr) || lista(j.pacote).any { it.nome == s.nome && it.conferido }) return
         estadoAuto[s.addr] = "procurando caminhos…"
         Nucleo.semAviso {
             val t0 = System.currentTimeMillis()
@@ -228,7 +240,7 @@ object Ponteiro {
                 Registro.add("caminho", "${s.nome}: nenhum caminho achado sozinho (vai precisar achar de novo ao reabrir)"); return@semAviso
             }
             val nome = Nucleo.salvos.firstOrNull { it.addr == s.addr }?.nome ?: s.nome  // pode ter sido renomeado enquanto procurava
-            gravar(j.pacote, juntar(lista(j.pacote), listOf(Caminho(nome, s.tipo, c, valor = s.valor, conferido = false))))
+            gravar(j.pacote, juntar(lista(j.pacote), listOf(Caminho(nome, s.tipo, c, valor = s.valor, conferido = false, pid = j.pid))))
             Registro.add("caminho", "$nome: ${c.size} caminhos guardados sozinhos (${(System.currentTimeMillis() - t0) / 1000} s) · confiro na próxima abertura", lista5(c, "+ achado"))
             estadoAuto[s.addr] = "${c.size} caminhos guardados · confere ao reabrir"; aoTerminar?.invoke("$nome: caminhos guardados ✓")
         }

@@ -448,7 +448,7 @@ static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)
 // CMAX: caminhos que saem; CPOOL: candidatos juntados antes de escolher (uma biblioteca só não enche tudo - o relatório
 // mostrou 1000 caminhos do Firebase e nenhum do jogo); POR_LIB: no máximo isso de cada biblioteca na saída.
 // DISTFIXA 512 KB: jogos Unity têm dezenas de milhares de classes, e o salto entra na tabela delas (índice × 8)
-enum { PMAX = 12000000, NMAX = 400000, CMAX = 1000, CPOOL = 20000, POR_LIB = 250, DIST = 0x1000, DISTFIXA = 0x80000 };
+enum { PMAX = 12000000, NMAX = 400000, CMAX = 3000, CPOOL = 20000, POR_LIB = 1500, DIST = 0x1000, DISTFIXA = 0x80000 };
 // shortcut: até 12 milhões de ponteiros, 400 mil passos, 20 mil candidatos e 1000 caminhos na saída (memória do celular); jogos maiores podem perder caminhos
 // nota de um caminho (menor = mais confiável): cada pulo a mais é uma chance de quebrar; começar no código do jogo
 // (il2cpp/unity/main) é melhor que noutra biblioteca; pulos pequenos são campos de verdade, grandes costumam ser acaso

@@ -42,6 +42,16 @@ class PonteiroTest {
         assertEquals(listOf("n1", "x"), Ponteiro.fundir(Caminho("Cobre", "f32", listOf("x"), conferido = false), Caminho("Cobre", "f32", listOf("n1"), conferido = false)).caminhos)
     }
 
+    @Test fun cruzarDuasAberturas() {
+        val a = Caminho("Cobre", "f32", listOf("bom", "falso1", "falso2"), conferido = false, pid = 100)
+        val b = Caminho("Cobre", "f32", listOf("falso3", "bom"), conferido = false, pid = 200)
+        val f = Ponteiro.fundir(a, b)
+        assertEquals(listOf("bom"), f.caminhos)  // só o que aparece nas duas aberturas
+        assertTrue(f.conferido)
+        // mesma abertura (mesmo pid): não cruza, junta
+        assertEquals(3, Ponteiro.fundir(a, b.copy(pid = 100)).caminhos.size)
+    }
+
     @Test fun fixadoSoTiraNaTerceiraFalha() {
         val c = Caminho("Cobre", "f32", listOf("bom", "ruim"), fixo = true, falhas = mapOf("ruim" to 2))
         // "bom" e um 2º caminho chegam em "x" (maioria); "ruim" quebrou de novo: 3ª falha, sai
