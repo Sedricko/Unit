@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -257,6 +258,7 @@ object Ponteiro {
     @Composable
     fun Tela() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         var importando by remember { mutableStateOf<List<Pair<String, Caminho>>?>(null) }
+        val abertos = remember { mutableStateListOf<String>() }  // valores com a cascata aberta
         val marcados = remember { mutableStateListOf<Int>() }
         var campo by remember { mutableStateOf("") }
         var congelar by remember { mutableStateOf(false) }
@@ -315,13 +317,25 @@ object Ponteiro {
         val guardados = j?.let { lista(it.pacote) }.orEmpty()
         if (guardados.isEmpty()) Text("Nenhum ainda. No Editar de um valor, toque em Achar o caminho.", color = Cor.apagado, fontSize = 12.sp)
         guardados.forEach { c ->
-            Linha {
+            val aberto = c.nome in abertos
+            // cascata: fechada é uma linha só; tocar abre os caminhos do grupo (o 1º é o mais confiável)
+            Linha(Modifier.toque { if (aberto) abertos.remove(c.nome) else abertos += c.nome }) {
                 Column(Modifier.weight(1f)) {
-                    Text(c.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                    Text((if (aberto) "▾ " else "▸ ") + c.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
                     Text("${NOME_TIPO[c.tipo] ?: c.tipo} · ${c.caminhos.size} caminho(s)" + (if (!c.conferido) " · a conferir na próxima abertura" else "") + if (c.congelar) " · volta congelado" else "", color = Cor.apagado, fontSize = 12.sp)
                 }
                 if (c.conferido) Box(Modifier.padding(start = 8.dp).toque { fixar(c.nome, !c.fixo); recarga++ }) { Text(if (c.fixo) "📌 Fixado" else "Fixar", color = Cor.a2, fontSize = 13.sp) }
                 Box(Modifier.padding(start = 10.dp).toque { esquecer(c.nome); aviso = "${c.nome} esquecido." }) { Text("Esquecer", color = Cor.ruim, fontSize = 13.sp) }
+            }
+            if (aberto) Column(Modifier.padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Nucleo.salvos.firstOrNull { it.nome == c.nome && it.caminho }?.let { s ->
+                    Text("agora em 0x${s.addr} = ${s.valor}", color = Cor.a2, fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                }
+                c.caminhos.forEachIndexed { i, cam ->
+                    val f = c.falhas[cam] ?: 0
+                    Text("${i + 1}. $cam" + if (f > 0) "   (${f}ª falha)" else "", color = if (f > 0) Color(0xFFFFB86B) else Cor.apagado, fontSize = 11.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1)
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
