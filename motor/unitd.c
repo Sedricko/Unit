@@ -467,8 +467,12 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     // com o jogo já rodando. Assim um objeto criado/apagado no meio da leitura não deixa o retrato pela metade
     if (!pt || !buf) { free(pt); free(buf); puts("err sem memória para os ponteiros"); return; }
     kill(target, SIGSTOP);  // depois da conferência de memória: a saída de erro acima nunca deixa o jogo parado
+    // as bibliotecas primeiro: se o limite encher no meio do heap, os ponteiros de onde os caminhos começam já estão lá
+    // (antes o mapa era lido em ordem e o limite podia acabar antes das bibliotecas: 0 caminhos)
+    int cheio = 0;
+    for (int passo = 0; passo < 2; passo++)
     for (int r = 0; r < nrg && np < PMAX; r++) {
-        if (!rg[r].rw) continue;
+        if (!rg[r].rw || rg[r].fixa != (passo == 0)) continue;
         for (uint64_t a = rg[r].ini; a < rg[r].fim && np < PMAX; a += BLOCO) {
             size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
             if (ler(a, buf, n)) continue;
@@ -482,12 +486,17 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     }
     free(buf);
     kill(target, SIGCONT);
+    cheio = np >= PMAX;
     qsort(pt, np, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
     cam_t *cams = malloc(CPOOL * sizeof *cams);
     if (!no || !cams) { free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
+    // cada endereço entra uma vez só (pelo caminho mais curto): sem isso o mesmo ponteiro entrava por vários alvos vizinhos
+    // e enchia o limite de passos nos primeiros níveis, e os caminhos mais fundos (os do Unity) nunca eram vistos
+    enum { HCAP = 1 << 21 }; uint64_t *visto = calloc(HCAP, sizeof *visto);
+    if (!visto) { free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
     no[nn++] = (no_t){alvo, -1, 0};
-    int ini = 0;
+    int ini = 0, pornivel[9] = {0};
     for (int nivel = 1; nivel <= nmax && nc < CPOOL; nivel++) {
         int fim = nn;
         for (int i = ini; i < fim && nc < CPOOL; i++) {
@@ -505,12 +514,16 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
                     unsigned soma = o;
                     for (int x = i; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }
                     c->nota = nota(nivel, rg[k].lib, soma) + (o > DIST ? 800 : 0);  // salto longo direto da biblioteca: vale, mas é menos certo
-                } else if (o <= DIST && nn < NMAX && nivel < nmax) no[nn++] = (no_t){pt[j].onde, i, o};  // salto longo só saindo da biblioteca
+                } else if (o <= DIST && nn < NMAX && nivel < nmax) {  // salto longo só saindo da biblioteca
+                    uint64_t h = (pt[j].onde >> 3) * 0x9E3779B97F4A7C15ULL >> 43;
+                    while (visto[h] && visto[h] != pt[j].onde) h = (h + 1) & (HCAP - 1);
+                    if (!visto[h]) { visto[h] = pt[j].onde; no[nn++] = (no_t){pt[j].onde, i, o}; pornivel[nivel]++; }
+                }
             }
         }
         ini = fim;
     }
-    free(no); free(pt);
+    free(no); free(pt); free(visto);
     qsort(cams, nc, sizeof *cams, cmp_cam);  // o mais confiável primeiro
     // saída: até CMAX, no máximo POR_LIB de cada biblioteca (variedade: se uma biblioteca for ruim, as outras ainda estão lá)
     int saiu = 0; char libs[64][64]; int quantos[64] = {0}, nl = 0;
@@ -523,7 +536,9 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
         puts(cams[i].txt); saiu++;
     }
     free(cams);
-    printf("ok %d\n", saiu);
+    // números da procura para o relatório (o app só usa as linhas com "+"): ponteiros lidos, se encheu, passos por nível
+    printf("ok %d ponteiros=%zu%s candidatos=%d passos=%d niveis=%d,%d,%d,%d,%d,%d,%d%s\n", saiu, np, cheio ? "(cheio)" : "", nc, nn,
+           pornivel[1], pornivel[2], pornivel[3], pornivel[4], pornivel[5], pornivel[6], pornivel[7], nn >= NMAX ? " (limite de passos)" : "");
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor
 static void cmd_ptr(const char *cam) {

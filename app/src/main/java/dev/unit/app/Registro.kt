@@ -302,6 +302,7 @@ object Registro {
     fun TelaAutoteste(ctx: Context, verRegistro: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         var testes by remember { mutableStateOf<List<Teste>?>(null) }
         fun rodar() = Nucleo.rodar { testes = autoteste(ctx).also { ultimosTestes = it } }
+        Botao("Ver o registro (${linhas.size})", false, Modifier.fillMaxWidth(), clique = verRegistro)
         val l = testes
         if (l == null) {
             Text("Confere root, motor, jogo, leitura, congelados, caminhos, permissão, espaço, erros e atualização. Só lê: não mexe no jogo.", color = Cor.apagado, fontSize = 12.sp)
@@ -314,6 +315,10 @@ object Registro {
                 }
                 Text("${l.count { it.ok }}/${l.size}", color = if (l.all { it.ok }) Cor.ok else Cor.a2, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Botao("Rodar de novo", false, Modifier.weight(1f), !Nucleo.ocupado) { rodar() }
+                Botao("Compartilhar", true, Modifier.weight(1f)) { compartilhar(ctx, l) }
+            }
             l.forEach { t ->
                 Row {
                     Text(if (t.ok) "✓" else "✗", color = if (t.ok) Cor.ok else Cor.ruim, fontWeight = FontWeight.Bold, modifier = Modifier.width(22.dp))
@@ -323,18 +328,18 @@ object Registro {
                     }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Botao("Rodar de novo", false, Modifier.weight(1f), !Nucleo.ocupado) { rodar() }
-                Botao("Compartilhar", true, Modifier.weight(1f)) { compartilhar(ctx, l) }
-            }
         }
-        Botao("Ver o registro (${linhas.size})", false, Modifier.fillMaxWidth(), clique = verRegistro)
     }
 
     @Composable
     fun TelaRegistro(ctx: Context) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         var filtro by remember { mutableStateOf("tudo") }
         val abertos = remember { mutableStateListOf<Evento>() }
+        // no topo: o usuário pediu para não ter que rolar até o fim para compartilhar
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Botao("Limpar", false, Modifier.weight(1f)) { linhas.clear(); runCatching { arquivo?.writeText("") } }
+            Botao("Compartilhar", true, Modifier.weight(1f)) { compartilhar(ctx, null) }
+        }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("tudo" to "Tudo", "busca" to "Busca", "caminho" to "Caminhos", "decisao" to "Decisões", "android" to "Android", "erro" to "Erros").forEach { (f, n) -> Selo(n, filtro == f) { filtro = f } }
         }
@@ -351,10 +356,6 @@ object Registro {
                         fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 62.dp))
                 }
             }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Botao("Limpar", false, Modifier.weight(1f)) { linhas.clear(); runCatching { arquivo?.writeText("") } }
-            Botao("Compartilhar", true, Modifier.weight(1f)) { compartilhar(ctx, null) }
         }
     }
 }
