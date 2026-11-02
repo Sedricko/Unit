@@ -126,11 +126,24 @@ object Nucleo {
     /** A cada 2 s (balão aberto): o jogo ainda está aberto? Sem aviso na tela; só liga o jogoFechou. */
     fun verificar() = scope.launch {
         if (jogo == null || ocupado || jogoFechou) return@launch
-        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou") { jogoFechou = true; pausado = false; Registro.add("jogo", "${jogo?.nome} fechou"); Registro.lerAndroid() } }  // o Android diz por quê
+        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou") { jogo?.let { Ponteiro.lembrarValores(it.pacote, salvos.toList()) }; jogoFechou = true; pausado = false; Registro.add("jogo", "${jogo?.nome} fechou"); Registro.lerAndroid() } }  // o Android diz por quê
     }
 
-    /** Fecha o jogo (para conferir um caminho, ou recomeçar limpo). */
-    fun fecharJogo() = rodar { cmd { it.cmd("fechar") }; jogoFechou = true; pausado = false; Registro.add("jogo", "Fechei ${jogo?.nome}") }
+    /**
+     * Fecha o jogo na hora: um "su" à parte, sem passar pelo motor. O motor atende um pedido por vez e pode estar no meio
+     * de uma procura longa (pelo nome, caminhos): o "fechar" ficava esperando e o botão parecia não funcionar.
+     */
+    fun fecharJogo() {
+        val j = jogo ?: return
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { ProcessBuilder("su", "-c", "kill -CONT ${j.pid}; kill -9 ${j.pid}").redirectErrorStream(true).start().waitFor() == 0 }.getOrDefault(false)
+            }
+            if (!ok) runCatching { cmd { it.cmd("fechar") } }  // sem o su à parte: pelo motor, como antes
+            Ponteiro.lembrarValores(j.pacote, salvos.toList())
+            jogoFechou = true; pausado = false; Registro.add("jogo", "Fechei ${j.nome}" + if (ok) "" else " (pelo motor)")
+        }
+    }
 
     /** Abre o jogo de novo e se liga a ele sozinho (espera até 30 s o processo aparecer). Os salvos com caminho voltam. */
     fun reabrir(ctx: Context) = rodar {

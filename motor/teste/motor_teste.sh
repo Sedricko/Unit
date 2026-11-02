@@ -217,6 +217,15 @@ pelonome "nome B" b 3 4 34 '10=436f627265' pela-variavel
 pelonome "nome E" e 9 10 18 'n10=00000007,n14=00000001' pelo-texto
 # F: como o "Item" do Orecraft (sem texto, sem número: só ponteiros e o valor): o nome está na definição apontada
 pelonome "nome F" f 11 12 18 '10>10=436f627265' pelo-texto
+# G: como no Orecraft, 2 objetos Item apontam para a definição do Cobre (o do inventário e outro, com outro número):
+# o motor devolve os 2 (o app desempata pelo caminho, pelo último valor ou pelo número digitado)
+abre g 13
+gcl=$(printf 'attach %s\nclasse %s\n' "$gp" "$gcobre" | "$out/unitd" | tail -n +3)
+gass=$(awk '/^texto / { printf "%s%s=%s", (n++ ? "," : ""), $2, $3 }' <<<"$gcl")
+fecha; abre g 14
+gr=$(printf 'attach %s\npelonome ItemRecurso Jogo 18 %s\n' "$gp" "$gass" | "$out/unitd" | tail -n +3)
+testa "nome G: devolve os 2 objetos da mesma definição, e o cobre está entre eles" "grep -qE '^ok 2 ' <<<\"\$gr\" && grep -qx '$gcobre' <<<\"\$gr\""
+fecha
 
 # E: 200 mil objetos da classe do item (cabeçalhos apontando para a ficha): no Orecraft isso afogou a procura (8 min)
 cenario E e 9 ':b8:10:d38:10:38:18' '[anon:libc_malloc]'

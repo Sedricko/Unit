@@ -97,4 +97,13 @@ class PonteiroTest {
         assertTrue(Ponteiro.plausivel("0", "40"))         // começou em 0 e subiu
         assertFalse(Ponteiro.plausivel("51", "NaN"))
     }
+
+    @Test fun escolherEntreVariosObjetos() {
+        val cands = listOf("a1" to "211", "a2" to "99")  // 2 "Item" da Barra de Cobre: o do inventário (211) e outro
+        assertEquals("a2", Ponteiro.escolher(cands, "211", "f32", setOf("a2")))  // um caminho chega no a2: ele ganha
+        assertEquals("a1", Ponteiro.escolher(cands, "211", "f32", emptySet()))   // o único com o último valor
+        assertEquals("a1", Ponteiro.escolher(listOf("a1" to "211.4", "a2" to "99"), "211", "f32", emptySet()))  // Float arredondado
+        assertEquals(null, Ponteiro.escolher(listOf("a1" to "211", "a2" to "211"), "211", "f32", emptySet()))  // empate: pede o número
+        assertEquals(null, Ponteiro.escolher(cands, "", "f32", emptySet()))      // sem último valor
+    }
 }

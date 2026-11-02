@@ -52,16 +52,20 @@ static char *itens_unity(size_t tam, size_t campo, float valor, int marca, int s
     // sem_texto (como o Orecraft): o item também não tem variável na biblioteca; só dá para achar a ficha pelo texto do nome
     char *cls_item = ficha("ItemRecurso", "Jogo", marca); if (!sem_texto) ItemRecurso_TypeInfo = cls_item;
     char *cls_def = ficha("DefItem", "Jogo", marca);
-    const char *nomes[3] = {"Ferro", "Cobre", "Ouro"}; char *cobre = NULL;
+    const char *nomes[3] = {"Ferro", "Cobre", "Ouro"}; char *cobre = NULL, *def_cobre = NULL;
     for (int k = 0; k < 3; k++) {
         char *it = novo(tam); liga(it, 0, cls_item, marca);
         if (sem_texto == 1) { int id = 3 + 4 * k, um = 1; memcpy(it + 0x10, &id, 4); memcpy(it + 0x14, &um, 4); }
-        else if (sem_texto == 2) {  // F: só um ponteiro para a definição do item (outra classe), que tem o nome
+        else if (sem_texto >= 2) {  // F: só um ponteiro para a definição do item (outra classe), que tem o nome
             char *def = novo(0x30); liga(def, 0, cls_def, marca); liga(def, 0x10, texto(nomes[k], marca), marca);
-            liga(it, 0x10, def, marca);
+            liga(it, 0x10, def, marca); if (k == 1) def_cobre = def;
         }
         else liga(it, 0x10, texto(nomes[k], marca), marca);
         memcpy(it + campo, &valor, 4); if (k == 1) cobre = it;
+    }
+    if (sem_texto == 3) {  // G: outro Item da mesma definição (a loja, uma receita…) com outro número: o motor devolve os 2
+        char *outro = novo(tam); float v = 99.0f; liga(outro, 0, cls_item, marca); liga(outro, 0x10, def_cobre, marca);
+        memcpy(outro + campo, &v, 4);
     }
     return cobre;
 }
@@ -71,14 +75,14 @@ static char *itens_unity(size_t tam, size_t campo, float valor, int marca, int s
 void *arena_base(void) { return arena; }
 float *montar(char cenario, unsigned semente, float valor, void **nos) {
     sx = semente; usado = 16 * (semente % 64);
-    if (cenario == 'a' || cenario == 'c' || cenario == 'd' || cenario == 'e' || cenario == 'f') {
-        char *classe = novo(0x200), *estaticos = novo(0x40), *ger = novo(0x1000), *lista = novo(0x40), *itens = novo(0x80), *item = cenario == 'e' ? itens_unity(0x40, 0x18, valor, 0, 1) : cenario == 'f' ? itens_unity(0x40, 0x18, valor, 0, 2) : itens_unity(0x60, 0x30, valor, 0, 0);
+    if (cenario == 'a' || cenario == 'c' || cenario == 'd' || cenario == 'e' || cenario == 'f' || cenario == 'g') {
+        char *classe = novo(0x200), *estaticos = novo(0x40), *ger = novo(0x1000), *lista = novo(0x40), *itens = novo(0x80), *item = cenario == 'e' ? itens_unity(0x40, 0x18, valor, 0, 1) : cenario == 'f' ? itens_unity(0x40, 0x18, valor, 0, 2) : cenario == 'g' ? itens_unity(0x40, 0x18, valor, 0, 3) : itens_unity(0x60, 0x30, valor, 0, 0);
         liga(classe, 0xb8, estaticos, 0); liga(estaticos, 0x10, ger, 0); liga(ger, 0xd38, lista, 0);
         liga(lista, 0x10, itens, 0); liga(itens, 0x38, item, 0);
         liga(classe, 0x10, (void *)"Recursos", 0); liga(classe, 0x18, (void *)"", 0);  // a ficha da classe: nome e espaço de nomes
         Recursos_TypeInfo = classe;
         nos[0] = classe; nos[1] = estaticos; nos[2] = ger; nos[3] = lista; nos[4] = itens; nos[5] = item;
-        float *cobre = (float *)(item + (cenario == 'e' || cenario == 'f' ? 0x18 : 0x30)); *cobre = valor; reserva[0] = 1; return cobre;
+        float *cobre = (float *)(item + (cenario == 'e' || cenario == 'f' || cenario == 'g' ? 0x18 : 0x30)); *cobre = valor; reserva[0] = 1; return cobre;
     }
     char *tabela = calloc(8000, 8), *classe = novo(0x130), *estaticos = novo(0x60), *sing = novo(0x80), *lista = novo(0x40), *vetor = novo(0x100), *item = itens_unity(0x50, 0x34, valor, 1, 0);
     // as outras classes da tabela: fichas de tamanho real (0x130) com nome. Um quarto delas tem campos estáticos (+0xb8)

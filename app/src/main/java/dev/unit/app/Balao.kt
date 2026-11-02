@@ -403,7 +403,7 @@ class Balao : Service() {
                 Text(Nucleo.jogo?.nome ?: "Escolher jogo", color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text(if (Nucleo.pausado) "jogo pausado" else Nucleo.jogo?.pacote ?: "toque para ver os jogos abertos", color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
             }
-            if (Nucleo.jogo != null && !Nucleo.jogoFechou) Box(Modifier.padding(end = 12.dp).toque(!Nucleo.ocupado) { Nucleo.fecharJogo() }) {
+            if (Nucleo.jogo != null && !Nucleo.jogoFechou) Box(Modifier.padding(end = 12.dp).toque { Nucleo.fecharJogo() }) {  // sempre ativo: fecha mesmo com o Unit ocupado
                 Text("Fechar jogo", color = Cor.ruim, fontSize = 13.sp)  // fecha o jogo (o Unit pergunta se quer reabrir)
             }
             Text("Trocar", color = Cor.a2, fontSize = 13.sp)
