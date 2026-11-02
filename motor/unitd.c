@@ -478,11 +478,13 @@ static void ligar(const pt_t *pt, size_t n1, size_t nf, uint64_t t, int pai, uin
         int k = achar_reg(pt[j].onde); if (k < 0 || !rg[k].fixa) continue;
         uint64_t off = pt[j].onde - base_lib(rg[k].lib);
         if (off >= 0x10000000ULL) continue;  // a mais de 256 MB do começo da biblioteca: não é parte dela
-        uint32_t o = (uint32_t)(t - pt[j].v); unsigned soma = o;
+        // o salto longo da libil2cpp é tabela[índice da classe]: o tamanho dele não diz nada (é índice × 8): custo fixo,
+        // nem barato (os saltos longos falsos passariam na frente) nem pelo tamanho (o caminho de tabela ia para o fim)
+        uint32_t o = (uint32_t)(t - pt[j].v); unsigned soma = o > DIST ? 0x400 : o;
         cam_t *c = &cams[(*nc)++]; int len = snprintf(c->txt, sizeof c->txt, "%s+%" PRIx64 ":%x", rg[k].lib, off, o);
         if (temext) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", oext); soma += oext; }
         for (int x = pai; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }
-        c->nota = nota(nivel, rg[k].lib, soma) + (o > DIST ? 0x400 : 0);  // salto longo direto da biblioteca: vale, mas é menos certo
+        c->nota = nota(nivel, rg[k].lib, soma);
     }
     }
 }

@@ -103,31 +103,55 @@ confere "android: recusa texto que iria para o sistema" "err uso: android SEGUND
 confere "fechar: depois de fechar, o motor avisa" "err o jogo fechou"
 confere "ponteiro: o que não é endereço (o cabeçalho do programa) quebra o caminho" "err o caminho quebrou (não é endereço)"
 confere "ponteiro: biblioteca que não existe, recusa" "err biblioteca naoexiste não está aberta"
-# jogo grande, como o Orecraft: libil2cpp, 16 milhões de ponteiros em 2 GB (o dobro da densidade do Orecraft) (passa do limite do motor), objetos do caminho colados
-# (atalhos de deslocamento grande que quebram ao reabrir) e outros objetos apontando para cada passo. O caminho de verdade
-# tem 6 níveis: libil2cpp → classe +b8 → estáticos +10 → gerenciador +d38 → lista +10 → itens +38 → item +30 = cobre
+# ===== jogo grande: cenários tirados dos testes no Orecraft (só passa para o celular se todos passarem) =====
+# A: 6 níveis, campo +d38 em objeto grande, objetos colados (atalhos), libunity com ponteiros para o heap todo, e o jogo
+#    trocando ponteiros enquanto a procura roda
+# B: libil2cpp → tabela de classes (salto longo +8ca0) → 7 níveis, ponteiros com marca 0xb4, campo +34
+# reabrir: o mesmo jogo aberto de novo com outro arranjo de memória: os atalhos quebram, o caminho de verdade tem que seguir
 cc -O2 -shared -fPIC -o "$out/libil2cpp.so" motor/teste/il2cpp_teste.c
 cc -O2 -shared -fPIC -o "$out/libunity.so" motor/teste/unity_teste.c
-cc -O0 -o "$out/alvo_grande" motor/teste/alvo_grande.c -L"$out" -lil2cpp -lunity -Wl,-rpath,"$out"
-"$out/alvo_grande" > "$out/info_g" & gpid=$!
-for _ in $(seq 200); do [ -s "$out/info_g" ] && break; sleep 0.1; done
-read -r gp gcobre _ < "$out/info_g"
-t0=$(date +%s)
-# memória livre igual à do celular do usuário no relatório (2528 MB livres): o limite de ponteiros fica o mesmo de lá
-got6=$(printf 'attach %s\nptrscan %s 8\n' "$gp" "$gcobre" | UNITD_MEM_MB=2500 "$out/unitd")
-seg=$(( $(date +%s) - t0 ))
-tail -1 <<<"$got6"; echo "jogo grande: ${seg} s"
-camg=$(grep -m1 '^libil2cpp.so+[0-9a-f]*:b8:10:d38:10:38:30$' <<<"$got6" || true)
-got7=$(printf 'attach %s\nptr %s\n' "$gp" "$camg" | "$out/unitd")
-got="$got6
-$got7"
-if grep -q '(cheio)' <<<"$got6"; then echo "FALHA jogo grande: o limite de ponteiros encheu"; falhou=1; else echo "OK   jogo grande: com a memória do celular, cabem os 16 milhões de ponteiros"; fi
-confere "jogo grande: acha o caminho de verdade de 6 níveis do Unity" ":b8:10:d38:10:38:30"
-got="$(grep -m1 '^libil2cpp' <<<"$got6")"
-confere "jogo grande: o caminho de verdade vem primeiro (na frente dos atalhos)" ":b8:10:d38:10:38:30"
-got="$got6
-$got7"
-confere "jogo grande: seguir o caminho chega no cobre" "ok $gcobre"
-if grep -q '^libunity' <<<"$got6"; then echo "FALHA jogo grande: caminhos da libunity (gerenciador de memória) não deviam sair"; falhou=1; else echo "OK   jogo grande: a libunity (gerenciador de memória) não vira caminho"; fi
-if [ "$seg" -le 60 ]; then echo "OK   jogo grande: procura em ${seg} s (até 60)"; else echo "FALHA jogo grande: procura levou ${seg} s"; falhou=1; fi
+cc -O0 -pthread -o "$out/alvo_grande" motor/teste/alvo_grande.c -L"$out" -lil2cpp -lunity -Wl,-rpath,"$out"
+testa() { if eval "$2"; then echo "OK   $1"; else echo "FALHA $1"; falhou=1; fi; }
+abre() {
+    rm -f "$out/info_g"; "$out/alvo_grande" "$@" > "$out/info_g" & gpid=$!
+    for _ in $(seq 300); do [ -s "$out/info_g" ] && break; sleep 0.1; done
+    read -r gp gcobre _ < "$out/info_g"
+}
+fecha() { kill -9 "$gpid" 2>/dev/null || true; wait "$gpid" 2>/dev/null || true; gpid=; }
+cenario() {  # nome cenário semente fim-do-caminho-certo [mexe]
+    local nome=$1 certo=$4; abre "$2" "$3" ${5:-}
+    local t0; t0=$(date +%s)
+    # memória livre igual à do celular do usuário no relatório (2528 MB): o limite de ponteiros fica o mesmo de lá
+    gres=$(printf 'attach %s\nptrscan %s 8\n' "$gp" "$gcobre" | UNITD_MEM_MB=2500 "$out/unitd")
+    local seg=$(( $(date +%s) - t0 ))
+    grep '+' <<<"$gres" > "$out/cam_$nome" || true
+    local pos; pos=$(grep -n -m1 -- "$certo\$" "$out/cam_$nome" | cut -d: -f1 || true)
+    local cam; cam=$(grep -m1 -- "$certo\$" "$out/cam_$nome" || true)
+    echo "$nome: $(tail -1 <<<"$gres") · ${seg} s · caminho certo na posição ${pos:-nenhuma}"
+    testa "$nome: o limite de ponteiros não encheu" "! grep -q '(cheio)' <<<\"\$gres\""
+    testa "$nome: acha o caminho de verdade" "[ -n '$pos' ]"
+    testa "$nome: o caminho de verdade está entre os 3000 que o app guarda" "[ -n '$pos' ] && [ '$pos' -le 3000 ]"
+    testa "$nome: seguir o caminho chega no valor" "[ \"\$(printf 'attach %s\nptr %s\n' $gp '$cam' | \"\$out/unitd\" | tail -1)\" = 'ok $gcobre' ]"
+    testa "$nome: a libunity (gerenciador de memória) não vira caminho" "! grep -q '^libunity' '$out/cam_$nome'"
+    testa "$nome: procura em ${seg} s (até 45; o celular é umas 4× mais lento)" "[ $seg -le 45 ]"
+    fecha
+}
+reabrir() {  # nome-de-antes cenário semente fim-do-caminho-certo
+    local antes=$1 certo=$4; abre "$2" "$3"
+    { echo "attach $gp"; sed 's/^/ptr /' "$out/cam_$antes"; } | "$out/unitd" | tail -n +3 > "$out/res_$antes"
+    local total vivos certo_vivo
+    total=$(wc -l < "$out/cam_$antes"); vivos=$(grep -c "^ok $gcobre\$" "$out/res_$antes" || true)
+    certo_vivo=$(paste -d'|' "$out/cam_$antes" "$out/res_$antes" | grep -c -- "$certo|ok $gcobre\$" || true)
+    echo "$antes reaberto: $vivos de $total caminhos ainda chegam no valor"
+    testa "$antes reaberto: o caminho de verdade continua chegando no valor" "[ '$certo_vivo' -ge 1 ]"
+    testa "$antes reaberto: a maioria dos atalhos quebrou (não enganam a conferência)" "[ $vivos -le $(( total / 2 + 1 )) ]"
+    # o app, depois de conferir, fica com os vivos na ordem da lista, até 20 (RESERVA): o certo tem que estar entre eles
+    local pos_vivo; pos_vivo=$(paste -d'|' "$out/cam_$antes" "$out/res_$antes" | grep "|ok $gcobre\$" | grep -n -m1 -- "$certo|" | cut -d: -f1 || true)
+    testa "$antes reaberto: o caminho de verdade fica entre os 20 vivos que o app guarda (posição ${pos_vivo:-nenhuma})" "[ -n '$pos_vivo' ] && [ '$pos_vivo' -le 20 ]"
+    fecha
+}
+cenario A a 1 ':b8:10:d38:10:38:30' mexe
+reabrir A a 2 ':b8:10:d38:10:38:30'
+cenario B b 3 ':8ca0:b8:18:40:10:48:34'
+reabrir B b 4 ':8ca0:b8:18:40:10:48:34'
 exit $falhou
