@@ -279,6 +279,8 @@ class Balao : Service() {
     private fun Conteudo() {
         // os salvos ao vivo enquanto o mini ou o painel está à vista
         LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
+        LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
+        LaunchedEffect(Nucleo.jogoFechou) { if (Nucleo.jogoFechou && modo != "painel") mudar("painel") }  // abre o painel para perguntar
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }
         // pausa automática: entra ao digitar (ou com o painel aberto) e sai ao sair dessas telas / minimizar
         LaunchedEffect(modo, tela, opcaoPausa) {
@@ -373,6 +375,14 @@ class Balao : Service() {
         if (confirmar) ConfirmarFechar({ confirmar = false }) { stopSelf() }
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
+        if (Nucleo.jogoFechou) Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${Nucleo.jogo?.nome ?: "O jogo"} fechou. Quer abrir de novo?", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Botao("Reabrir", true, Modifier.weight(1f), !Nucleo.ocupado) { Nucleo.reabrir(this@Balao) }
+                Botao("Agora não", false, Modifier.weight(1f)) { Nucleo.jogoFechou = false; Nucleo.jogo = null; Nucleo.salvos.clear(); Nucleo.zerar() }
+            }
+        }
         when (tela) {
             "achar" -> Achar()
             "editar" -> Editar()
@@ -624,7 +634,10 @@ class Balao : Service() {
                         Text(j.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         Text(j.pacote, color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
                     }
-                    if (Nucleo.jogo?.pacote == j.pacote) Selo("ligado", true)
+                    if (Nucleo.jogo?.pacote == j.pacote) {
+                        Selo("ligado", true)
+                        Box(Modifier.padding(start = 8.dp).toque { Nucleo.fecharJogo() }) { Text("Fechar", color = Cor.ruim, fontSize = 13.sp) }
+                    }
                 }
             }
             if (Nucleo.ocupado && Nucleo.jogos.isEmpty()) Text("Procurando os jogos… Se aparecer o pedido de root, toque em Permitir.", color = Cor.a2, fontSize = 13.sp)

@@ -15,6 +15,7 @@
 //   diff MODO                  mudou|igual|foto|aumentou|diminuiu (1ª vez compara com a foto) -> ok N
 //   ptrscan ENDEREÇO [NÍVEIS]  caminhos (ponteiros) de uma biblioteca até o endereço: "lib+OFF:o1:...:oN" -> ok N
 //   ptr CAMINHO                segue o caminho de agora                                     -> ok ENDEREÇO
+//   vivo / fechar              o jogo ainda está aberto? / fecha o jogo
 //   sleep MS                   espera (testes e scripts: dá tempo ao congelador)
 //   quit
 #define _GNU_SOURCE
@@ -401,7 +402,7 @@ static reg_t *rg; static int nrg;
 static void ler_mapa(void) {
     char p[64]; snprintf(p, sizeof p, "/proc/%d/maps", target);
     FILE *f = fopen(p, "r"); nrg = 0; if (!f) return;
-    static int cap; char line[512], ult[64] = ""; uint64_t ultfim = 0;
+    static int cap; char line[512], ult[64] = ""; uint64_t ultfim = 0; int ultfixa = 0;
     while (fgets(line, sizeof line, f)) {
         uint64_t a, b; char perms[8] = "", name[400] = "";
         if (sscanf(line, "%" SCNx64 "-%" SCNx64 " %7s %*s %*s %*s %399[^\n]", &a, &b, perms, name) < 3) continue;
@@ -409,9 +410,14 @@ static void ler_mapa(void) {
         reg_t *r = &rg[nrg++]; memset(r, 0, sizeof *r); r->ini = a; r->fim = b;
         r->rw = perms[0] == 'r' && perms[1] == 'w' && !strstr(name, "/dev/") && !strstr(name, "[stack") && !strstr(name, "kgsl");
         const char *nm = strrchr(name, '/');
-        if (name[0] == '/') { snprintf(r->lib, sizeof r->lib, "%s", nm + 1); snprintf(ult, sizeof ult, "%s", nm + 1); r->fixa = r->rw; }
-        else if (a == ultfim && ult[0] && (!name[0] || strstr(name, ".bss"))) { snprintf(r->lib, sizeof r->lib, "%s", ult); r->fixa = r->rw; }
+        // só as bibliotecas do jogo contam como começo de caminho: as do sistema (/system, /apex, /vendor…) guardam ponteiros
+        // do alocador que mudam a cada abertura e enchiam o limite de caminhos com caminhos que quebram
+        int sistema = !strncmp(name, "/system/", 8) || !strncmp(name, "/apex/", 6) || !strncmp(name, "/vendor/", 8) || !strncmp(name, "/product/", 9)
+                   || !strncmp(name, "/system_ext/", 12) || !strncmp(name, "/dev/", 5);
+        if (name[0] == '/') { snprintf(r->lib, sizeof r->lib, "%s", nm + 1); snprintf(ult, sizeof ult, "%s", nm + 1); r->fixa = r->rw && !sistema; }
+        else if (a == ultfim && ult[0] && (!name[0] || strstr(name, ".bss"))) { snprintf(r->lib, sizeof r->lib, "%s", ult); r->fixa = r->rw && ultfixa; }
         else ult[0] = 0;
+        if (name[0] == '/') ultfixa = !sistema;
         ultfim = b;
     }
     fclose(f);
@@ -426,8 +432,8 @@ static uint64_t base_lib(const char *lib) { for (int i = 0; i < nrg; i++) if (!s
 typedef struct { uint64_t v, onde; } pt_t;        // um ponteiro: o valor (para onde aponta) e onde ele mora
 typedef struct { uint64_t t; int pai; uint32_t o; } no_t;  // um passo do caminho: o alvo, quem veio antes e o deslocamento
 static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)->v, y = ((const pt_t *)b)->v; return x < y ? -1 : x > y; }
-enum { PMAX = 12000000, NMAX = 400000, CMAX = 300, DIST = 0x400 };
-// shortcut: até 12 milhões de ponteiros, 400 mil passos e 300 caminhos (memória do celular); jogos maiores podem perder caminhos
+enum { PMAX = 12000000, NMAX = 400000, CMAX = 1000, DIST = 0x400 };
+// shortcut: até 12 milhões de ponteiros, 400 mil passos e 1000 caminhos (memória do celular); jogos maiores podem perder caminhos
 static void cmd_ptrscan(const char *addr, const char *niv) {
     uint64_t alvo = strtoull(addr, NULL, 16); int nmax = niv[0] ? atoi(niv) : 5; if (nmax < 1 || nmax > 8) nmax = 5;
     ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
@@ -489,6 +495,15 @@ static void cmd_ptr(const char *cam) {
     printf("ok %" PRIx64 "\n", a);
 }
 
+// o jogo ainda existe? (um processo morto que ninguém recolheu ainda aparece no /proc como "Z": conta como fechado)
+static int aberto(pid_t p) {
+    char path[64], st[256] = ""; snprintf(path, sizeof path, "/proc/%d/stat", p);
+    FILE *f = fopen(path, "r"); if (!f) return 0;
+    size_t n = fread(st, 1, sizeof st - 1, f); fclose(f); st[n] = 0;
+    char *fim = strrchr(st, ')');  // o nome vem entre parênteses e pode ter espaço; o estado vem logo depois
+    return fim && fim[1] == ' ' && fim[2] != 'Z' && fim[2] != 'X';
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     pthread_t th; pthread_create(&th, NULL, congelador, NULL);
@@ -509,8 +524,7 @@ int main(void) {
             printf("ok %d\n", p); continue;
         }
         if (!target) { puts("err escolha o jogo primeiro (attach)"); continue; }
-        char path[64]; snprintf(path, sizeof path, "/proc/%d", target);
-        if (access(path, F_OK)) { puts("err o jogo fechou"); continue; }
+        if (!aberto(target)) { puts("err o jogo fechou"); continue; }
         if (!strcmp(c, "search")) cmd_search(a1, a2);
         else if (!strcmp(c, "refine")) cmd_refine(a1);
         else if (!strcmp(c, "list")) cmd_list(strtoul(a1, NULL, 10));
@@ -520,6 +534,8 @@ int main(void) {
         else if (!strcmp(c, "diff")) cmd_diff(a1);
         else if (!strcmp(c, "ptrscan")) cmd_ptrscan(a1, a2);
         else if (!strcmp(c, "ptr")) cmd_ptr(a1);
+        else if (!strcmp(c, "vivo")) puts("ok");  // o teste "o jogo fechou" já foi feito acima, antes de qualquer comando
+        else if (!strcmp(c, "fechar")) { kill(target, SIGCONT); puts(kill(target, SIGKILL) ? "err não fechei o jogo" : "ok"); }
         else if (!strcmp(c, "read") || !strcmp(c, "write") || !strcmp(c, "freeze")) {
             int t = tipo(a2); uint64_t a = strtoull(a1, NULL, 16); unsigned char b[8]; char v[64];
             if (t < 0) { printf("err tipo inválido: %s\n", a2); continue; }

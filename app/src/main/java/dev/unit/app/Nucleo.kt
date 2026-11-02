@@ -68,6 +68,7 @@ object Nucleo {
     val salvos = mutableStateListOf<Salvo>()
     var aviso by mutableStateOf("")
     var ocupado by mutableStateOf(false)
+    var jogoFechou by mutableStateOf(false)  // o motor disse "o jogo fechou": o painel pergunta se quer reabrir
 
     fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); Ponteiro.init(ctx); java.io.File(ctx.cacheDir, "foto.bin").delete() }
 
@@ -113,6 +114,34 @@ object Nucleo {
         cmd { it.cmd("attach ${j.pid}") }
         jogo = j; pausado = false; zerar(); salvos.clear()
         Ponteiro.aplicar()  // LABORATÓRIO: os salvos guardados com caminho aparecem sozinhos
+    }
+
+    /** A cada 2 s (balão aberto): o jogo ainda está aberto? Sem aviso na tela; só liga o jogoFechou. */
+    fun verificar() = scope.launch {
+        if (jogo == null || ocupado || jogoFechou) return@launch
+        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou") { jogoFechou = true; pausado = false } }
+    }
+
+    /** Fecha o jogo (para conferir um caminho, ou recomeçar limpo). */
+    fun fecharJogo() = rodar { cmd { it.cmd("fechar") }; jogoFechou = true; pausado = false }
+
+    /** Abre o jogo de novo e se liga a ele sozinho (espera até 30 s o processo aparecer). Os salvos com caminho voltam. */
+    fun reabrir(ctx: Context) = rodar {
+        val j = jogo ?: return@rodar
+        val abrir = ctx.packageManager.getLaunchIntentForPackage(j.pacote) ?: throw IllegalStateException("Não achei como abrir ${j.nome}.")
+        ctx.startActivity(abrir.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        aviso = "Abrindo ${j.nome}…"
+        repeat(60) {
+            kotlinx.coroutines.delay(500)
+            val pid = cmd { it.cmd("ps") }.linhas.firstNotNullOfOrNull { l -> l.split(' ', limit = 2).takeIf { p -> p.size == 2 && p[1] == j.pacote }?.get(0)?.toIntOrNull() }
+            if (pid != null) {
+                cmd { it.cmd("attach $pid") }
+                jogo = j.copy(pid = pid); jogoFechou = false; pausado = false; zerar(); salvos.clear(); aviso = ""
+                Ponteiro.aplicar()
+                return@rodar
+            }
+        }
+        throw IllegalStateException("${j.nome} não abriu em 30 s. Abra ele e escolha de novo em Jogos.")
     }
 
     fun zerar() { total = null; achados.clear(); escolhido = null }

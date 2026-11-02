@@ -63,7 +63,7 @@ echo "$got3"
 got4=$(printf 'attach %s\nptrscan %s 3\n' "$pid" "$acobre" | "$out/unitd")
 echo "$got4"
 cam=$(grep -m1 '^alvo+' <<<"$got4" || true)
-got5=$(printf 'attach %s\nptr %s\nptr naoexiste+10:8\n' "$pid" "$cam" | "$out/unitd")
+got5=$(printf 'attach %s\nptr %s\nptr naoexiste+10:8\nvivo\nfechar\nsleep 200\nvivo\n' "$pid" "$cam" | "$out/unitd")  # fechar por último: mata o alvo
 echo "$got5"
 got="$got
 $got2
@@ -93,5 +93,6 @@ confere "mudança: mudou e voltou ao da foto acha o valor" "$arec f32 0 0"
 confere "ponteiro: acha um caminho a partir do programa" "alvo+"
 confere "ponteiro: o caminho termina em +40 e +8" ":40:8"
 confere "ponteiro: seguir o caminho chega no cobre" "ok $acobre"
+confere "fechar: depois de fechar, o motor avisa" "err o jogo fechou"
 confere "ponteiro: biblioteca que não existe, recusa" "err biblioteca naoexiste não está aberta"
 exit $falhou

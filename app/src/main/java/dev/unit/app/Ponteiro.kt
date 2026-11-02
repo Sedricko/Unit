@@ -166,8 +166,9 @@ object Ponteiro {
                 Botao("Descartar", false, Modifier.fillMaxWidth()) { pendente = null }
                 return@let
             }
-            Text("Para conferir: feche e abra o jogo, escolha ele de novo no Unit, volte aqui e digite o número que está na tela.",
+            Text("Para conferir: toque em Fechar o jogo, depois em Reabrir, volte aqui e digite o número que está na tela.",
                 color = Cor.apagado, fontSize = 12.sp)
+            Botao("Fechar o jogo", false, Modifier.fillMaxWidth(), !Nucleo.ocupado && !Nucleo.jogoFechou) { Nucleo.fecharJogo() }
             CampoGrande(campo, "número na tela")
             Teclado("Conferir", campo.isNotBlank() && !Nucleo.ocupado, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
                 confirmou = { campo.replace(',', '.').toDoubleOrNull()?.let(::conferir); campo = "" })
