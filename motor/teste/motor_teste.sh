@@ -110,19 +110,32 @@ confere "ponteiro: biblioteca que não existe, recusa" "err biblioteca naoexiste
 # reabrir: o mesmo jogo aberto de novo com outro arranjo de memória: os atalhos quebram, o caminho de verdade tem que seguir
 cc -O2 -shared -fPIC -o "$out/libil2cpp.so" motor/teste/il2cpp_teste.c
 cc -O2 -shared -fPIC -o "$out/libunity.so" motor/teste/unity_teste.c
-cc -O0 -pthread -o "$out/alvo_grande" motor/teste/alvo_grande.c -L"$out" -lil2cpp -lunity -Wl,-rpath,"$out"
+cc -O0 -pthread -o "$out/alvo_grande" motor/teste/alvo_grande.c -L"$out" -lunity -ldl -Wl,-rpath,"$out"
 testa() { if eval "$2"; then echo "OK   $1"; else echo "FALHA $1"; falhou=1; fi; }
 abre() {
     rm -f "$out/info_g"; "$out/alvo_grande" "$@" > "$out/info_g" & gpid=$!
     for _ in $(seq 300); do [ -s "$out/info_g" ] && break; sleep 0.1; done
-    read -r gp gcobre _ < "$out/info_g"
+    read -r gp gcobre _ _ _ _ _ _ garena gtls glnk greserva < "$out/info_g"
 }
+# mapa com os nomes do Android (o Linux do teste não dá nome a regiões): arena do caminho = $1, pilha e linker falsos
+nomeia() {
+    awk -v a="$garena-" -v t="$gtls-" -v l="$glnk-" -v n="$1" '
+        index($1, a) == 1 { print $1, $2, $3, $4, $5, n; next }
+        index($1, t) == 1 { print $1, $2, $3, $4, $5, "[anon:stack_and_tls:4242]"; next }
+        index($1, l) == 1 { print $1, $2, $3, $4, $5, "[anon:linker_alloc]"; next }
+        { print }' "/proc/$gp/maps" > "$out/maps_g"
+    local esperado=3; [ "$1" = "-" ] && esperado=2  # "-": a arena não tem linha própria (cenário C: junta com a .bss)
+    local alvo_nome="$1"; [ "$1" = "-" ] && alvo_nome='[anon:stack_and_tls:4242]'  # "-": só as duas de sempre
+    grep -cF -e '[anon:stack_and_tls:4242]' -e '[anon:linker_alloc]' -e "$alvo_nome" "$out/maps_g" | grep -qx $esperado || { echo "FALHA teste: não renomeou as regiões"; falhou=1; }
+}
+raiz=$(nm -D "$out/libil2cpp.so" 2>/dev/null | awk '/ Raiz_Lixo$/ { sub(/^0+/, "", $1); print $1 }')
+[ -n "$raiz" ] || raiz=$(nm "$out/libil2cpp.so" | awk '/ Raiz_Lixo$/ { sub(/^0+/, "", $1); print $1 }')
 fecha() { kill -9 "$gpid" 2>/dev/null || true; wait "$gpid" 2>/dev/null || true; gpid=; }
-cenario() {  # nome cenário semente fim-do-caminho-certo [mexe]
-    local nome=$1 certo=$4; abre "$2" "$3" ${5:-}
+cenario() {  # nome cenário semente fim-do-caminho-certo nome-da-arena [mexe]
+    local nome=$1 certo=$4; abre "$2" "$3" ${6:-}; nomeia "$5"
     local t0; t0=$(date +%s)
     # memória livre igual à do celular do usuário no relatório (2528 MB): o limite de ponteiros fica o mesmo de lá
-    gres=$(printf 'attach %s\nptrscan %s 8\n' "$gp" "$gcobre" | UNITD_MEM_MB=2500 "$out/unitd")
+    gres=$(printf 'attach %s\nptrscan %s 8\n' "$gp" "$gcobre" | UNITD_MEM_MB=2500 UNITD_MAPS="$out/maps_g" "$out/unitd")
     local seg=$(( $(date +%s) - t0 ))
     grep '+' <<<"$gres" > "$out/cam_$nome" || true
     local pos; pos=$(grep -n -m1 -- "$certo\$" "$out/cam_$nome" | cut -d: -f1 || true)
@@ -133,6 +146,10 @@ cenario() {  # nome cenário semente fim-do-caminho-certo [mexe]
     testa "$nome: o caminho de verdade está entre os 3000 que o app guarda" "[ -n '$pos' ] && [ '$pos' -le 3000 ]"
     testa "$nome: seguir o caminho chega no valor" "[ \"\$(printf 'attach %s\nptr %s\n' $gp '$cam' | \"\$out/unitd\" | tail -1)\" = 'ok $gcobre' ]"
     testa "$nome: a libunity (gerenciador de memória) não vira caminho" "! grep -q '^libunity' '$out/cam_$nome'"
+    local fora pulou; fora=$(grep -o 'fora=[0-9]*' <<<"$gres" | cut -d= -f2); pulou=$(grep -o 'pulou=[0-9]*' <<<"$gres" | cut -d= -f2)
+    testa "$nome: pilha de thread e linker ignorados, como no GameGuardian (fora=${fora:-?} MB)" "[ '${fora:-0}' -ge 80 ]"
+    testa "$nome: o atalho de 2 níveis pela pilha falsa não aparece" "! grep -q '^libil2cpp.so+$raiz:40:3[04]\$' '$out/cam_$nome'"
+    testa "$nome: a reserva de 16 GB nunca usada foi pulada sem ler (pulou=${pulou:-?} MB)" "[ '${pulou:-0}' -ge 16000 ]"
     testa "$nome: procura em ${seg} s (até 45; o celular é umas 4× mais lento)" "[ $seg -le 45 ]"
     fecha
 }
@@ -150,8 +167,33 @@ reabrir() {  # nome-de-antes cenário semente fim-do-caminho-certo
     testa "$antes reaberto: o caminho de verdade fica entre os 20 vivos que o app guarda (posição ${pos_vivo:-nenhuma})" "[ -n '$pos_vivo' ] && [ '$pos_vivo' -le 20 ]"
     fecha
 }
-cenario A a 1 ':b8:10:d38:10:38:30' mexe
+cenario A a 1 ':b8:10:d38:10:38:30' '[anon:libc_malloc]' mexe
 reabrir A a 2 ':b8:10:d38:10:38:30'
-cenario B b 3 ':8ca0:b8:18:40:10:48:34'
+# controle: sem os nomes do Android, a pilha falsa é memória comum e o atalho por ela TEM que aparecer (prova que o teste vê)
+abre a 5
+ctl=$(printf 'attach %s\nptrscan %s 8\n' "$gp" "$gcobre" | UNITD_MEM_MB=2500 "$out/unitd")
+testa "controle: sem os nomes do Android o atalho pela pilha falsa aparece (o teste enxerga o lixo)" "grep -q '^libil2cpp.so+$raiz:40:30\$' <<<\"\$ctl\""
+fecha
+# A2: o caminho mora numa região que o GameGuardian chama de lenta: ela entra mesmo assim (é onde o valor está)
+cenario A2 a 6 ':b8:10:d38:10:38:30' '[anon:stack_and_tls:77]'
+testa "A2: avisa que a região do valor entrou na procura" "grep -q 'região do valor estava fora e entrou' <<<\"\$gres\""
+cenario B b 3 ':8ca0:b8:18:40:10:48:34' '[anon:scudo:primary]'
+# a tabela de classes gera muito mais caminhos que cabem na lista (como num jogo de verdade, com milhares de classes):
+# a procura continua e fica com os melhores. Antes ela parava ao encher, e o caminho certo podia nem ter aparecido
+bach=$(grep -o 'achados=[0-9]*' <<<"$gres" | cut -d= -f2)
+testa "B: a lista de candidatos encheu (${bach:-?} achados para 20000 lugares) e o caminho certo ficou" "[ '${bach:-0}' -gt 20000 ] && grep -q -- ':8ca0:b8:18:40:10:48:34\$' '$out/cam_B'"
+# a ficha da classe (nome em +0x10) põe o caminho de verdade na frente dos milhares que passam pelo coletor de lixo
+bpos=$(grep -n -m1 -- ':8ca0:b8:18:40:10:48:34$' "$out/cam_B" | cut -d: -f1 || true)
+testa "B: com a ficha da classe reconhecida, o caminho certo fica entre os 20 primeiros (posição ${bpos:-nenhuma})" "[ -n '$bpos' ] && [ '$bpos' -le 20 ]"
+# D: o gerenciador do caminho é popular (5000 objetos do heap apontam para ele): o ponteiro verdadeiro é um entre 5001
+cenario D d 8 ':b8:10:d38:10:38:30' '[anon:libc_malloc]'
+# C: a memória do caminho colada logo depois da .bss da libil2cpp. Sem nome, o Linux junta as duas numa linha do mapa, e o
+# motor via a arena como se fosse da biblioteca (falha que aparecia às vezes, conforme onde o sistema punha cada região)
+cenario C c 7 ':b8:10:d38:10:38:30' '-'
+testa "C: a arena ficou na mesma linha da .bss no mapa (a junção aconteceu de verdade)" "! grep -q '^$garena-' '$out/maps_g'"
+# fim da libil2cpp na memória, pelo ELF (fim do último LOAD): nenhum caminho pode começar depois dele
+libfim=0; while read -r va msz; do [ $(( va + msz )) -gt $libfim ] && libfim=$(( va + msz )); done < <(readelf -lW "$out/libil2cpp.so" | awk '$1 == "LOAD" { print $3, $6 }')
+alem=0; while IFS='+:' read -r _ off _; do [ $(( 0x$off )) -ge $libfim ] && alem=$(( alem + 1 )); done < <(grep '^libil2cpp' "$out/cam_C")
+testa "C: nenhum caminho começa depois do fim da libil2cpp ($alem começam)" "[ $alem -eq 0 ] && [ $libfim -gt 0 ]"
 reabrir B b 4 ':8ca0:b8:18:40:10:48:34'
 exit $falhou

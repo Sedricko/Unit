@@ -400,12 +400,35 @@ static void cmd_diff(const char *m) {
 // "fixas"; a base de cada biblioteca é o começo da 1ª região dela.
 // No Android ARM64 os ponteiros do heap vêm com uma marca no byte de cima (0xb4…): ela é tirada antes de comparar.
 #define SEM_MARCA(v) ((v) & 0x00ffffffffffffffULL)
-typedef struct { uint64_t ini, fim; int rw, fixa, longe; char lib[64]; } reg_t;
+typedef struct { uint64_t ini, fim; int rw, fixa, longe, usa, anon; char lib[64]; } reg_t;
 static reg_t *rg; static int nrg;
+// onde a biblioteca termina na memória (fim do último PT_LOAD do ELF, em páginas); 0 se não deu para ler. Guardado por caminho:
+// o ptr chama o mapa a cada caminho conferido
+static uint64_t fim_elf(const char *caminho) {
+    static struct { char p[200]; uint64_t fim; } cache[64]; static int nc;
+    for (int i = 0; i < nc; i++) if (!strcmp(cache[i].p, caminho)) return cache[i].fim;
+    char pr[480]; snprintf(pr, sizeof pr, "/proc/%d/root%s", target, caminho);
+    FILE *f = fopen(pr, "rb"); if (!f) f = fopen(caminho, "rb");
+    uint64_t fim = 0; unsigned char e[64];
+    if (f && fread(e, 1, 64, f) == 64 && !memcmp(e, "\177ELF", 4) && e[4] == 2) {
+        uint64_t phoff; uint16_t phent, phnum; memcpy(&phoff, e + 32, 8); memcpy(&phent, e + 54, 2); memcpy(&phnum, e + 56, 2);
+        for (int i = 0; i < phnum && phent >= 56; i++) {
+            unsigned char ph[56]; uint32_t tipo; uint64_t va, msz;
+            if (fseek(f, (long)(phoff + (uint64_t)i * phent), SEEK_SET) || fread(ph, 1, 56, f) != 56) break;
+            memcpy(&tipo, ph, 4); memcpy(&va, ph + 16, 8); memcpy(&msz, ph + 40, 8);
+            if (tipo == 1 && va + msz > fim) fim = va + msz;
+        }
+    }
+    if (f) fclose(f);
+    fim = (fim + 4095) & ~4095ULL;
+    if (nc < 64 && strlen(caminho) < sizeof cache[0].p) { snprintf(cache[nc].p, sizeof cache[nc].p, "%s", caminho); cache[nc++].fim = fim; }
+    return fim;
+}
 static void ler_mapa(void) {
     char p[64]; snprintf(p, sizeof p, "/proc/%d/maps", target);
-    FILE *f = fopen(p, "r"); nrg = 0; if (!f) return;
-    static int cap; char line[512], ult[64] = ""; uint64_t ultfim = 0; int ultfixa = 0;
+    const char *teste = getenv("UNITD_MAPS");  // só o teste: um mapa com nomes de região do Android (o Linux do teste não dá nome)
+    FILE *f = fopen(teste ? teste : p, "r"); nrg = 0; if (!f) return;
+    static int cap; char line[512], ult[64] = ""; uint64_t ultfim = 0, libini = 0, libfim = 0; int ultfixa = 0; char libnome[64] = "";
     while (fgets(line, sizeof line, f)) {
         uint64_t a, b; char perms[8] = "", name[400] = "";
         if (sscanf(line, "%" SCNx64 "-%" SCNx64 " %7s %*s %*s %*s %399[^\n]", &a, &b, perms, name) < 3) continue;
@@ -417,11 +440,32 @@ static void ler_mapa(void) {
         // do alocador que mudam a cada abertura e enchiam o limite de caminhos com caminhos que quebram
         int sistema = !strncmp(name, "/system/", 8) || !strncmp(name, "/apex/", 6) || !strncmp(name, "/vendor/", 8) || !strncmp(name, "/product/", 9)
                    || !strncmp(name, "/system_ext/", 12) || !strncmp(name, "/dev/", 5);
-        if (name[0] == '/') { snprintf(r->lib, sizeof r->lib, "%s", nm + 1); snprintf(ult, sizeof ult, "%s", nm + 1); r->fixa = r->rw && !sistema; }
+        if (name[0] == '/') {
+            if (strcmp(libnome, nm + 1)) { libini = a; libfim = sistema ? 0 : fim_elf(name); snprintf(libnome, sizeof libnome, "%s", nm + 1); }  // 1ª região: a base
+            snprintf(r->lib, sizeof r->lib, "%s", nm + 1); snprintf(ult, sizeof ult, "%s", nm + 1); r->fixa = r->rw && !sistema;
+        }
         // só o 1º bloco anônimo colado na biblioteca é o .bss dela; os seguintes são memória comum que por acaso ficou
         // encostada (o relatório mostrou "libil2cpp.so+1ceec3950": 7 GB depois da biblioteca, e todos quebravam ao reabrir)
-        else if (a == ultfim && ult[0] && (!name[0] || strstr(name, ".bss"))) { snprintf(r->lib, sizeof r->lib, "%s", ult); r->fixa = r->rw && ultfixa; ult[0] = 0; }
+        else if (a == ultfim && ult[0] && (!name[0] || strstr(name, ".bss")) && !(libfim && a >= libini + libfim)) {
+            snprintf(r->lib, sizeof r->lib, "%s", ult); r->fixa = r->rw && ultfixa; ult[0] = 0;
+            // sem nome, o Linux junta a .bss com a memória anônima que vier colada depois numa linha só: o que passa do fim da
+            // biblioteca (pelo ELF) é memória comum. O teste mostrou caminhos "libil2cpp.so+105ae8", depois do fim da .bss
+            if (libfim && b > libini + libfim) {
+                uint64_t corte = libini + libfim; r->fim = corte;
+                if (nrg == cap) { cap *= 2; rg = realloc(rg, cap * sizeof *rg); }
+                reg_t *q = &rg[nrg++]; memset(q, 0, sizeof *q); q->ini = corte; q->fim = b; q->rw = rg[nrg - 2].rw; q->anon = 1;
+                q->usa = q->rw && !name[0];
+                r = &rg[nrg - 2];  // o realloc pode ter mudado o endereço
+            }
+        }
         else ult[0] = 0;
+        // regiões que entram na procura de ponteiros: as mesmas que o GameGuardian procura por padrão (Ca, Ch, Cd, Cb, A), menos
+        // a Java. Ficam de fora as que ele chama de "lentas" (O): pilhas das threads, linker, bibliotecas do sistema, ashmem…
+        // Elas guardam ponteiros velhos que viravam atalhos falsos e deixavam a procura mais lenta
+        r->anon = name[0] != '/';
+        r->usa = r->rw && (r->fixa || !name[0] || strstr(name, "malloc") || !strcmp(name, "[anon:scudo:primary]")
+                 || !strcmp(name, "[anon:scudo:secondary]") || strstr(name, "[heap]"));
+        if (strstr(name, "/dev/zero") && perms[0] == 'r' && perms[1] == 'w') { r->usa = 1; r->anon = 1; }
         if (name[0] == '/') ultfixa = !sistema;
         ultfim = b;
     }
@@ -452,10 +496,10 @@ static int cmp_pt(const void *a, const void *b) { uint64_t x = ((const pt_t *)a)
 // CMAX: caminhos que saem; CPOOL: candidatos juntados antes de escolher (uma biblioteca só não enche tudo - o relatório
 // mostrou 1000 caminhos do Firebase e nenhum do jogo); POR_LIB: no máximo isso de cada biblioteca na saída.
 // DISTFIXA 512 KB: jogos Unity têm dezenas de milhares de classes, e o salto entra na tabela delas (índice × 8)
-enum { NMAX = 2000000, CMAX = 3000, CPOOL = 20000, POR_LIB = 1500, DIST = 0x1000, DISTFIXA = 0x80000, POR_OBJ = 64, HCAP = 1 << 23, PENA = 0x20 };
+enum { NMAX = 2000000, CMAX = 3000, CPOOL = 20000, POR_LIB = 3000, DIST = 0x1000, DISTFIXA = 0x80000, HCAP = 1 << 23, PENA = 0x20 };
 // PENA: custo de cada nível a mais (um pulo a mais é uma chance a mais de quebrar)
-// POR_OBJ: de quem aponta para um mesmo objeto, segue no máximo 64. Não há limite de objetos vizinhos: a procura pelo
-// menor custo já vê os mais perto primeiro, e no Orecraft o limite de 8 cortava os campos de objetos grandes (+d38) e achava 0
+// Sem limite de quem aponta para um mesmo objeto: um objeto popular (um gerenciador que milhares usam) tinha o ponteiro
+// verdadeiro cortado ao acaso (o limite de 64 era da procura antiga, por nível); a procura pelo menor custo não precisa
 // shortcut: até 100 milhões de ponteiros (1/4 da memória livre), 2 milhões de passos, 20 mil candidatos e 3000 caminhos na saída (memória do celular); jogos maiores podem perder caminhos
 // nota de um caminho (menor = mais confiável): cada pulo a mais é uma chance de quebrar; começar no código do jogo
 // (il2cpp/unity/main) é melhor que noutra biblioteca; pulos pequenos são campos de verdade, grandes costumam ser acaso
@@ -469,22 +513,67 @@ static unsigned nota(int nivel, const char *lib, unsigned soma) {
 static int cmp_cam(const void *a, const void *b) { unsigned x = ((const cam_t *)a)->nota, y = ((const cam_t *)b)->nota; return x < y ? -1 : x > y; }
 // liga o endereço t às bibliotecas: cada ponteiro de biblioteca até DISTFIXA antes de t vira um caminho
 // "lib+OFF:oLib[:oExtra]:(deslocamentos de pai até o alvo)". O salto longo só vale saindo da biblioteca (tabelas do Unity)
+// é a ficha de uma classe do Unity (Il2CppClass)? Em +0x10 ela aponta para o nome da classe em texto (ex.: "Recursos").
+// É o que os scripts do GameGuardian usam para achar classes pelo nome; aqui serve para reconhecer o caminho de verdade
+static int eh_classe(uint64_t c) {
+    uint64_t pn; char nm[48];
+    if (ler(SEM_MARCA(c) + 0x10, &pn, 8)) return 0;
+    pn = SEM_MARCA(pn); if (pn < 0x10000 || ler(pn, nm, sizeof nm)) return 0;
+    if (!isalpha((unsigned char)nm[0]) && nm[0] != '_' && nm[0] != '<') return 0;
+    for (int i = 1; i < (int)sizeof nm; i++) {
+        if (!nm[i]) return i >= 2;
+        if (!isalnum((unsigned char)nm[i]) && !strchr("_<>`.$", nm[i])) return 0;
+    }
+    return 0;
+}
+// é uma posição da tabela de classes? As vizinhas (−8 e +8) também são fichas de classe ou vazias, com pelo menos uma ficha.
+// Um campo qualquer de um objeto que por acaso aponta para uma classe (o cabeçalho de todo objeto aponta) tem lixo em volta
+static int eh_tabela(uint64_t pos) {
+    uint64_t v[2]; int classes = 0;
+    if (ler(pos - 8, &v[0], 8) || ler(pos + 8, &v[1], 8)) return 0;
+    for (int i = 0; i < 2; i++) { if (!SEM_MARCA(v[i])) continue; if (!eh_classe(v[i])) return 0; classes++; }
+    return classes > 0;
+}
+// guarda um candidato: a lista é um monte com o pior (maior nota) em cima; cheia, o novo melhor toma o lugar do pior
+static unsigned long achados;  // todos os caminhos achados na procura (a lista guarda só os CPOOL melhores)
+static void por_cam(cam_t *cams, int *nc, const cam_t *c) {
+    int p; achados++;
+    if (*nc < CPOOL) { p = (*nc)++; cams[p] = *c; while (p && cams[(p - 1) / 2].nota < cams[p].nota) { cam_t x = cams[p]; cams[p] = cams[(p - 1) / 2]; cams[(p - 1) / 2] = x; p = (p - 1) / 2; } return; }
+    cams[0] = *c; p = 0;
+    for (;;) {
+        int l = 2 * p + 1, r = l + 1, m = p;
+        if (l < *nc && cams[l].nota > cams[m].nota) m = l;
+        if (r < *nc && cams[r].nota > cams[m].nota) m = r;
+        if (m == p) break;
+        cam_t x = cams[p]; cams[p] = cams[m]; cams[m] = x; p = m;
+    }
+}
 static void ligar(const pt_t *pt, size_t n1, size_t nf, uint64_t t, int pai, uint32_t oext, int temext, int nivel, const no_t *no, cam_t *cams, int *nc) {
     for (int parte = 0; parte < 2; parte++) {  // libil2cpp com janela longa; as outras bibliotecas só DIST
     size_t ini = parte ? n1 : 0, fim = parte ? nf : n1; uint64_t w = parte ? DIST : DISTFIXA;
     uint64_t de = t >= w ? t - w : 0; size_t lo = ini, hi = fim;
     while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
-    for (size_t j = lo; j < fim && pt[j].v <= t && *nc < CPOOL; j++) {
+    for (size_t j = lo; j < fim && pt[j].v <= t; j++) {
         int k = achar_reg(pt[j].onde); if (k < 0 || !rg[k].fixa) continue;
         uint64_t off = pt[j].onde - base_lib(rg[k].lib);
         if (off >= 0x10000000ULL) continue;  // a mais de 256 MB do começo da biblioteca: não é parte dela
         // o salto longo da libil2cpp é tabela[índice da classe]: o tamanho dele não diz nada (é índice × 8): custo fixo,
         // nem barato (os saltos longos falsos passariam na frente) nem pelo tamanho (o caminho de tabela ia para o fim)
         uint32_t o = (uint32_t)(t - pt[j].v); unsigned soma = o > DIST ? 0x400 : o;
-        cam_t *c = &cams[(*nc)++]; int len = snprintf(c->txt, sizeof c->txt, "%s+%" PRIx64 ":%x", rg[k].lib, off, o);
-        if (temext) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", oext); soma += oext; }
-        for (int x = pai; no[x].pai >= 0 && len < (int)sizeof c->txt; x = no[x].pai) { len += snprintf(c->txt + len, sizeof c->txt - len, ":%x", no[x].o); soma += no[x].o; }
-        c->nota = nota(nivel, rg[k].lib, soma);
+        if (temext) soma += oext;
+        for (int x = pai; no[x].pai >= 0; x = no[x].pai) soma += no[x].o;
+        unsigned nt = nota(nivel, rg[k].lib, soma);
+        // passa por uma ficha de classe do Unity e +0xb8 (os campos estáticos): é o jeito de o jogo guardar dados que duram.
+        // Direto (variável da biblioteca → classe) ou pela tabela de classes (tabela[índice] → classe). Vai para a frente: as
+        // variáveis do coletor de lixo da libil2cpp também apontam para o heap e geravam milhares de caminhos mais curtos
+        uint64_t cls = o == 0xb8 ? pt[j].v : (o > DIST && temext && oext == 0xb8 && eh_tabela(t)) ? no[pai].t - 0xb8 : 0;
+        if (cls && eh_classe(cls)) nt = nt > 0x1000 ? nt - 0x1000 : 0;
+        // lista cheia: só entra se for melhor que o pior dela (antes a procura parava ao encher, e o certo podia nem ter aparecido)
+        if (*nc == CPOOL && nt >= cams[0].nota) { achados++; continue; }
+        cam_t c; c.nota = nt; int len = snprintf(c.txt, sizeof c.txt, "%s+%" PRIx64 ":%x", rg[k].lib, off, o);
+        if (temext) len += snprintf(c.txt + len, sizeof c.txt - len, ":%x", oext);
+        for (int x = pai; no[x].pai >= 0 && len < (int)sizeof c.txt; x = no[x].pai) len += snprintf(c.txt + len, sizeof c.txt - len, ":%x", no[x].o);
+        por_cam(cams, nc, &c);
     }
     }
 }
@@ -501,6 +590,9 @@ static size_t limite_ponteiros(void) {
 static void cmd_ptrscan(const char *addr, const char *niv) {
     uint64_t alvo = strtoull(addr, NULL, 16); int nmax = niv[0] ? atoi(niv) : 8; if (nmax < 1 || nmax > 8) nmax = 8;
     ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
+    // a região onde o valor mora sempre entra, mesmo com nome de região "lenta": senão o próprio caminho seria cortado
+    int ka = achar_reg(alvo); const char *incluida = "";
+    if (ka >= 0 && rg[ka].rw && !rg[ka].usa) { rg[ka].usa = 1; incluida = " (a região do valor estava fora e entrou)"; }
     size_t PMAX = limite_ponteiros(); pt_t *pt = malloc(PMAX * sizeof *pt); size_t np = 0;
     enum { BLOCO = 1 << 20 }; unsigned char *buf = malloc(BLOCO);
     // retrato parado: o jogo pausa só enquanto os ponteiros são lidos (uns segundos); montar os caminhos usa o retrato,
@@ -511,27 +603,40 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     // (antes o mapa era lido em ordem e o limite podia acabar antes das bibliotecas: 0 caminhos)
     int cheio = 0;
     // pt[0..n1): bibliotecas com salto longo (libil2cpp); pt[n1..nf): outras bibliotecas; o resto: heap
-    size_t n1 = 0, nf = 0;
+    size_t n1 = 0, nf = 0; uint64_t fora = 0, pulou = 0;
+    char pmc[64]; snprintf(pmc, sizeof pmc, "/proc/%d/pagemap", target); int pmfd = open(pmc, O_RDONLY);
     for (int passo = 0; passo < 3; n1 = passo == 0 ? np : n1, nf = passo == 1 ? np : nf, passo++)
     for (int r = 0; r < nrg && np < PMAX; r++) {
-        if (!rg[r].rw || (passo == 0 ? !rg[r].longe : passo == 1 ? !rg[r].fixa || rg[r].longe : rg[r].fixa)) continue;
+        if (passo == 0 && rg[r].rw && !rg[r].usa) fora += rg[r].fim - rg[r].ini;
+        if (!rg[r].usa || (passo == 0 ? !rg[r].longe : passo == 1 ? !rg[r].fixa || rg[r].longe : rg[r].fixa)) continue;
         for (uint64_t a = rg[r].ini; a < rg[r].fim && np < PMAX; a += BLOCO) {
             size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
-            if (ler(a, buf, n)) continue;
-            for (size_t o = 0; o + 8 <= n && np < PMAX; o += 8) {
-                uint64_t v; memcpy(&v, buf + o, 8); v = SEM_MARCA(v);
-                if (v < 0x10000 || (v & 7)) continue;  // objeto começa alinhado: endereço ímpar é texto/byte, não objeto
-                int k = achar_reg(v); if (k < 0 || !rg[k].rw) continue;
-                pt[np].v = v; pt[np].onde = a + o; np++;
+            // pagemap (como o GameGuardian): página anônima nunca usada não está na memória nem no swap; é só zero, nem lê
+            uint64_t pm[BLOCO / 4096]; size_t npg = (n + 4095) / 4096; int temmapa = 0;
+            if (pmfd >= 0 && rg[r].anon && pread(pmfd, pm, npg * 8, (off_t)(a / 4096 * 8)) == (ssize_t)(npg * 8)) temmapa = 1;
+            for (size_t pg = 0; pg < npg && np < PMAX;) {
+                size_t fimpg = pg;  // um trecho de páginas seguidas: usadas (lê) ou nunca usadas (pula)
+                int usada = !temmapa || (pm[pg] & (3ULL << 62));
+                while (fimpg < npg && (!temmapa || !!(pm[fimpg] & (3ULL << 62)) == usada)) fimpg++;
+                size_t ini = pg * 4096, tam = (fimpg * 4096 < n ? fimpg * 4096 : n) - ini; pg = fimpg;
+                if (!usada) { pulou += tam; continue; }
+                if (ler(a + ini, buf, tam)) continue;
+                for (size_t o = 0; o + 8 <= tam && np < PMAX; o += 8) {
+                    uint64_t v; memcpy(&v, buf + o, 8); v = SEM_MARCA(v);
+                    if (v < 0x10000 || (v & 7)) continue;  // objeto começa alinhado: endereço ímpar é texto/byte, não objeto
+                    int k = achar_reg(v); if (k < 0 || !rg[k].usa) continue;
+                    pt[np].v = v; pt[np].onde = a + ini + o; np++;
+                }
             }
         }
     }
+    if (pmfd >= 0) close(pmfd);
     free(buf);
     kill(target, SIGCONT);
     cheio = np >= PMAX;
     qsort(pt, n1, sizeof *pt, cmp_pt); qsort(pt + n1, nf - n1, sizeof *pt, cmp_pt); qsort(pt + nf, np - nf, sizeof *pt, cmp_pt);
     no_t *no = malloc(NMAX * sizeof *no); int nn = 0, nc = 0;
-    cam_t *cams = malloc(CPOOL * sizeof *cams);
+    cam_t *cams = malloc(CPOOL * sizeof *cams); achados = 0;
     if (!no || !cams) { free(no); free(cams); free(pt); puts("err sem memória para os caminhos"); return; }
     // cada endereço entra uma vez só (pelo caminho mais curto): sem isso o mesmo ponteiro entrava por vários alvos vizinhos
     // e enchia o limite de passos nos primeiros níveis, e os caminhos mais fundos (os do Unity) nunca eram vistos
@@ -547,7 +652,7 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     no[nn++] = (no_t){alvo, -1, 0, 0, 0}; fila[nf2++] = 0;
     int pornivel[9] = {0}, nvisto = 0;
     ligar(pt, n1, nf, alvo, 0, 0, 0, 1, no, cams, &nc);
-    while (nf2 && nc < CPOOL) {
+    while (nf2) {
         int i = fila[0]; fila[0] = fila[--nf2];  // tira o mais barato
         for (int p = 0;;) { int l = 2 * p + 1, r = l + 1, m = p;
             if (l < nf2 && CUSTO(l) < CUSTO(m)) m = l;
@@ -567,19 +672,16 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
         while (lo < hi) { size_t m = (lo + hi) / 2; if (pt[m].v < de) lo = m + 1; else hi = m; }
         size_t ub = lo; hi = np;  // 1º ponteiro com valor > t: anda para trás, do mais perto para o mais longe
         while (ub < hi) { size_t m = (ub + hi) / 2; if (pt[m].v <= t) ub = m + 1; else hi = m; }
-        int filhos = 0; uint64_t ultv = ~0ULL;  // quantos apontam para o mesmo objeto
-        for (size_t j = ub; j-- > lo && nc < CPOOL;) {
-            if (pt[j].v != ultv) { ultv = pt[j].v; filhos = 0; }
-            if (filhos >= POR_OBJ) continue;
+        for (size_t j = ub; j-- > lo;) {
             uint32_t o = (uint32_t)(t - pt[j].v), c = no[i].custo + o + PENA;
             // tabela de vistos cheia (e os passos também): continua só ligando às bibliotecas. Antes a procura parava aqui, e
             // o passo de um campo longe (+d38) nunca era visto
-            if (nvisto >= HCAP / 2) { ligar(pt, n1, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc); filhos++; continue; }
+            if (nvisto >= HCAP / 2) { ligar(pt, n1, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc); continue; }
             uint64_t h = (pt[j].onde >> 3) * 0x9E3779B97F4A7C15ULL >> (64 - 23);
             while (visto[h] && visto[h] != pt[j].onde) h = (h + 1) & (HCAP - 1);
             if (visto[h] && vo[h] <= c) continue;  // já chegou aqui mais barato
             if (!visto[h]) nvisto++;
-            visto[h] = pt[j].onde; vo[h] = c; filhos++;
+            visto[h] = pt[j].onde; vo[h] = c;
             ligar(pt, n1, nf, pt[j].onde, i, o, 1, nivel + 1, no, cams, &nc);  // uma biblioteca aponta para cá? vira caminho
             if (nn < NMAX) { no[nn] = (no_t){pt[j].onde, i, o, c, nivel}; POR(nf2, nn); nf2++; nn++; pornivel[nivel]++; }
         }
@@ -601,8 +703,8 @@ static void cmd_ptrscan(const char *addr, const char *niv) {
     }
     free(cams);
     // números da procura para o relatório (o app só usa as linhas com "+"): ponteiros lidos, se encheu, passos por nível
-    printf("ok %d ponteiros=%zu/%zu%s candidatos=%d passos=%d niveis=%d,%d,%d,%d,%d,%d,%d%s\n", saiu, np, PMAX, cheio ? "(cheio)" : "", nc, nn,
-           pornivel[1], pornivel[2], pornivel[3], pornivel[4], pornivel[5], pornivel[6], pornivel[7], nn >= NMAX ? " (limite de passos)" : "");
+    printf("ok %d ponteiros=%zu/%zu%s fora=%" PRIu64 "MB pulou=%" PRIu64 "MB achados=%lu candidatos=%d passos=%d niveis=%d,%d,%d,%d,%d,%d,%d%s%s\n", saiu, np, PMAX, cheio ? "(cheio)" : "", fora >> 20, pulou >> 20, achados, nc, nn,
+           pornivel[1], pornivel[2], pornivel[3], pornivel[4], pornivel[5], pornivel[6], pornivel[7], nn >= NMAX ? " (limite de passos)" : "", incluida);
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor
 static void cmd_ptr(const char *cam) {
