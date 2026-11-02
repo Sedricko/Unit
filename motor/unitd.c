@@ -426,6 +426,12 @@ static void ler_mapa(void) {
         ultfim = b;
     }
     fclose(f);
+    // jogo Unity (tem libil2cpp): só o código do jogo conta como começo de caminho. As outras bibliotecas (Firebase,
+    // anúncios…) guardam ponteiros para tudo e enchiam a procura (o relatório mostrou 1000 caminhos do Firebase, todos falsos)
+    int unity = 0;
+    for (int i = 0; i < nrg; i++) if (strstr(rg[i].lib, "libil2cpp")) unity = 1;
+    if (unity) for (int i = 0; i < nrg; i++)
+        if (rg[i].fixa && !strstr(rg[i].lib, "il2cpp") && !strstr(rg[i].lib, "unity") && !strstr(rg[i].lib, "libmain")) rg[i].fixa = 0;
 }
 static int achar_reg(uint64_t v) {  // as regiões vêm em ordem no mapa: busca binária
     int lo = 0, hi = nrg - 1;

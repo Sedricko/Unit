@@ -217,7 +217,9 @@ object Ponteiro {
         val votos = ok.groupingBy { it.second!!.first }.eachCount()
         val melhor = votos.maxByOrNull { it.value }
         val valor = melhor?.let { m -> ok.first { it.second!!.first == m.key }.second!!.second }
-        val faz = valor?.toDoubleOrNull()?.let { it.isFinite() && it >= 0 } == true
+        // o número achado tem que ser parecido com o último conhecido (o relatório mostrou um "conferido" com 0, e o jogo com 524)
+        val ultimo = c.valor.toDoubleOrNull()
+        val faz = valor?.toDoubleOrNull()?.let { v -> v.isFinite() && v >= 0 && (ultimo == null || ultimo <= 0 || (v > 0 && v in ultimo / 50..ultimo * 50 + 1000)) } == true
         if (melhor == null || melhor.value < 3 || !faz) {
             Registro.add("decisao", "${c.nome}: não deu para conferir sozinho (${melhor?.value ?: 0} caminho(s) concordam, de ${c.caminhos.size}); guardei todos e tento de novo daqui a pouco e na próxima abertura")
             return c  // não apaga nada: se o jogo ainda estava carregando, os bons pareciam quebrados
@@ -368,8 +370,9 @@ object Ponteiro {
                 }
                 c.caminhos.forEachIndexed { i, cam ->
                     val f = c.falhas[cam] ?: 0
+                    // sem quebrar linha: o caminho é uma palavra comprida e a quebra deixava só o "1." à vista
                     Text("${i + 1}. $cam" + if (f > 0) "   (${f}ª falha)" else "", color = if (f > 0) Color(0xFFFFB86B) else Cor.apagado, fontSize = 11.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1)
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
             }
         }
