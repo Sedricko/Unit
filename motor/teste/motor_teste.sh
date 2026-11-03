@@ -206,7 +206,7 @@ pelonome() {  # nome cenário semente-salvar semente-reabrir campo assinatura-es
     echo "$nome: reaberto, pelo nome: $(tr '\n' ' ' <<<"$r")(${ms} ms) · sem assinatura: $(grep '^ok' <<<"$r0" | head -1)"
     testa "$nome: reaberto, acha o cobre só pelo nome e pela assinatura (1 objeto, no endereço novo)" "[ \"\$(head -1 <<<\"\$r\")\" = '$gcobre' ] && grep -qE '^ok 1 [0-9]+ ' <<<\"\$r\""
     testa "$nome: sem a assinatura vêm vários objetos (a assinatura é que separa)" "grep -qE '^ok ([3-9]|[1-9][0-9]+) ' <<<\"\$r0\""
-    testa "$nome: acha a ficha da classe $como" "grep -q '^ok 1 [0-9]* $como' <<<\"\$r\""
+    testa "$nome: acha a ficha da classe $como, olhando as 2 fichas com o mesmo nome" "grep -q '^ok 1 [0-9]* $como fichas=2' <<<\"\$r\""
     testa "$nome: classe que não existe dá erro claro" "grep -q '^err a classe NaoExiste não foi achada' <<<\"\$r0\""
     testa "$nome: até 45 s (${ms} ms; o celular é mais lento)" "[ $ms -le 45000 ]"
     # 2ª procura na mesma abertura (as tentativas de 20 s e 60 s do app): a ficha já é conhecida, não lê a memória toda de novo

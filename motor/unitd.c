@@ -797,78 +797,80 @@ static void cmd_classe(const char *addr) {
 // pelonome CLASSE ESPAÇO CAMPO [OFF=HEX,OFF=HEX...]: acha a ficha da classe pelas variáveis da libil2cpp (como os
 // TypeInfo do il2cpp), depois todos os objetos dela (começam com o ponteiro para a ficha) e fica com os que têm os mesmos
 // textos. Linhas: o endereço do valor (objeto + CAMPO) -> ok ACHADOS OBJETOS_DA_CLASSE
-static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass) {
-    char campo[32] = "", ass[1100] = ""; sscanf(campo_ass, "%31[^ ] %1099s", campo, ass);
-    uint64_t campo_off = strtoull(campo, NULL, 16); char nome[64], e[64];
-    ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
-    enum { BLOCO = 1 << 20 }; uint64_t *buf = malloc(BLOCO); if (!buf) { puts("err sem memória"); return; }
-    uint64_t klass = 0;
-    // a ficha não muda de lugar enquanto o jogo está aberto: a da última procura, se ainda for a mesma classe, vale (o app
-    // procura de novo aos 20 s e 60 s; pelo texto, a 1ª procura lê a memória toda e leva dezenas de segundos)
-    static pid_t cpid; static uint64_t ckl; static char ccls[64], cesp[64], ccomo[24];
-    int da_cache = cpid == target && !strcmp(ccls, cls) && !strcmp(cesp, esp) && nome_classe(ckl, nome, e) && !strcmp(nome, cls) && !strcmp(e, esp);
-    if (da_cache) klass = ckl;
-    for (int r = 0; r < nrg && !klass; r++) {  // 1) a ficha: alguma variável da biblioteca do jogo aponta para ela
+// fichas com esse nome e espaço de nomes (pode haver mais de uma: "Item" é um nome comum, e várias bibliotecas do jogo
+// podem ter uma classe "Item" sem espaço de nomes). Junta em kl[] as que ainda não estão lá
+enum { KMAX = 16 };
+static int junta_ficha(uint64_t *kl, int nk, uint64_t v) {
+    for (int i = 0; i < nk; i++) if (kl[i] == v) return nk;
+    if (nk < KMAX) kl[nk++] = v;
+    return nk;
+}
+static int fichas_pela_variavel(uint64_t *kl, int nk, const char *cls, const char *esp, uint64_t *buf, size_t bloco) {
+    char nome[64], e[64];
+    for (int r = 0; r < nrg; r++) {  // alguma variável da biblioteca do jogo aponta para ela (como os TypeInfo do il2cpp)
         if (!rg[r].fixa) continue;
-        for (uint64_t a = rg[r].ini; a < rg[r].fim && !klass; a += BLOCO) {
-            size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
-            if (ler(a, buf, n)) continue;
-            for (size_t i = 0; i < n / 8 && !klass; i++) {
-                uint64_t v = SEM_MARCA(buf[i]); if (v < 0x10000 || (v & 7)) continue;
-                int k = achar_reg(v); if (k < 0 || !rg[k].rw) continue;
-                if (nome_classe(v, nome, e) && !strcmp(nome, cls) && !strcmp(e, esp)) klass = v;
-            }
-        }
-    }
-    const char *como = da_cache ? ccomo : "pela-variavel";
-    if (!klass) {  // 1b) pelo texto do nome, como os scripts do GameGuardian: nem toda classe tem variável na biblioteca
-        // (o Orecraft: o "Item" não tinha). Acha "\0NOME\0" (o global-metadata) e quem aponta para ele: a ficha começa 0x10 antes
-        char pad[80]; size_t L = strlen(cls); uint64_t S[64]; int ns = 0;
-        if (L + 2 < sizeof pad) {
-            pad[0] = 0; memcpy(pad + 1, cls, L); pad[L + 1] = 0;
-            for (int r = 0; r < nrg && ns < 64; r++) {
-                if (!rg[r].rd) continue;
-                for (uint64_t a = rg[r].ini; a < rg[r].fim && ns < 64; a += BLOCO - 128) {  // blocos encostados: o nome pode cair na emenda
-                    size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
-                    if (ler(a, buf, n)) continue;
-                    for (char *q = (char *)buf; ns < 64 && (q = memmem(q, n - (size_t)(q - (char *)buf), pad, L + 2)); q++) {
-                        uint64_t em = a + (uint64_t)(q - (char *)buf) + 1; int ja = 0;
-                        for (int i = 0; i < ns; i++) if (S[i] == em) ja = 1;
-                        if (!ja) S[ns++] = em;
-                    }
-                    if (n < BLOCO) break;
-                }
-            }
-        }
-        for (int r = 0; r < nrg && ns && !klass; r++) {
-            if (!rg[r].usa) continue;
-            for (uint64_t a = rg[r].ini; a < rg[r].fim && !klass; a += BLOCO) {
-                size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
-                if (ler(a, buf, n)) continue;
-                for (size_t i = 2; i < n / 8 && !klass; i++) {
-                    uint64_t v = SEM_MARCA(buf[i]); int achou = 0;
-                    for (int k = 0; k < ns; k++) if (v == S[k]) achou = 1;
-                    if (achou && nome_classe(a + i * 8 - 0x10, nome, e) && !strcmp(nome, cls) && !strcmp(e, esp)) klass = a + i * 8 - 0x10;
-                }
-            }
-        }
-        if (klass) como = "pelo-texto";
-    }
-    if (!klass) { free(buf); printf("err a classe %s não foi achada (o jogo ainda não usou ela?)\n", cls); return; }
-    if (klass != ckl || cpid != target) { cpid = target; ckl = klass; snprintf(ccls, sizeof ccls, "%s", cls); snprintf(cesp, sizeof cesp, "%s", esp); snprintf(ccomo, sizeof ccomo, "%s", como); }
-    int achados = 0, objetos = 0, temnum = strstr(ass, "n") != NULL, melhor = 0;
-    enum { MAXO = 4096 }; uint64_t *cand = malloc(MAXO * 8); int *nota_o = malloc(MAXO * sizeof *nota_o), nc = 0;
-    if (!cand || !nota_o) { free(buf); free(cand); free(nota_o); puts("err sem memória"); return; }
-    for (int r = 0; r < nrg; r++) {  // 2) os objetos: começam com o ponteiro para a ficha (com ou sem a marca 0xb4)
-        if (!rg[r].usa || rg[r].fixa) continue;
-        for (uint64_t a = rg[r].ini; a < rg[r].fim; a += BLOCO) {
-            size_t n = rg[r].fim - a < BLOCO ? rg[r].fim - a : BLOCO;
+        for (uint64_t a = rg[r].ini; a < rg[r].fim; a += bloco) {
+            size_t n = rg[r].fim - a < bloco ? rg[r].fim - a : bloco;
             if (ler(a, buf, n)) continue;
             for (size_t i = 0; i < n / 8; i++) {
-                if (SEM_MARCA(buf[i]) != klass) continue;
-                uint64_t obj = a + i * 8; objetos++;
+                uint64_t v = SEM_MARCA(buf[i]); if (v < 0x10000 || (v & 7)) continue;
+                int k = achar_reg(v); if (k < 0 || !rg[k].rw) continue;
+                if (nome_classe(v, nome, e) && !strcmp(nome, cls) && !strcmp(e, esp)) nk = junta_ficha(kl, nk, v);
+            }
+        }
+    }
+    return nk;
+}
+// pelo texto do nome, como os scripts do GameGuardian (nem toda classe tem variável na biblioteca; o "Item" do Orecraft
+// não tinha): acha "\0NOME\0" (o global-metadata) e quem aponta para ele; a ficha começa 0x10 antes
+static int fichas_pelo_texto(uint64_t *kl, int nk, const char *cls, const char *esp, uint64_t *buf, size_t bloco) {
+    char pad[80], nome[64], e[64]; size_t L = strlen(cls); uint64_t S[64]; int ns = 0;
+    if (L + 2 >= sizeof pad) return nk;
+    pad[0] = 0; memcpy(pad + 1, cls, L); pad[L + 1] = 0;
+    for (int r = 0; r < nrg && ns < 64; r++) {
+        if (!rg[r].rd) continue;
+        for (uint64_t a = rg[r].ini; a < rg[r].fim && ns < 64; a += bloco - 128) {  // blocos encostados: o nome pode cair na emenda
+            size_t n = rg[r].fim - a < bloco ? rg[r].fim - a : bloco;
+            if (ler(a, buf, n)) continue;
+            for (char *q = (char *)buf; ns < 64 && (q = memmem(q, n - (size_t)(q - (char *)buf), pad, L + 2)); q++) {
+                uint64_t em = a + (uint64_t)(q - (char *)buf) + 1; int ja = 0;
+                for (int i = 0; i < ns; i++) if (S[i] == em) ja = 1;
+                if (!ja) S[ns++] = em;
+            }
+            if (n < bloco) break;
+        }
+    }
+    for (int r = 0; r < nrg && ns; r++) {
+        if (!rg[r].usa) continue;
+        for (uint64_t a = rg[r].ini; a < rg[r].fim; a += bloco) {
+            size_t n = rg[r].fim - a < bloco ? rg[r].fim - a : bloco;
+            if (ler(a, buf, n)) continue;
+            for (size_t i = 2; i < n / 8; i++) {
+                uint64_t v = SEM_MARCA(buf[i]); int achou = 0;
+                for (int k = 0; k < ns; k++) if (v == S[k]) achou = 1;
+                if (achou && nome_classe(a + i * 8 - 0x10, nome, e) && !strcmp(nome, cls) && !strcmp(e, esp)) nk = junta_ficha(kl, nk, a + i * 8 - 0x10);
+            }
+        }
+    }
+    return nk;
+}
+// os objetos de qualquer uma das fichas kl[ini..nk) (começam com o ponteiro para a ficha, com ou sem a marca 0xb4) que têm a
+// assinatura. Com números, ficam só os de maior pontuação
+static void objetos_da_classe(const uint64_t *kl, int nk, const char *ass, uint64_t *buf, size_t bloco,
+                              uint64_t *cand, int *nc, int maxo, int *melhor, int *objetos) {
+    int temnum = strstr(ass, "n") != NULL;
+    for (int r = 0; r < nrg; r++) {
+        if (!rg[r].usa || rg[r].fixa) continue;
+        for (uint64_t a = rg[r].ini; a < rg[r].fim; a += bloco) {
+            size_t n = rg[r].fim - a < bloco ? rg[r].fim - a : bloco;
+            if (ler(a, buf, n)) continue;
+            for (size_t i = 0; i < n / 8; i++) {
+                uint64_t h = SEM_MARCA(buf[i]); int dela = 0;
+                for (int k = 0; k < nk; k++) if (h == kl[k]) dela = 1;
+                if (!dela) continue;
+                uint64_t obj = a + i * 8; (*objetos)++;
                 int bate = 1, pontos = 0; char tmp[1100]; snprintf(tmp, sizeof tmp, "%s", ass); char *sv = NULL;
-                for (char *t = strtok_r(tmp, ",", &sv); t && bate; t = strtok_r(NULL, ",", &sv)) {  // 3) a assinatura
+                for (char *t = strtok_r(tmp, ",", &sv); t && bate; t = strtok_r(NULL, ",", &sv)) {  // a assinatura
                     char *ig = strchr(t, '='); if (!ig) continue; *ig = 0;
                     if (t[0] == 'n') {  // número: conta pontos (um campo que muda não elimina, só pontua menos)
                         uint32_t w; if (!ler(obj + strtoull(t + 1, NULL, 16), &w, 4) && w == (uint32_t)strtoul(ig + 1, NULL, 16)) pontos++;
@@ -881,18 +883,49 @@ static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass
                     bate = texto_unity(p, hex, sizeof hex) && !strcmp(hex, ig + 1);
                 }
                 if (!bate) continue;
-                // guarda só os de maior pontuação até agora: com milhares de objetos da classe, a lista enchia antes dos
-                // certos aparecerem (o teste com 200 mil objetos mostrou)
-                if (temnum && pontos > melhor) { melhor = pontos; nc = 0; }
-                if ((!temnum || pontos == melhor) && nc < MAXO) { cand[nc] = obj; nota_o[nc++] = pontos; }
+                // só os de maior pontuação até agora: com milhares de objetos da classe a lista enchia antes dos certos
+                if (temnum && pontos > *melhor) { *melhor = pontos; *nc = 0; }
+                if ((!temnum || pontos == *melhor) && *nc < maxo) cand[(*nc)++] = obj;
             }
         }
     }
+}
+
+// pelonome CLASSE ESPAÇO CAMPO [OFF=HEX,...]: acha as fichas da classe (pelas variáveis da libil2cpp e, se não der, pelo
+// texto do nome), depois os objetos delas com a mesma assinatura. Linhas: o endereço do valor (objeto + CAMPO)
+// -> ok ACHADOS OBJETOS_DA_CLASSE COMO (pela-variavel / pelo-texto)
+static void cmd_pelonome(const char *cls, const char *esp, const char *campo_ass) {
+    char campo[32] = "", ass[1100] = ""; sscanf(campo_ass, "%31[^ ] %1099s", campo, ass);
+    uint64_t campo_off = strtoull(campo, NULL, 16); char nome[64], e[64];
+    ler_mapa(); if (!nrg) { puts("err não li o mapa de memória do jogo"); return; }
+    enum { BLOCO = 1 << 20, MAXO = 4096 };
+    uint64_t *buf = malloc(BLOCO), *cand = malloc(MAXO * 8);
+    if (!buf || !cand) { free(buf); free(cand); puts("err sem memória"); return; }
+    // as fichas que já deram objetos nesta abertura: não mudam de lugar enquanto o jogo está aberto (o app procura de novo
+    // aos 20 s e 60 s; pelo texto, ler a memória toda leva dezenas de segundos). Só as que DERAM objetos: logo ao abrir o
+    // jogo ainda está montando, e uma ficha sem objetos não pode prender as próximas procuras (o relatório: 0 o tempo todo)
+    static pid_t cpid; static uint64_t ckl[KMAX]; static int cnk; static char ccls[64], cesp[64], ccomo[24];
+    uint64_t kl[KMAX]; int nk = 0, nc = 0, melhor = 0, objetos = 0; const char *como = "pela-variavel";
+    if (cpid == target && !strcmp(ccls, cls) && !strcmp(cesp, esp))
+        for (int i = 0; i < cnk; i++) if (nome_classe(ckl[i], nome, e) && !strcmp(nome, cls) && !strcmp(e, esp)) nk = junta_ficha(kl, nk, ckl[i]);
+    if (nk) { como = ccomo; objetos_da_classe(kl, nk, ass, buf, BLOCO, cand, &nc, MAXO, &melhor, &objetos); }
+    if (!nc) {  // sem lembrança, ou ela não deu nada: procura todas as fichas com esse nome
+        int ini = nk; nk = fichas_pela_variavel(kl, nk, cls, esp, buf, BLOCO); como = "pela-variavel";
+        if (nk > ini) objetos_da_classe(kl + ini, nk - ini, ass, buf, BLOCO, cand, &nc, MAXO, &melhor, &objetos);
+        if (!nc) {
+            ini = nk; nk = fichas_pelo_texto(kl, nk, cls, esp, buf, BLOCO);
+            if (nk > ini) { como = "pelo-texto"; objetos_da_classe(kl + ini, nk - ini, ass, buf, BLOCO, cand, &nc, MAXO, &melhor, &objetos); }
+        }
+    }
     free(buf);
-    // com números: só os de maior pontuação (se mais de um empatar, vão todos e o app decide)
-    for (int i = 0; i < nc; i++) { printf("%" PRIx64 "\n", cand[i] + campo_off); achados++; }
-    free(cand); free(nota_o);
-    printf("ok %d %d %s\n", achados, objetos, como);
+    if (!nk) { free(cand); printf("err a classe %s não foi achada (o jogo ainda não usou ela?)\n", cls); return; }
+    if (nc) {  // lembra as fichas que deram objetos
+        cpid = target; cnk = 0; snprintf(ccls, sizeof ccls, "%s", cls); snprintf(cesp, sizeof cesp, "%s", esp); snprintf(ccomo, sizeof ccomo, "%s", como);
+        for (int i = 0; i < nc; i++) { uint64_t h; if (!ler(cand[i], &h, 8)) cnk = junta_ficha(ckl, cnk, SEM_MARCA(h)); }
+    }
+    for (int i = 0; i < nc; i++) printf("%" PRIx64 "\n", cand[i] + campo_off);
+    free(cand);
+    printf("ok %d %d %s fichas=%d\n", nc, objetos, como, nk);
 }
 // segue "lib+OFF:o1:o2:...": lê o ponteiro em base+OFF, soma o1, lê de novo, ... o último deslocamento dá o valor
 static void cmd_ptr(const char *cam) {

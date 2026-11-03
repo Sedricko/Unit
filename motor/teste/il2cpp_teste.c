@@ -7,6 +7,7 @@
 void *volatile Recursos_TypeInfo;
 void *volatile s_TypeInfoTable;
 void *volatile ItemRecurso_TypeInfo;  // como no il2cpp: a variável da biblioteca que aponta para a ficha da classe
+void *volatile Falsa_TypeInfo;  // outra classe com o mesmo nome (em outra biblioteca do jogo, por exemplo)
 void *volatile Raiz_Lixo;  // aponta para uma região que o motor deve ignorar (pilha de thread falsa)
 void lixo_raiz(void *p) { Raiz_Lixo = p; }
 char reserva[1 << 20];  // .bss grande: vira a região anônima colada na biblioteca, como no Android
@@ -49,6 +50,9 @@ static char *texto(const char *t, int marca) {
 // sem_texto 2 (cenário F, como o "Item" do Orecraft: só ponteiros e o valor): +0x10 aponta para a definição com o nome
 static char *itens_unity(size_t tam, size_t campo, float valor, int marca, int sem_texto) {
     cls_texto = ficha("String", "System", marca);
+    // outra classe com o MESMO nome e espaço de nomes, criada antes (vem primeiro na memória), sem nenhum objeto: o motor tem
+    // que olhar todas as fichas com esse nome, não só a primeira (no Orecraft: "Item" achou a classe e 0 objetos)
+    char *falsa = ficha("ItemRecurso", "Jogo", marca); Falsa_TypeInfo = falsa;
     // sem_texto (como o Orecraft): o item também não tem variável na biblioteca; só dá para achar a ficha pelo texto do nome
     char *cls_item = ficha("ItemRecurso", "Jogo", marca); if (!sem_texto) ItemRecurso_TypeInfo = cls_item;
     char *cls_def = ficha("DefItem", "Jogo", marca);
