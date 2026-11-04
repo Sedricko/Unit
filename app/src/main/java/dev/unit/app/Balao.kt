@@ -702,7 +702,7 @@ class Balao : Service() {
         Nucleo.salvos.toList().forEach { s ->
             if (!apagando) LinhaSalvo(s) else Linha {
                 Text(s.nome, color = Cor.texto, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                Box(Modifier.padding(start = 8.dp).toque(!Nucleo.ocupado) { Nucleo.esquecerSalvo(s) }) { Text("Apagar", color = Cor.ruim, fontSize = 13.sp) }
+                Box(Modifier.padding(start = 8.dp).toque { Nucleo.esquecerSalvo(s) }) { Text("Apagar", color = Cor.ruim, fontSize = 13.sp) }  // sempre ativo
             }
         }
         Text(if (apagando) "Toque em Apagar no valor que quer tirar (se estiver congelado, solta antes)." else "Toque num valor para editar; no floco, congela ou solta.", color = Cor.apagado, fontSize = 12.sp)

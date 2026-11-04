@@ -476,6 +476,10 @@ object Ponteiro {
     }
 
     fun esquecer(nome: String) { val j = Nucleo.jogo ?: return; gravar(j.pacote, lista(j.pacote).filter { it.nome != nome }) }
+    /** Apagou o valor dos Salvos: some também o que ajudava a achar ele de novo (caminhos, nome, dúvida, aviso). */
+    fun esquecerTudo(nome: String, addr: String) {
+        esquecer(nome); duvida.remove(nome); precisaNumero.remove(nome); achado.remove(nome); estadoAuto.remove(addr); autoFeitos.remove(addr)
+    }
 
     // ---- exportar / importar: um arquivo com todos os jogos ----
     fun exportar(): String {

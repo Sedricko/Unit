@@ -288,9 +288,14 @@ object Nucleo {
         val a = org.json.JSONArray(salvosGuardados?.getString(pacote, "[]") ?: "[]")
         (0 until a.length()).map { i -> a.getJSONObject(i).let { o -> Salvo(o.getString("addr"), o.getString("tipo"), o.getString("nome"), o.optString("valor"), false, perdido = true) } }
     }.getOrDefault(emptyList())
-    fun esquecerSalvo(s: Salvo) = rodar {
-        if (s.congelado) cmd { it.cmd("unfreeze ${s.addr}") }  // apagado não pode ficar congelado sem ninguém ver
+    /**
+     * Apaga na hora, mesmo com o Unit ocupado (antes esperava a procura terminar e o botão parecia não funcionar), e apaga
+     * também o que o Unit guardou para achar o valor ao reabrir: senão ele voltava sozinho na próxima abertura.
+     */
+    fun esquecerSalvo(s: Salvo) {
         salvos.removeAll { it.nome == s.nome && it.addr == s.addr }
+        if (salvos.none { it.nome == s.nome }) Ponteiro.esquecerTudo(s.nome, s.addr)
+        if (s.congelado) semAviso { cmd { it.cmd("unfreeze ${s.addr}") } }  // apagado não pode ficar congelado sem ninguém ver
         Registro.add("decisao", "Você apagou ${s.nome} dos salvos")
     }
 
