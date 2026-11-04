@@ -230,7 +230,7 @@ object Nucleo {
         val n = v.toDoubleOrNull()
         fun t(d: Double) = if (d % 1.0 == 0.0) d.toLong().toString() else d.toString()
         if (!refinar && total == 0L && n != null) {
-            val perto = runCatching { cmd { it.cmd("search ${t(n - 1)}~${t(n + 1)}") }.status.substringBefore(' ').toLongOrNull() }.getOrNull() ?: 0
+            val perto = runCatching { cmd { it.cmd("search ${t(n - 1)}~${t(n + 1)}") }.status.substringBefore(' ').toLongOrNull() }.getOrNull() ?: 0L
             total = null  // o próximo é um Buscar novo (refinar 0 resultados não serve)
             val porque = if (perto > 0) "Nenhum $v exato, mas $perto número(s) perto (${t(n - 1)} a ${t(n + 1)}): o número pode ter mudado antes da busca. Mude o valor no jogo e busque o número novo."
                 else "Não há nenhum número perto de $v na memória, em nenhum tipo: este jogo provavelmente guarda esse valor codificado (proteção) ou ele vem do servidor. O Unit não mexe nesses valores."
