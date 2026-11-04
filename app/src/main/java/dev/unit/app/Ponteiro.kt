@@ -253,6 +253,7 @@ object Ponteiro {
     private val trava = kotlinx.coroutines.sync.Mutex()
     fun aplicar() = Nucleo.rodar { trava.withLock { aplicarJa() } }
     private suspend fun aplicarJa() {
+        refazer = false  // a escolha pedida começou: os que caíram até aqui entram nela
         val j = Nucleo.jogo ?: return
         // ainda é o mesmo valor do mesmo jogo? (apagado no meio da procura, ou outro jogo escolhido: não recoloca nada)
         fun vale(nome: String) = Nucleo.jogo?.pid == j.pid && lista(j.pacote).any { it.nome == nome }
@@ -539,8 +540,13 @@ object Ponteiro {
         if (System.currentTimeMillis() - abriuEm > 5 * 60_000L || achado[nome] != (j.pid to addr) || !zerados.add(addr)) return
         achado.remove(nome)
         Registro.add("decisao", "$nome: o objeto escolhido ($addr) foi para 0 logo depois de abrir (era a cópia do save?): escolhendo de novo")
+        // vários caem juntos (a cópia do save inteira é zerada): uma escolha só para todos (antes eram 4 escolhas, cada
+        // uma refazendo os 4: a mesma decisão 18 vezes no registro)
+        if (refazer) return
+        refazer = true
         aplicar()
     }
+    private var refazer = false  // uma nova escolha já foi pedida e ainda não começou
 
     /** Apagou o valor dos Salvos: some também o que ajudava a achar ele de novo (caminhos, nome, dúvida, aviso). */
     fun esquecerTudo(nome: String, addr: String) {
