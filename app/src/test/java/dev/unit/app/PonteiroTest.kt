@@ -105,5 +105,11 @@ class PonteiroTest {
         assertEquals("a1", Ponteiro.escolher(listOf("a1" to "211.4", "a2" to "99"), "211", "f32", emptySet()))  // Float arredondado
         assertEquals(null, Ponteiro.escolher(listOf("a1" to "211", "a2" to "211"), "211", "f32", emptySet()))  // empate: pede o número
         assertEquals(null, Ponteiro.escolher(cands, "", "f32", emptySet()))      // sem último valor
+        // o relatório: o jogo mudou de 235 para 236 com o Unit esperando; o outro objeto tinha 1 → fica o 236
+        assertEquals("a1", Ponteiro.escolher(listOf("a1" to "236", "a2" to "1"), "235", "f32", emptySet()))
+        // dois perto do último valor (235 e 234): não chuta, pede o número
+        assertEquals(null, Ponteiro.escolher(listOf("a1" to "236", "a2" to "234"), "235", "f32", emptySet()))
+        // longe demais (o último valor era de outra abertura): não chuta
+        assertEquals(null, Ponteiro.escolher(listOf("a1" to "300", "a2" to "1"), "235", "f32", emptySet()))
     }
 }

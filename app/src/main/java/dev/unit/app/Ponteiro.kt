@@ -112,12 +112,19 @@ object Ponteiro {
 
     /**
      * Vários objetos com a mesma assinatura: o que um caminho guardado alcança; senão o ÚNICO com o último valor conhecido
-     * (o jogo salva o número: ao reabrir é o mesmo de quando fechou). Nenhum se destaca: null (aí o app pede o número).
+     * (o jogo salva o número: ao reabrir é o mesmo de quando fechou); senão o claramente mais perto dele (o jogo pode ter
+     * mudado um pouco). Nenhum se destaca: null (aí o app pede o número).
      */
     fun escolher(cands: List<Pair<String, String?>>, ultimo: String, tipo: String, peloCaminho: Set<String>): String? {
         cands.firstOrNull { it.first in peloCaminho }?.let { return it.first }
         val u = ultimo.toDoubleOrNull() ?: return null
-        return cands.filter { (_, v) -> v != null && bate(tipo, v, u) }.singleOrNull()?.first
+        cands.filter { (_, v) -> v != null && bate(tipo, v, u) }.let { if (it.size == 1) return it[0].first; if (it.size > 1) return null }
+        // nenhum igual (o jogo mudou o número desde que fechou: 235 → 236): o mais perto, se for claramente o mais perto
+        val d = cands.mapNotNull { (a, v) -> v?.toDoubleOrNull()?.let { a to abs(it - u) } }.sortedBy { it.second }
+        if (d.isEmpty()) return null
+        val perto = d[0].second <= maxOf(5.0, abs(u) * 0.05)
+        val folga = d.size == 1 || d[1].second >= 3 * d[0].second + 1
+        return if (perto && folga) d[0].first else null
     }
 
     /** O número achado é parecido com o último conhecido? (o relatório mostrou um "conferido" com 0, e o jogo com 524) */
@@ -168,6 +175,7 @@ object Ponteiro {
                 val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
                 if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
                 precisaNumero.remove(nome)
+                achado[nome] = j.pid to addr
                 Registro.add("caminho", "$nome: confirmado pelo número da tela (${EmVolta.texto(tela)}) entre ${achados.size} objetos achados pelo nome")
                 recarga++
                 return@rodar
@@ -227,6 +235,9 @@ object Ponteiro {
         val valorAgora = mutableMapOf<String, String>()
         faltaNome.clear()
         for (c in todos.filter { it.unity.isNotEmpty() }) {
+            // já voltou nesta abertura: não decide de novo (o relatório: achou certo aos 20 s e aos 60 s pediu o número)
+            val ja = achado[c.nome]
+            if (ja != null && ja.first == j.pid) { pelonome[c.nome] = ja.second; continue }
             faltaNome += c.nome  // sai daqui quando achar; senão as tentativas de 20 s e 60 s procuram de novo
             val r = runCatching { Nucleo.cmd { it.cmd("pelonome ${c.unity}") } }.getOrNull()
             val achados = r?.linhas.orEmpty().filter { it.isNotBlank() }
@@ -239,7 +250,8 @@ object Ponteiro {
                 Registro.add("decisao", "${c.nome}: pelo nome achei ${achados.size} objetos; " + when {
                     escolhido == null -> "nenhum se destacou (nem caminho nem o último valor, ${c.valor})"
                     porCaminho.any { it == escolhido } -> "fiquei com $escolhido: um caminho guardado chega nele"
-                    else -> "fiquei com $escolhido: é o único com o último valor (${c.valor})"
+                    cands.any { it.first == escolhido && it.second?.let { v -> bate(c.tipo, v, c.valor.toDoubleOrNull() ?: Double.NaN) } == true } -> "fiquei com $escolhido: é o único com o último valor (${c.valor})"
+                    else -> "fiquei com $escolhido: é o mais perto do último valor (${c.valor})"
                 }, cands.map { "${it.first} = ${it.second ?: "?"}" })
             }
             if (escolhido == null) {
@@ -253,7 +265,7 @@ object Ponteiro {
             val s = Salvo(addr, c.tipo, c.nome, if (congela) c.valor else v, congela, caminho = true)
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
             if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
-            pelonome[c.nome] = addr; faltaNome -= c.nome
+            pelonome[c.nome] = addr; faltaNome -= c.nome; achado[c.nome] = j.pid to addr
             if (!congela) valorAgora[c.nome] = v  // o último valor conhecido (desempata na próxima abertura)
             Registro.add("caminho", "${c.nome} pelo nome (${rotuloUnity(c.unity)}) = ${s.valor} · sem caminho e sem digitar")
         }
@@ -344,7 +356,18 @@ object Ponteiro {
                 estadoAuto[s.addr] = "nenhum caminho achado"; aoTerminar?.invoke("${s.nome}: nenhum caminho achado")
                 Registro.add("caminho", "${s.nome}: nenhum caminho achado sozinho (vai precisar achar de novo ao reabrir)"); return@semAviso
             }
-            val nome = Nucleo.salvos.firstOrNull { it.addr == s.addr }?.nome ?: s.nome  // pode ter sido renomeado enquanto procurava
+            var nome = Nucleo.salvos.firstOrNull { it.addr == s.addr }?.nome ?: s.nome  // pode ter sido renomeado enquanto procurava
+            // o mesmo objeto do Unity (mesma classe, campo e assinatura) já guardado com outro nome: é o mesmo valor. Junta no
+            // nome de antes e tira o antigo dos Salvos (o relatório: "Cobre" antigo e "Valor 2" novo, o antigo escolhendo errado)
+            val igual = unity?.let { u -> lista(j.pacote).firstOrNull { it.unity == u && it.nome != nome } }
+            if (igual != null) {
+                val novo = igual.nome
+                Nucleo.salvos.removeAll { it.nome == novo && it.addr != s.addr }
+                val i = Nucleo.salvos.indexOfFirst { it.addr == s.addr }
+                if (i >= 0) Nucleo.salvos[i] = Nucleo.salvos[i].copy(nome = novo)
+                Registro.add("decisao", "$nome é o mesmo valor que $novo (mesmo objeto do Unity): juntei em $novo")
+                nome = novo
+            }
             gravar(j.pacote, juntar(lista(j.pacote), listOf(Caminho(nome, s.tipo, c, valor = s.valor, conferido = false, pid = j.pid, unity = unity ?: ""))))
             Registro.add("caminho", "$nome: ${c.size} caminhos guardados sozinhos (${(System.currentTimeMillis() - t0) / 1000} s) · confiro na próxima abertura", lista5(c, "+ achado"))
             estadoAuto[s.addr] = (if (unity != null) "pelo nome ✓ · " else "") + "${c.size} caminhos guardados · confere ao reabrir"
@@ -406,7 +429,7 @@ object Ponteiro {
             }
             kotlinx.coroutines.delay(3_000)  // espera a 3ª tentativa terminar
             // não achou sozinho nas 3 tentativas: aí sim pede o número da tela
-            val faltam = lista(j.pacote).filter { !it.conferido }.map { it.nome }
+            val faltam = lista(j.pacote).filter { !it.conferido && achado[it.nome]?.first != j.pid }.map { it.nome }
             if (Nucleo.jogo?.pid == j.pid && faltam.isNotEmpty()) {
                 precisaNumero += faltam
                 Registro.add("decisao", "Não achei sozinho: ${faltam.joinToString()} · pedindo o número da tela")
@@ -414,6 +437,9 @@ object Ponteiro {
             }
         }
     }
+
+    /** Valores que já voltaram nesta abertura (nome → pid do jogo e endereço): as tentativas seguintes não mexem neles. */
+    private val achado = mutableMapOf<String, Pair<Int, String>>()
 
     /** Valores do Unity que ainda não voltaram pelo nome nesta abertura (as tentativas de 20 s e 60 s procuram de novo). */
     private val faltaNome = mutableSetOf<String>()
