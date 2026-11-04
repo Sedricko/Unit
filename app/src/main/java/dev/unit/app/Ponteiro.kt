@@ -506,24 +506,23 @@ object Ponteiro {
         Registro.add("caminho", "$nome: ${if (sim) "fixado (protegido e realimentado)" else "não está mais fixado"}")
     }
 
-    /** Ainda há valor a conferir: tenta de novo em 20 s e em 60 s (o jogo pode montar as estruturas depois de abrir). */
-    fun tentarDeNovo() {
+    /** Ainda há valor a conferir: tenta de novo 20 s depois de abrir (o jogo pode montar as estruturas depois) e para. */
+    // só uma vez: o que falta pode ser um item que ainda não existe nesta partida (o relatório: 5 itens, 3 tentativas de
+    // ~8 s cada, a cada abertura). Depois fica parado até a pessoa tocar em "Procurar de novo" (pedido = true)
+    fun tentarDeNovo(pedido: Boolean = false) {
         val j = Nucleo.jogo ?: return
         precisaNumero.clear()
         Nucleo.semAviso {
-            for (espera in listOf(20_000L, 40_000L)) {
-                kotlinx.coroutines.delay(espera)
-                // pelo nome também: logo ao abrir o jogo a classe pode não estar carregada (o relatório: achou nada no 1º segundo)
-                if (Nucleo.jogo?.pid != j.pid || (lista(j.pacote).none { !it.conferido } && faltaNome.isEmpty())) return@semAviso
-                Registro.add("decisao", "Conferindo os caminhos de novo (${if (espera == 20_000L) "20" else "60"} s depois de abrir)")
-                aplicar().join()  // espera terminar (antes o pedido de número saía com a procura ainda rodando)
-            }
-            // não achou sozinho nas 3 tentativas: aí sim pede o número da tela
+            kotlinx.coroutines.delay(if (pedido) 0L else 20_000L)
+            // pelo nome também: logo ao abrir o jogo a classe pode não estar carregada (o relatório: achou nada no 1º segundo)
+            if (Nucleo.jogo?.pid != j.pid || (lista(j.pacote).none { !it.conferido } && faltaNome.isEmpty())) return@semAviso
+            Registro.add("decisao", if (pedido) "Procurando de novo (você pediu)" else "Conferindo os caminhos de novo (20 s depois de abrir)")
+            aplicar().join()  // espera terminar (antes o pedido de número saía com a procura ainda rodando)
             val faltam = lista(j.pacote).filter { !it.conferido && achado[it.nome]?.first != j.pid }.map { it.nome }
             if (Nucleo.jogo?.pid == j.pid && faltam.isNotEmpty()) {
                 precisaNumero += faltam
-                Registro.add("decisao", "Não achei sozinho: ${faltam.joinToString()} · pedindo o número da tela")
-                aoTerminar?.invoke("${faltam.joinToString()}: não achei sozinho — abra o painel do Unit e confirme o número")
+                Registro.add("decisao", "Não achei sozinho: ${faltam.joinToString()} · parado até você pedir para procurar de novo (ou digitar o número)")
+                if (!pedido) aoTerminar?.invoke("${faltam.joinToString()}: não achei. Quando estiver no jogo, toque em Procurar de novo no painel do Unit")
             }
         }
     }

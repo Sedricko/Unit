@@ -481,9 +481,13 @@ class Balao : Service() {
         }
         // sem objetos para escolher (jogo que não é Unity): digitar o número da tela
         val aConferir = Ponteiro.precisaNumero.filter { n -> n !in Ponteiro.duvida && Nucleo.salvos.none { it.nome == n && it.caminho } }
-        if (!Nucleo.jogoFechou && aConferir.isNotEmpty() && tela == "inicio") Linha(Modifier.toque { Ponteiro.confirmando = aConferir.first(); tela = "caminho" }) {
-            Text("${aConferir.joinToString()}: toque e digite o número que está na tela", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            Text("›", color = Cor.a2, fontSize = 18.sp)
+        // não achou: fica parado (o item pode ainda não existir nesta partida) até a pessoa pedir de novo ou digitar
+        if (!Nucleo.jogoFechou && aConferir.isNotEmpty() && tela == "inicio") Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Não achei: ${aConferir.joinToString()}. Se o item ainda não apareceu no jogo, toque em Procurar de novo quando aparecer.", color = Cor.texto, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Botao("Procurar de novo", true, Modifier.weight(1f)) { Ponteiro.tentarDeNovo(pedido = true) }
+                Botao("Digitar o número", false, Modifier.weight(1f)) { Ponteiro.confirmando = aConferir.first(); tela = "caminho" }
+            }
         }
         if (Nucleo.jogoFechou) Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {

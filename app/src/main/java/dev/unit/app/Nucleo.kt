@@ -175,7 +175,7 @@ object Nucleo {
                 Registro.add("jogo", "${j.nome} reaberto (pid $pid)")
                 aviso = "Esperando ${j.nome} carregar…"; kotlinx.coroutines.delay(5000); aviso = ""  // recém-aberto: os caminhos ainda não existem
                 Ponteiro.aplicar()
-                Ponteiro.tentarDeNovo()  // o jogo pode montar as estruturas depois: confere de novo em 20 s e em 60 s
+                Ponteiro.tentarDeNovo()  // o jogo pode montar as estruturas depois: confere de novo em 20 s e para
                 return@rodar
             }
         }
