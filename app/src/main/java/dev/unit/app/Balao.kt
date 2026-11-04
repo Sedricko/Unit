@@ -659,8 +659,9 @@ class Balao : Service() {
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp), content = conteudo)
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) { BarraBaixo(); teclado() }
         } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            conteudo()
-            Spacer(Modifier.weight(1f))
+            // o conteúdo fica com todo o espaço acima do teclado. Antes havia um espaço vazio esticável aqui, e ele dividia a
+            // altura meio a meio com a lista que rola (Editar e Achar): o "Congelar neste valor" aparecia cortado na metade
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), content = conteudo)
             BarraBaixo()
             teclado()
         }
