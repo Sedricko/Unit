@@ -299,7 +299,8 @@ class Balao : Service() {
     @Composable
     private fun Conteudo() {
         // os salvos ao vivo enquanto o mini ou o painel está à vista
-        LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
+        // também com o balão recolhido (o normal enquanto se joga): o último valor fica em dia para quando o jogo fechar
+        LaunchedEffect(modo) { while (true) { Nucleo.atualizarSalvos(); delay(if (modo == "balao") 3000 else 1000) } }
         LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
         // os Salvos ficam guardados no celular a cada mudança, e cada salvo novo ganha caminhos procurados sozinho
         LaunchedEffect(Unit) {
@@ -351,7 +352,7 @@ class Balao : Service() {
                             vista?.let { wm.updateViewLayout(it, params) }; guardar()
                         }
                     }
-                    .pointerInput(Unit) { detectTapGestures(onTap = { vibrar(this@Balao); mudar(if (Nucleo.salvos.isEmpty()) "painel" else "mini") }, onLongPress = { mudar("painel") }) },
+                    .pointerInput(Unit) { detectTapGestures(onTap = { vibrar(this@Balao); mudar(if (Nucleo.salvos.isEmpty() || Ponteiro.duvida.isNotEmpty() || Ponteiro.precisaNumero.isNotEmpty()) "painel".also { tela = "inicio" } else "mini") }, onLongPress = { mudar("painel") }) },
                 contentAlignment = Alignment.Center
             ) { Text("U", color = Cor.a2, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp) }
             "mini" -> Mini()
@@ -373,12 +374,16 @@ class Balao : Service() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Nucleo.salvos.take(3).forEach { s ->
                 Column(Modifier.weight(1f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp))
-                    .toque { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar"; mudar("painel") }.padding(8.dp)) {
+                    // perdido (endereço de antes de reabrir): vai para o Achar; editar escreveria num endereço que não vale mais
+                    .toque { if (s.perdido) tela = "achar" else { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" }; mudar("painel") }.padding(8.dp)) {
                     Text(s.nome + if (s.congelado) " · congelado" else "", color = Cor.apagado, fontSize = 11.sp, maxLines = 1)
-                    Text(s.valor, color = if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(s.valor, color = if (s.perdido) Cor.apagado else if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 }
             }
         }
+        if (Ponteiro.duvida.isNotEmpty() || Ponteiro.precisaNumero.isNotEmpty())  // depois de reabrir: chama para o painel
+            Text("${(Ponteiro.duvida.keys + Ponteiro.precisaNumero).distinct().joinToString()}: toque para confirmar o número", color = Cor.a2, fontSize = 13.sp,
+                modifier = Modifier.toque { tela = "inicio"; mudar("painel") })
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Botao("Achar", true) { tela = "achar"; mudar("painel") }
             Spacer(Modifier.weight(1f))
@@ -423,28 +428,31 @@ class Balao : Service() {
                 Text(Nucleo.jogo?.nome ?: "Escolher jogo", color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text(if (Nucleo.pausado) "jogo pausado" else Nucleo.jogo?.pacote ?: "toque para ver os jogos abertos", color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
             }
-            if (Nucleo.jogo != null && !Nucleo.jogoFechou) Box(Modifier.padding(end = 12.dp).toque { Nucleo.fecharJogo() }) {  // sempre ativo: fecha mesmo com o Unit ocupado
+            if (Nucleo.jogo != null && !Nucleo.jogoFechou) Box(Modifier.padding(end = 12.dp).toque { Nucleo.pedirFechar = true }) {  // sempre ativo; pede confirmação
                 Text("Fechar jogo", color = Cor.ruim, fontSize = 13.sp)  // fecha o jogo (o Unit pergunta se quer reabrir)
             }
             Text("Trocar", color = Cor.a2, fontSize = 13.sp)
         }
         if (confirmar) ConfirmarFechar({ confirmar = false }) { stopSelf() }
+        if (Nucleo.pedirFechar && Nucleo.jogo != null) ConfirmarFechar({ Nucleo.pedirFechar = false }, "Fechar ${Nucleo.jogo?.nome}?",
+            "O que você não salvou no jogo se perde. Os valores salvos no Unit ficam.") { Nucleo.pedirFechar = false; Nucleo.fecharJogo() }
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
+        else if (Ponteiro.aviso.isNotBlank() && tela != "caminho") Text(Ponteiro.aviso, color = Cor.a2, fontSize = 13.sp)  // procura longa: diz o que está fazendo
         // dúvida entre objetos achados pelo nome: um toque no número que está na tela resolve (sem digitar)
-        if (!Nucleo.jogoFechou) Ponteiro.duvida.entries.toList().take(2).forEach { (nome, cands) ->
+        if (!Nucleo.jogoFechou && tela == "inicio") Ponteiro.duvida.entries.toList().take(2).forEach { (nome, cands) ->
             Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("$nome: qual destes números está na tela?", color = Cor.texto, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     cands.take(4).forEach { (a, v) -> Botao(v, true, Modifier.weight(1f), !Nucleo.ocupado) { Ponteiro.escolherNaTela(nome, a, v) } }
                 }
-                Text("nenhum: toque aqui para digitar", color = Cor.apagado, fontSize = 12.sp, modifier = Modifier.toque { tela = "caminho" })
+                Text("nenhum: toque aqui para digitar", color = Cor.apagado, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp).toque { Ponteiro.confirmando = nome; tela = "caminho" })
             }
         }
         // sem objetos para escolher (jogo que não é Unity): digitar o número da tela
         val aConferir = Ponteiro.precisaNumero.filter { n -> n !in Ponteiro.duvida && Nucleo.salvos.none { it.nome == n && it.caminho } }
-        if (!Nucleo.jogoFechou && aConferir.isNotEmpty() && tela != "caminho") Linha(Modifier.toque { tela = "caminho" }) {
+        if (!Nucleo.jogoFechou && aConferir.isNotEmpty() && tela == "inicio") Linha(Modifier.toque { Ponteiro.confirmando = aConferir.first(); tela = "caminho" }) {
             Text("${aConferir.joinToString()}: toque e digite o número que está na tela", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Text("›", color = Cor.a2, fontSize = 18.sp)
         }
@@ -592,6 +600,8 @@ class Balao : Service() {
             Teclado("Aplicar", (campo.isNotBlank() || congelar) && !Nucleo.ocupado && !acima, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
                 confirmou = { Nucleo.editar(e.addr, e.tipo, campo.ifBlank { atual }, congelar); campo = ""; tela = "inicio" })
         }) {
+          // rola quando não cabe (painel menor, deitado): antes o teclado e o Aplicar ficavam cortados
+          Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Linha(Modifier.toque { tela = "nome" }) {
                 Column(Modifier.weight(1f)) {
                     Rotulo("Nome")
@@ -610,12 +620,6 @@ class Balao : Service() {
                 }
             }
             Text("agora: $atual · ${NOME_TIPO[e.tipo]}", color = Cor.apagado, fontSize = 13.sp)
-            // LABORATÓRIO (teste): os vizinhos deste valor; sai junto com o EmVolta.kt se não der certo
-            Botao("Em volta (100 campos acima e abaixo)", false, Modifier.fillMaxWidth()) { tela = "volta" }
-            // LABORATÓRIO: achar sempre (ponteiro). Some junto com o Ponteiro.kt se não der certo
-            Botao("Achar o caminho (ponteiro)", false, Modifier.fillMaxWidth(), !Nucleo.ocupado) {
-                Ponteiro.procurar(e, Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome ?: "Valor"); tela = "caminho"
-            }
             CampoGrande(campo, "valor novo")
             if (acima) Aviso(Cor.atencao) {
                 Text("Passa do limite do ${NOME_TIPO[e.tipo]} (máximo ${"%,d".format(MAX_DWORD).replace(',', '.')}).", color = Cor.texto, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -635,6 +639,7 @@ class Balao : Service() {
                     contentAlignment = if (congelar) Alignment.CenterEnd else Alignment.CenterStart) { Box(Modifier.padding(3.dp).size(16.dp).background(Color.White, CircleShape)) }
                 Text("Congelar neste valor", color = Cor.texto, fontSize = 14.sp)
             }
+          }
         }
     }
 
@@ -722,7 +727,7 @@ class Balao : Service() {
                     }
                     if (Nucleo.jogo?.pacote == j.pacote) {
                         Selo("ligado", true)
-                        Box(Modifier.padding(start = 8.dp).toque { Nucleo.fecharJogo() }) { Text("Fechar", color = Cor.ruim, fontSize = 13.sp) }
+                        Box(Modifier.padding(start = 8.dp).toque { Nucleo.pedirFechar = true }) { Text("Fechar", color = Cor.ruim, fontSize = 13.sp) }
                     }
                 }
             }

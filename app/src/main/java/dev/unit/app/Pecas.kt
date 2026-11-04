@@ -102,13 +102,14 @@ fun IconeJogo(j: Jogo, tam: Dp = 44.dp) {
 
 /** A pergunta antes de fechar o Unit (o ✕ do painel e o do app): fechar solta os congelados. */
 @Composable
-fun ConfirmarFechar(cancelar: () -> Unit, fechar: () -> Unit) = Column(
+fun ConfirmarFechar(cancelar: () -> Unit, titulo: String = "Fechar o Unit?",
+                    texto: String = "Os valores congelados deixam de ser segurados." + (if (Atualizador.pronto) " A atualização ${Atualizador.nova} entra agora." else ""),
+                    fechar: () -> Unit) = Column(
     Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Color(0x99FF5D6C), RoundedCornerShape(14.dp)).padding(12.dp),
     verticalArrangement = Arrangement.spacedBy(10.dp)
 ) {
-    Text("Fechar o Unit?", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-    Text("Os valores congelados deixam de ser segurados." + (if (Atualizador.pronto) " A atualização ${Atualizador.nova} entra agora." else ""),
-        color = Cor.apagado, fontSize = 12.sp)
+    Text(titulo, color = Cor.texto, fontWeight = FontWeight.SemiBold)
+    Text(texto, color = Cor.apagado, fontSize = 12.sp)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Botao("Cancelar", false, Modifier.weight(1f), clique = cancelar)
         Botao("Fechar", true, Modifier.weight(1f), clique = fechar)

@@ -26,6 +26,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.abs
+import kotlinx.coroutines.sync.withLock
 
 /** Um valor achado pelo caminho: o nome, o tipo, os caminhos que ainda valem e se volta congelado. */
 /** conferido = false: guardado sozinho ao salvar; a próxima abertura do jogo confere pela maioria. */
@@ -45,6 +46,9 @@ object Ponteiro {
     private lateinit var pasta: File
     fun init(ctx: Context) { prefs = ctx.getSharedPreferences("ponteiros", Context.MODE_PRIVATE); pasta = ctx.getExternalFilesDir(null) ?: ctx.filesDir }
     val arquivo get() = File(pasta, "unit-ponteiros.json")
+    // o arquivo que vem de outro celular tem outro nome: o automático acima é regravado a cada mudança e apagava o que ia
+    // ser importado antes de dar tempo
+    val arquivoImportar get() = File(pasta, "unit-importar.json")
 
     /** O que está sendo conferido agora (um por vez): achado num jogo, esperando a reabertura. */
     var pendente by mutableStateOf<Caminho?>(null)
@@ -53,6 +57,10 @@ object Ponteiro {
 
     // ---- guardar: JSON por jogo (pacote → lista) ----
     fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido).put("fixo", c.fixo).put("falhas", JSONObject(c.falhas)).put("pid", c.pid).put("unity", c.unity) })
+    private val TIPOS = setOf("i32", "f32", "i64", "f64")
+    private val SEGURO = Regex("[A-Za-z0-9_.+:-]+")  // caminho "lib+OFF:o1:...": só isso (sem espaço nem quebra de linha)
+    /** Do arquivo (que pode ter vindo de outro celular): fica só o que é seguro mandar ao motor. */
+    fun valido(c: Caminho) = c.tipo in TIPOS && c.caminhos.all { '+' in it && SEGURO.matches(it) } && c.unity.none { it == '\n' || it == '\r' }
     fun deJson(a: JSONArray) = (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
         Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor"), o.optBoolean("conferido", true), o.optBoolean("fixo"),
             o.optJSONObject("falhas")?.let { f -> f.keys().asSequence().associateWith { k -> f.getInt(k) } }.orEmpty(), o.optInt("pid"), o.optString("unity")) } }
@@ -97,6 +105,19 @@ object Ponteiro {
     }
     /** Para o registro e a tela: "ItemRecurso, campo +0x30". */
     fun rotuloUnity(u: String) = u.split(' ').let { if (it.size >= 3) "${it[0]}, campo +0x${it[2]}" else u }
+
+    /**
+     * Junta o resultado de uma procura longa com a lista de agora. foto = como estava no começo; agora = lida no fim;
+     * calc = o que a procura calculou. Fica só quem ainda existe agora; os caminhos que entraram no meio continuam;
+     * conferido não volta para trás; o valor guardado no meio (ao fechar o jogo) ganha, a não ser que a procura achou outro.
+     */
+    fun mesclar(foto: List<Caminho>, agora: List<Caminho>, calc: List<Caminho>): List<Caminho> = agora.map { f ->
+        val c = calc.firstOrNull { it.nome == f.nome } ?: return@map f
+        val antes = foto.firstOrNull { it.nome == f.nome }
+        val noMeio = f.caminhos - antes?.caminhos.orEmpty().toSet()
+        f.copy(caminhos = (c.caminhos + noMeio).distinct(), falhas = c.falhas, conferido = f.conferido || c.conferido,
+            valor = if (antes != null && c.valor != antes.valor) c.valor else f.valor, unity = f.unity.ifEmpty { c.unity })
+    }
 
     /**
      * O jogo fechou: guarda o número que estava nos Salvos como o último valor conhecido. O valor muda enquanto se joga
@@ -186,8 +207,9 @@ object Ponteiro {
             throw IllegalStateException("Nenhum caminho chega em ${EmVolta.texto(tela)}. Confira o número (ou espere o jogo carregar) e tente de novo.")
         }
         val bons = chegam.map { it.first }
-        gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(caminhos = bons.take(RESERVA), conferido = true, valor = it.valor.ifEmpty { chegam[0].third }) else it })
         val (_, addr, v) = chegam[0]
+        gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(caminhos = bons.take(RESERVA), conferido = true, valor = v) else it })
+        achado[nome] = j.pid to addr  // as tentativas de 20 s e 60 s não decidem de novo por cima do que você confirmou
         val s = Salvo(addr, c.tipo, nome, v, false, caminho = true)
         val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
         if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
@@ -227,8 +249,13 @@ object Ponteiro {
     }
 
     /** Jogo escolhido: cada valor guardado aparece nos Salvos pelo caminho da maioria; os caminhos mortos são apagados. */
-    fun aplicar() = Nucleo.rodar {
-        val j = Nucleo.jogo ?: return@rodar
+    /** Um aplicar por vez: as tentativas de 20 s e 60 s chegavam com o anterior ainda rodando e gravavam por cima. */
+    private val trava = kotlinx.coroutines.sync.Mutex()
+    fun aplicar() = Nucleo.rodar { trava.withLock { aplicarJa() } }
+    private suspend fun aplicarJa() {
+        val j = Nucleo.jogo ?: return
+        // ainda é o mesmo valor do mesmo jogo? (apagado no meio da procura, ou outro jogo escolhido: não recoloca nada)
+        fun vale(nome: String) = Nucleo.jogo?.pid == j.pid && lista(j.pacote).any { it.nome == nome }
         val todos = lista(j.pacote).groupBy { it.nome }.values.map { it.reduce(::fundir) }  // nomes repetidos de antes viram um só
         // jogo Unity: pelo nome primeiro (classe + assinatura). Exatamente 1 objeto = o valor, sem caminho e sem digitar
         val pelonome = mutableMapOf<String, String>()  // nome → endereço achado
@@ -265,9 +292,10 @@ object Ponteiro {
                 continue
             }
             val addr = escolhido
+            if (!vale(c.nome)) continue
             val v = runCatching { Nucleo.cmd { it.cmd("read $addr ${c.tipo}") }.status }.getOrNull() ?: continue
             val congela = c.congelar && c.valor.isNotEmpty()
-            if (congela) Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") }
+            if (congela) runCatching { Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") } }
             val s = Salvo(addr, c.tipo, c.nome, if (congela) c.valor else v, congela, caminho = true)
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
             if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
@@ -282,8 +310,11 @@ object Ponteiro {
             val addr = pelonome[c.nome] ?: return@map conferirSozinho(c)
             c.copy(conferido = true, caminhos = c.caminhos.filter { cam -> seguir(cam, c.tipo)?.first == addr }.take(RESERVA))
         }
-        gravar(j.pacote, (limpos.map { (c, ch) -> if (c.fixo) protegido(c, ch) else c.copy(caminhos = vivos(ch)) } + pendentesAgora)
-            .map { c -> valorAgora[c.nome]?.let { v -> c.copy(valor = v) } ?: c })  // a cada abertura sobram só os vivos
+        val calculados = (limpos.map { (c, ch) -> if (c.fixo) protegido(c, ch) else c.copy(caminhos = vivos(ch)) } + pendentesAgora)
+            .map { c -> valorAgora[c.nome]?.let { v -> c.copy(valor = v) } ?: c }  // a cada abertura sobram só os vivos
+        // sobre a lista de AGORA: o que mudou durante a procura (apagou, renomeou, escolheu na tela, guardou o último valor)
+        // não é desfeito; o que foi apagado não volta
+        if (Nucleo.jogo?.pid == j.pid) gravar(j.pacote, mesclar(todos, lista(j.pacote), calculados))
         for ((c, ch) in limpos) {
             val vivo = vivos(ch).toSet(); val mortos = ch.filter { it.first !in vivo }
             val votos = ch.mapNotNull { it.second }.groupingBy { it }.eachCount()
@@ -296,7 +327,8 @@ object Ponteiro {
             if (c.nome in pelonome) continue  // já voltou pelo nome
             val cam = vivos(ch).firstOrNull() ?: continue
             val (addr, v) = seguir(cam, c.tipo) ?: continue
-            if (c.congelar && c.valor.isNotEmpty()) Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") }
+            if (!vale(c.nome)) continue
+            if (c.congelar && c.valor.isNotEmpty()) runCatching { Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") } }
             val s = Salvo(addr, c.tipo, c.nome, if (c.congelar && c.valor.isNotEmpty()) c.valor else v, c.congelar && c.valor.isNotEmpty(), caminho = true)
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
             if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
@@ -318,7 +350,7 @@ object Ponteiro {
             Registro.add("caminho", "${c.nome}: só ${addr.value} vivo(s) → renovando")
             val t0 = System.currentTimeMillis()
             val novos = runCatching { Nucleo.cmd { it.cmd("ptrscan ${addr.key} 8") }.linhas.filter { '+' in it } }.getOrDefault(emptyList())
-            val atual = lista(j.pacote).firstOrNull { it.nome == c.nome } ?: continue
+            val atual = lista(j.pacote).firstOrNull { it.nome == c.nome } ?: run { aviso = ""; null } ?: continue
             val depois = alimentar(atual.caminhos, novos)
             gravar(j.pacote, juntar(lista(j.pacote), listOf(atual.copy(caminhos = depois))))
             val entraram = depois - atual.caminhos.toSet()
@@ -346,6 +378,10 @@ object Ponteiro {
     const val AUTO = 3000  // todos os que o motor acha (o limite dele): o certo pode não estar entre os primeiros; depois sobram até RESERVA
 
     const val PREPARANDO = "preparando para voltar sozinho…"
+    /** O primeiro "Valor k" que não está em usados. */
+    fun nomeLivre(usados: Collection<String>): String { var k = 1; while ("Valor $k" in usados) k++; return "Valor $k" }
+    /** Valor cujo número a pessoa vai digitar (o painel abre direto no teclado de confirmar). */
+    var confirmando by mutableStateOf<String?>(null)
     /** Dúvida entre objetos achados pelo nome (nome → endereço e número de cada um): o painel mostra os números para tocar. */
     val duvida = androidx.compose.runtime.mutableStateMapOf<String, List<Pair<String, String>>>()
 
@@ -378,6 +414,8 @@ object Ponteiro {
                 estadoAuto[s.addr] = "não volta sozinho: ache de novo ao reabrir"; aoTerminar?.invoke("${s.nome}: não vai voltar sozinho ao reabrir")
                 Registro.add("caminho", "${s.nome}: nenhum caminho achado sozinho (vai precisar achar de novo ao reabrir)"); return@semAviso
             }
+            // apagado (ou outro jogo escolhido) enquanto procurava: não grava nada (senão voltava na próxima abertura)
+            if (Nucleo.jogo?.pid != j.pid || Nucleo.salvos.none { it.addr == s.addr }) { estadoAuto.remove(s.addr); return@semAviso }
             var nome = Nucleo.salvos.firstOrNull { it.addr == s.addr }?.nome ?: s.nome  // pode ter sido renomeado enquanto procurava
             // o mesmo objeto do Unity (mesma classe, campo e assinatura) já guardado com outro nome: é o mesmo valor. Junta no
             // nome de antes e tira o antigo dos Salvos (o relatório: "Cobre" antigo e "Valor 2" novo, o antigo escolhendo errado)
@@ -447,15 +485,14 @@ object Ponteiro {
                 // pelo nome também: logo ao abrir o jogo a classe pode não estar carregada (o relatório: achou nada no 1º segundo)
                 if (Nucleo.jogo?.pid != j.pid || (lista(j.pacote).none { !it.conferido } && faltaNome.isEmpty())) return@semAviso
                 Registro.add("decisao", "Conferindo os caminhos de novo (${if (espera == 20_000L) "20" else "60"} s depois de abrir)")
-                aplicar()
+                aplicar().join()  // espera terminar (antes o pedido de número saía com a procura ainda rodando)
             }
-            kotlinx.coroutines.delay(3_000)  // espera a 3ª tentativa terminar
             // não achou sozinho nas 3 tentativas: aí sim pede o número da tela
             val faltam = lista(j.pacote).filter { !it.conferido && achado[it.nome]?.first != j.pid }.map { it.nome }
             if (Nucleo.jogo?.pid == j.pid && faltam.isNotEmpty()) {
                 precisaNumero += faltam
                 Registro.add("decisao", "Não achei sozinho: ${faltam.joinToString()} · pedindo o número da tela")
-                aoTerminar?.invoke("${faltam.joinToString()}: não achei sozinho — toque no aviso do painel para digitar o número")
+                aoTerminar?.invoke("${faltam.joinToString()}: não achei sozinho — abra o painel do Unit e confirme o número")
             }
         }
     }
@@ -476,6 +513,12 @@ object Ponteiro {
     }
 
     fun esquecer(nome: String) { val j = Nucleo.jogo ?: return; gravar(j.pacote, lista(j.pacote).filter { it.nome != nome }) }
+    /** Outro processo do jogo (escolheu ou reabriu): o que era da abertura anterior não vale mais. */
+    fun novaAbertura() {
+        achado.clear(); duvida.clear(); precisaNumero.clear(); faltaNome.clear(); renovados.clear(); autoFeitos.clear(); estadoAuto.clear()
+        confirmando = null
+    }
+
     /** Apagou o valor dos Salvos: some também o que ajudava a achar ele de novo (caminhos, nome, dúvida, aviso). */
     fun esquecerTudo(nome: String, addr: String) {
         esquecer(nome); duvida.remove(nome); precisaNumero.remove(nome); achado.remove(nome); estadoAuto.remove(addr); autoFeitos.remove(addr)
@@ -490,8 +533,9 @@ object Ponteiro {
 
     /** O que tem no arquivo: (jogo, valor) para a pessoa marcar. */
     fun lerArquivo(): List<Pair<String, Caminho>> = runCatching {
-        val o = JSONObject(arquivo.readText())
-        o.keys().asSequence().flatMap { k -> deJson(o.getJSONArray(k)).map { k to it } }.toList()
+        val o = JSONObject((if (arquivoImportar.exists()) arquivoImportar else arquivo).readText())
+        // só o arquivo de fora é filtrado: os guardados no celular saem do próprio motor (e o Motor recusa quebra de linha)
+        o.keys().asSequence().flatMap { k -> deJson(o.getJSONArray(k)).filter(::valido).map { k to it } }.toList()
     }.getOrDefault(emptyList())
 
     /** Juntar: entra o marcado (mesmo nome troca). Substituir: os jogos dos marcados ficam só com o que veio do arquivo. */
@@ -546,7 +590,7 @@ object Ponteiro {
             }
             Text("Para conferir: toque em Fechar o jogo, depois em Reabrir, volte aqui e digite o número que está na tela.",
                 color = Cor.apagado, fontSize = 12.sp)
-            Botao("Fechar o jogo", false, Modifier.fillMaxWidth(), !Nucleo.ocupado && !Nucleo.jogoFechou) { Nucleo.fecharJogo() }
+            Botao("Fechar o jogo", false, Modifier.fillMaxWidth(), !Nucleo.jogoFechou) { Nucleo.pedirFechar = true }
             CampoGrande(campo, "número na tela")
             Teclado("Conferir", campo.isNotBlank() && !Nucleo.ocupado, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
                 confirmou = { campo.replace(',', '.').toDoubleOrNull()?.let(::conferir); campo = "" })
@@ -563,7 +607,6 @@ object Ponteiro {
         @Suppress("UNUSED_EXPRESSION") recarga  // relê a lista quando fixa/desfixa
         val guardados = j?.let { lista(it.pacote) }.orEmpty()
         if (guardados.isEmpty()) Text("Nenhum ainda. No Editar de um valor, toque em Achar o caminho.", color = Cor.apagado, fontSize = 12.sp)
-        var confirmando by remember { mutableStateOf<String?>(null) }
         var numero by remember { mutableStateOf("") }
         confirmando?.let { nome ->
             Rotulo("Confirmar $nome")
@@ -582,7 +625,8 @@ object Ponteiro {
                     Text((if (aberto) "▾ " else "▸ ") + c.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
                     Text("${NOME_TIPO[c.tipo] ?: c.tipo} · ${c.caminhos.size} caminho(s)" + (if (!c.conferido) " · a conferir na próxima abertura" else "") + if (c.congelar) " · volta congelado" else "", color = Cor.apagado, fontSize = 12.sp)
                 }
-                if (!c.conferido) Box(Modifier.padding(start = 8.dp).toque { confirmando = c.nome }) { Text("Confirmar", color = Cor.a2, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                // sempre: um conferido também pode não voltar
+                Box(Modifier.padding(start = 8.dp).toque { confirmando = c.nome }) { Text("Confirmar", color = Cor.a2, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                 if (c.conferido) Box(Modifier.padding(start = 8.dp).toque { fixar(c.nome, !c.fixo); recarga++ }) { Text(if (c.fixo) "📌 Fixado" else "Fixar", color = Cor.a2, fontSize = 13.sp) }
                 Box(Modifier.padding(start = 10.dp).toque { esquecer(c.nome); aviso = "${c.nome} esquecido." }) { Text("Esquecer", color = Cor.ruim, fontSize = 13.sp) }
             }
@@ -602,6 +646,6 @@ object Ponteiro {
             Botao("Exportar", false, Modifier.weight(1f)) { aviso = "Salvo em ${exportar()}" }
             Botao("Importar", false, Modifier.weight(1f)) { marcados.clear(); importando = lerArquivo() }
         }
-        Text("O arquivo é atualizado sozinho e tem os caminhos de todos os jogos. Para levar a outro celular, copie ele para a mesma pasta lá.", color = Cor.apagado, fontSize = 12.sp)
+        Text("O unit-ponteiros.json é atualizado sozinho e tem os caminhos de todos os jogos. Para levar a outro celular, copie ele para a mesma pasta lá com o nome unit-importar.json e toque em Importar.", color = Cor.apagado, fontSize = 12.sp)
     }
 }

@@ -70,6 +70,7 @@ object Nucleo {
     var aviso by mutableStateOf("")
     var ocupado by mutableStateOf(false)
     var jogoFechou by mutableStateOf(false)  // o motor disse "o jogo fechou": o painel pergunta se quer reabrir
+    var pedirFechar by mutableStateOf(false)  // tocou em "Fechar jogo": o painel pede confirmação (perde o que não foi salvo)
 
     fun init(ctx: Context) { lib = ctx.applicationInfo.nativeLibraryDir + "/libunitd.so"; prefs = ctx.getSharedPreferences("aprendido", Context.MODE_PRIVATE); salvosGuardados = ctx.getSharedPreferences("salvos", Context.MODE_PRIVATE); Ponteiro.init(ctx); Registro.init(ctx); java.io.File(ctx.cacheDir, "foto.bin").delete() }
 
@@ -88,9 +89,11 @@ object Nucleo {
     /** Roda uma ação do motor; o erro vira o aviso na tela, em vez de fechar o app. */
     fun semAviso(f: suspend () -> Unit) = scope.launch { runCatching { f() } }
 
+    // quantos rodar estão rodando: com um booleano, o 1º que terminava apagava o "ocupado" com outro ainda rodando
+    private var rodando = 0
     fun rodar(f: suspend () -> Unit) = scope.launch {
-        ocupado = true
-        try { f(); aviso = "" } catch (e: Exception) { aviso = e.message ?: "erro"; Registro.add("erro", "Erro: $aviso") } finally { ocupado = false }
+        rodando++; ocupado = true
+        try { f(); aviso = "" } catch (e: Exception) { aviso = e.message ?: "erro"; Registro.add("erro", "Erro: $aviso") } finally { rodando--; ocupado = rodando > 0 }
     }
 
     /** Os apps abertos que o usuário instalou (jogos); sem nome legível, mostra o pacote. */
@@ -112,11 +115,20 @@ object Nucleo {
         if (lista.isEmpty()) throw IllegalStateException("Nenhum jogo aberto. Abra o jogo e toque em Atualizar.")
     }
 
-    fun escolher(j: Jogo) = rodar {
+    fun escolher(alvo: Jogo) = rodar {
+        // o número do processo de agora (a lista da tela do app pode ser de antes: o jogo reabriu fora do Unit)
+        val pidAgora = cmd { it.cmd("ps") }.linhas.firstNotNullOfOrNull { l -> l.split(' ', limit = 2).takeIf { p -> p.size == 2 && p[1] == alvo.pacote }?.get(0)?.toIntOrNull() }
+        val j = alvo.copy(pid = pidAgora ?: alvo.pid)
+        // o mesmo jogo, no mesmo processo: não apaga os salvos nem os congelados; só procura de novo os que faltam
+        if (jogo?.pacote == j.pacote && jogo?.pid == j.pid && !jogoFechou) {
+            Registro.add("jogo", "${j.nome} já estava ligado: procurando de novo os que faltam")
+            Ponteiro.aplicar(); Ponteiro.tentarDeNovo(); return@rodar
+        }
         if (pausado) runCatching { cmd { it.cmd("resume") } }  // não deixa o jogo de antes parado
         cmd { it.cmd("attach ${j.pid}") }
         val antigos = lerSalvos(j.pacote)
-        jogo = j; pausado = false; zerar(); salvos.clear(); salvos += antigos  // os nomes voltam; o caminho (aplicar) acha o endereço
+        Ponteiro.novaAbertura()
+        jogo = j; jogoFechou = false; pausado = false; zerar(); salvos.clear(); salvos += antigos  // os nomes voltam; o caminho (aplicar) acha o endereço
         Registro.add("jogo", "Ligado a ${j.nome} (pid ${j.pid})" + if (antigos.isNotEmpty()) " · ${antigos.size} salvo(s) guardados de antes" else "")
         Ponteiro.aplicar()  // LABORATÓRIO: os salvos guardados com caminho aparecem sozinhos
         Ponteiro.tentarDeNovo()
@@ -157,6 +169,7 @@ object Nucleo {
             if (pid != null) {
                 cmd { it.cmd("attach $pid") }
                 val antigos = lerSalvos(j.pacote)
+                Ponteiro.novaAbertura()
                 jogo = j.copy(pid = pid); jogoFechou = false; pausado = false; zerar(); salvos.clear(); salvos += antigos
                 Registro.add("jogo", "${j.nome} reaberto (pid $pid)")
                 aviso = "Esperando ${j.nome} carregar…"; kotlinx.coroutines.delay(5000); aviso = ""  // recém-aberto: os caminhos ainda não existem
@@ -241,14 +254,14 @@ object Nucleo {
         aprender(tipo, if (congelar) 2 else 1)
         Registro.add("busca", "${if (congelar) "Congelou" else "Escreveu"} $addr ($tipo) = ${texto.trim()}")
         val v = texto.trim().replace(',', '.')
-        val i = salvos.indexOfFirst { it.addr == addr }
+        val i = salvos.indexOfFirst { it.addr == addr && !it.perdido }  // um perdido com o mesmo endereço é de outra abertura
         if (congelar) cmd { it.cmd("freeze $addr $tipo $v") }
         else {
             if (i >= 0 && salvos[i].congelado) cmd { it.cmd("unfreeze $addr") }
             cmd { it.cmd("write $addr $tipo $v") }
         }
         if (i >= 0) salvos[i] = salvos[i].copy(valor = v, congelado = congelar)
-        else salvos += Salvo(addr, tipo, "Valor ${salvos.size + 1}", v, congelar)
+        else salvos += Salvo(addr, tipo, nomeLivre(), v, congelar)
         escolhido = escolhido?.takeIf { it.addr == addr }?.copy(valor = v)
     }
 
@@ -299,7 +312,9 @@ object Nucleo {
         Registro.add("decisao", "Você apagou ${s.nome} dos salvos")
     }
 
-    fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr }) salvos += Salvo(a.addr, a.tipo, "Valor ${salvos.size + 1}", a.valor, false) }
+    fun salvar(a: Achado) { if (salvos.none { it.addr == a.addr && !it.perdido }) salvos += Salvo(a.addr, a.tipo, nomeLivre(), a.valor, false) }
+    /** "Valor k" que ninguém usa (nem nos Salvos nem nos caminhos guardados): "Valor 2" repetido misturava dois valores. */
+    private fun nomeLivre() = Ponteiro.nomeLivre(salvos.map { it.nome } + (jogo?.let { j -> Ponteiro.lista(j.pacote).map { it.nome } }.orEmpty()))
 
     // troca o estado na hora e manda o estado de agora: dois toques seguidos (ou a pausa automática) nunca invertem a tela e o jogo
     fun pausar() {
@@ -317,7 +332,12 @@ object Nucleo {
     }
 
     /** Os resultados da busca (até 20, os que aparecem) e o valor aberto no Editar, relidos ao vivo: a lista não fica parada no valor da hora da busca. */
-    fun atualizarAchados() = scope.launch {
+    // um pedido por vez: durante uma procura longa no motor, os pedidos de 1 em 1 s se acumulavam esperando (e o
+    // "Fechar jogo" ficava atrás deles)
+    private var lendoAchados: kotlinx.coroutines.Job? = null
+    private var lendoSalvos: kotlinx.coroutines.Job? = null
+    fun atualizarAchados() { if (lendoAchados?.isActive == true) return; lendoAchados = lerAchados() }
+    private fun lerAchados() = scope.launch {
         if (jogo == null || ocupado) return@launch
         runCatching {
             suspend fun ler(a: Achado) = a.copy(valor = runCatching { cmd { it.cmd("read ${a.addr} ${a.tipo}") }.status }.getOrDefault(a.valor))
@@ -329,8 +349,10 @@ object Nucleo {
 
     /** Os valores salvos de agora (o mini painel mostra ao vivo). Sem aviso: roda a cada segundo. */
     private val falhouLer = mutableSetOf<String>()  // cada salvo que não deu para ler só vira aviso uma vez
-    fun atualizarSalvos() = scope.launch {
-        if (jogo == null || ocupado) return@launch
+    fun atualizarSalvos() { if (lendoSalvos?.isActive == true) return; lendoSalvos = lerSalvosAgora() }
+    // mesmo com o Unit ocupado: o último valor tem que estar em dia quando o jogo fechar (desempata ao reabrir)
+    private fun lerSalvosAgora() = scope.launch {
+        if (jogo == null || jogoFechou) return@launch
         runCatching {
             val novos = salvos.toList().filterNot { it.perdido }.map { s -> s.copy(valor = runCatching { cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }
                 .onFailure { e -> if (falhouLer.add(s.addr)) Registro.add("aviso", "Não consegui ler ${s.nome} (${s.addr}): ${e.message} · o endereço pode ter morrido") }

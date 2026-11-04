@@ -112,4 +112,31 @@ class PonteiroTest {
         // longe demais (o último valor era de outra abertura): não chuta
         assertEquals(null, Ponteiro.escolher(listOf("a1" to "300", "a2" to "1"), "235", "f32", emptySet()))
     }
+
+    @Test fun mesclarNaoDesfazOQueMudouDuranteAProcura() {
+        val foto = listOf(Caminho("Cobre", "f32", listOf("a"), valor = "198", conferido = false), Caminho("Ferro", "f32", listOf("f")))
+        // durante a procura: Ferro foi apagado, Cobre ganhou um caminho novo, foi escolhido na tela e guardou 236 ao fechar
+        val agora = listOf(Caminho("Cobre", "f32", listOf("a", "novo"), valor = "236", conferido = true))
+        val calc = listOf(Caminho("Cobre", "f32", listOf("a"), valor = "198", conferido = false), Caminho("Ferro", "f32", listOf("f")))
+        val r = Ponteiro.mesclar(foto, agora, calc)
+        assertEquals(listOf("Cobre"), r.map { it.nome })            // o apagado não volta
+        assertEquals(listOf("a", "novo"), r[0].caminhos)             // o caminho que entrou no meio fica
+        assertTrue(r[0].conferido)                                   // conferido não volta para trás
+        assertEquals("236", r[0].valor)                              // o último valor guardado no meio ganha
+        // a procura achou um valor novo (pelo nome): esse ganha
+        assertEquals("240", Ponteiro.mesclar(foto, agora, listOf(calc[0].copy(valor = "240")))[0].valor)
+    }
+
+    @Test fun nomeLivreNaoRepete() {
+        assertEquals("Valor 1", Ponteiro.nomeLivre(emptyList()))
+        assertEquals("Valor 3", Ponteiro.nomeLivre(listOf("Valor 1", "Valor 2", "Cobre")))
+        assertEquals("Valor 1", Ponteiro.nomeLivre(listOf("Valor 2")))  // apagou o 1: o 2 não se repete
+    }
+
+    @Test fun arquivoComQuebraDeLinhaNaoEntra() {
+        assertTrue(Ponteiro.valido(Caminho("Cobre", "f32", listOf("libil2cpp.so+44b11d0:77a88:10"), unity = "Item - 18 10>20=74")))
+        assertFalse(Ponteiro.valido(Caminho("Cobre", "f32", listOf("lib+1:8\nattach 1"))))   // viraria outro comando do motor
+        assertFalse(Ponteiro.valido(Caminho("Cobre", "f32", listOf("lib+1:8"), unity = "Item - 18\nwrite 1 i32 0")))
+        assertFalse(Ponteiro.valido(Caminho("Cobre", "x; rm", listOf("lib+1:8"))))
+    }
 }

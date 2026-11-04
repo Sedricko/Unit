@@ -116,7 +116,13 @@ static int codificar(int t, const char *s, unsigned char *b) {
 }
 
 static void guardar(uint64_t a, int t) {
-    if (nres == cap) { cap = cap ? cap * 2 : 4096; res = realloc(res, cap * sizeof *res); if (!res) { puts("err sem memória"); exit(1); } }
+    // teto: buscar "0" ou "1" num jogo grande passava de centenas de milhões e o motor caía com o jogo parado
+    if (nres >= 50000000) return;  // shortcut: o excesso fica de fora (refinar acha o certo entre os 50 milhões), sobe se precisar
+    if (nres == cap) {
+        hit_t *n = realloc(res, (cap ? cap * 2 : 4096) * sizeof *res);
+        if (!n) { if (target) kill(target, SIGCONT); puts("err sem memória"); exit(1); }  // nunca sai com o jogo parado
+        res = n; cap = cap ? cap * 2 : 4096;
+    }
     res[nres++] = (hit_t){a, (uint8_t)t};
 }
 
@@ -251,10 +257,13 @@ static void cmd_list(size_t n) {
 #define FMAX 256
 static struct { uint64_t addr; int type; unsigned char b[8]; int on; } fz[FMAX];
 static pthread_mutex_t fzm = PTHREAD_MUTEX_INITIALIZER;
+static int aberto(pid_t p);
 static void *congelador(void *x) {
     (void)x;
     for (;;) {
         pthread_mutex_lock(&fzm);
+        // o jogo fechou: esquece os congelados. Senão o próximo processo que pegar o mesmo número (pid) recebia as escritas
+        if (target && !aberto(target)) memset(fz, 0, sizeof fz);
         for (int i = 0; i < FMAX; i++) if (fz[i].on && target) escrever(fz[i].addr, fz[i].b, TSIZE[fz[i].type]);
         pthread_mutex_unlock(&fzm);
         usleep(100000);

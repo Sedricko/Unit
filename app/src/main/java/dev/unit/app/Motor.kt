@@ -22,6 +22,8 @@ class Motor(caminho: String) {
     @Synchronized
     fun cmd(comando: String): Resposta {
         val t0 = System.nanoTime()
+        // uma quebra de linha dentro do comando viraria outro comando do motor (root): recusa
+        require('\n' !in comando && '\r' !in comando) { "comando inválido" }
         try {
             entrada.write(comando + "\n")
             entrada.flush()
