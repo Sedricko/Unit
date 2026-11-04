@@ -302,16 +302,20 @@ class Balao : Service() {
         // também com o balão recolhido (o normal enquanto se joga): o último valor fica em dia para quando o jogo fechar
         LaunchedEffect(modo) { while (true) { Nucleo.atualizarSalvos(); delay(if (modo == "balao") 3000 else 1000) } }
         LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
-        // só em cima do jogo escolhido: outro app na frente (compartilhar, arquivos, o próprio Unit…) → o Unit some; o jogo
-        // voltou → reaparece como estava. Sem jogo (ou fechado): sempre à vista, para escolher ou reabrir
+        // jogo minimizado (outro app na frente: compartilhar, arquivos, o próprio Unit…) → o Unit vira o balão; o jogo voltou
+        // → volta ao que estava (mini ou painel). Sem jogo (ou fechado): fica como está, para escolher ou reabrir
         LaunchedEffect(Unit) {
-            var escondido = false
+            var antes: String? = null  // o modo de antes de o jogo sair da frente (null = não recolhi nada)
             while (true) {
                 val naFrente = if (Nucleo.jogo != null && !Nucleo.jogoFechou) Nucleo.jogoNaFrente() ?: true else true
-                if (naFrente == escondido) {
-                    escondido = !naFrente
-                    vista?.visibility = if (escondido) android.view.View.GONE else android.view.View.VISIBLE
-                    Registro.add("outro", if (escondido) "Outro app na frente: escondi o Unit" else "O jogo voltou para a frente: o Unit voltou")
+                if (!naFrente && antes == null) {
+                    antes = modo
+                    if (modo != "balao") mudar("balao", lembrar = false)
+                    Registro.add("outro", "Jogo minimizado: o Unit virou o balão")
+                } else if (naFrente && antes != null) {
+                    val m = antes ?: modo; antes = null
+                    if (modo == "balao" && m != "balao") mudar(m)  // se a pessoa mexeu no balão nesse meio tempo, respeita
+                    Registro.add("outro", "O jogo voltou para a frente: o Unit voltou como estava")
                 }
                 delay(1000)
             }
