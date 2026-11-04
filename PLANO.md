@@ -65,6 +65,10 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
 - Fase 1: 1.1 a 1.6 ✅ (prova no Orecraft)
 - Fase 2: 2.1 ✅ · 2.2 ✅ · **2.3 ✅ um / ❌ editar todos** · 2.4 ✅ · **2.5 ✅ nome / ❌ continuar ao reabrir o app** · 2.6 ✅ · **2.7 ✅ Orecraft / ❌ DYSMANTLE**
 - Fase 3: 3.2 assinatura adiantada **só no ramo `lab-assinatura`** (Laboratório), fora da versão normal até chegar a vez dela
+- **0.4.0 (04/11):** o laboratório entrou na versão normal, a pedido do usuário, depois dos testes no Orecraft: achar pelo
+  nome (Unity) que volta sozinho ao reabrir, pergunta "qual destes números" com o jogo pausado, valor que vai para 0
+  logo depois de abrir escolhe de novo, tela simples, Fechar jogo com confirmação, fora do jogo vira balão, as 14
+  correções da revisão com 4 agentes. Ferramentas de teste ficam em Opções. Motor: 128 testes
 - **Próximo, em ordem:** 2.3 editar todos → 2.5 lista que continua → 2.7 DYSMANTLE → 0.3 jogo de teste → **Unit 1.0**
 - Regra: peça fora de ordem só entra como Laboratório, num ramo separado
 

@@ -14,22 +14,30 @@ class Motor(caminho: String) {
         entrada.write("exec $caminho\n")
         entrada.flush()
         ola = saida.readLine() ?: throw IOException("Sem root: o su recusou ou não existe.")
-        if (!ola.startsWith("ok unitd")) throw IOException("O motor não respondeu: $ola")
+        if (!ola.startsWith("ok unitd")) throw IOException(
+            if ("denied" in ola.lowercase() || "permission" in ola.lowercase()) "Root recusado: abra o Magisk (ou o seu gerenciador de root) e permita o Unit."
+            else "O motor não respondeu: $ola")
     }
 
     class Resposta(val linhas: List<String>, val status: String)
 
     @Synchronized
     fun cmd(comando: String): Resposta {
-        entrada.write(comando + "\n")
-        entrada.flush()
-        val linhas = mutableListOf<String>()
-        while (true) {
-            val l = saida.readLine() ?: throw IOException("O motor fechou.")
-            if (l.startsWith("err ")) throw IOException(l.removePrefix("err "))
-            if (l == "ok" || l.startsWith("ok ")) return Resposta(linhas, l.removePrefix("ok").trim())
-            linhas += l
-        }
+        val t0 = System.nanoTime()
+        // uma quebra de linha dentro do comando viraria outro comando do motor (root): recusa
+        require('\n' !in comando && '\r' !in comando) { "comando inválido" }
+        try {
+            entrada.write(comando + "\n")
+            entrada.flush()
+            val linhas = mutableListOf<String>()
+            while (true) {
+                val l = saida.readLine() ?: throw IOException("O motor fechou.")
+                if (l.startsWith("err ")) throw IOException(l.removePrefix("err "))
+                if (l == "ok" || l.startsWith("ok ")) return Resposta(linhas, l.removePrefix("ok").trim())
+                    .also { Registro.comando(comando, "ok ${it.status}".trim() + if (linhas.isEmpty()) "" else " (+${linhas.size} linhas)", (System.nanoTime() - t0) / 1_000_000, false) }
+                linhas += l
+            }
+        } catch (e: IOException) { Registro.comando(comando, "err ${e.message}", (System.nanoTime() - t0) / 1_000_000, true); throw e }
     }
 
     fun fechar() = proc.destroy()

@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,7 +41,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -92,12 +99,11 @@ class Balao : Service() {
         vista = v
         ativo = true
         lembrar()
+        Arrumar.carregar(prefs)
         posicionar()
         // o escudo entra antes do painel: fica embaixo dele e por cima do jogo
         val esc = android.view.View(this).apply {
             setOnTouchListener { _, e -> if (e.action == android.view.MotionEvent.ACTION_DOWN) soltarPausa(); true }
-            isFocusable = true; isFocusableInTouchMode = true
-            setOnKeyListener { _, _, e -> if (e.action == android.view.KeyEvent.ACTION_UP) soltarPausa(); true }
         }
         escudo = esc
         wm.addView(esc, pEscudo)
@@ -114,7 +120,9 @@ class Balao : Service() {
         LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT
     ).apply { alpha = 0f; gravity = Gravity.TOP or Gravity.START }
     private fun ligarEscudo(on: Boolean) {
-        pEscudo.flags = if (on) LayoutParams.FLAG_LAYOUT_IN_SCREEN else LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        // nunca pega o foco: tirar o foco do jogo pausado faz o Android mandar "perdeu o foco" para ele, e o jogo parado não
+        // responde → "não está respondendo" 5 s depois (o relatório mostrou: um ANR 5 s depois de cada pausa)
+        pEscudo.flags = if (on) LayoutParams.FLAG_LAYOUT_IN_SCREEN or LayoutParams.FLAG_NOT_FOCUSABLE else LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_IN_SCREEN
         // desligado: 1 pixel no canto. Do Android 12 em diante uma janela de outro app cobrindo a tela bloqueia o toque no jogo
         // mesmo "não tocável" (proteção contra toque enganado); só cobre tudo quando precisa segurar o toque (jogo pausado)
         pEscudo.width = if (on) LayoutParams.MATCH_PARENT else 1; pEscudo.height = if (on) LayoutParams.MATCH_PARENT else 1
@@ -139,9 +147,10 @@ class Balao : Service() {
         return START_NOT_STICKY
     }
 
-    override fun onDestroy() { ativo = false; Nucleo.soltarAoFechar(); Atualizador.instalarAoFechar(); escudo?.let { runCatching { wm.removeView(it) } }; vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
+    override fun onDestroy() { Registro.add("outro", "Unit fechado (✕)"); ativo = false; Nucleo.soltarAoFechar(); Atualizador.instalarAoFechar(); escudo?.let { runCatching { wm.removeView(it) } }; vista?.let(wm::removeView); dono.parar(); super.onDestroy() }
 
-    override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
+    override fun onTrimMemory(nivel: Int) { super.onTrimMemory(nivel); if (nivel >= TRIM_MEMORY_RUNNING_LOW) Registro.add("aviso", "O Android pediu memória de volta (nível $nivel)") }
+    override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); Registro.add("outro", "Tela: ${if (c.orientation == Configuration.ORIENTATION_LANDSCAPE) "deitado" else "em pé"}"); posicionar(); vista?.let { wm.updateViewLayout(it, params) } }
 
     private fun tela(): Pair<Int, Int> =
         if (Build.VERSION.SDK_INT >= 30) wm.currentWindowMetrics.bounds.let { it.width() to it.height() }
@@ -186,6 +195,57 @@ class Balao : Service() {
         contentAlignment = Alignment.Center
     ) { Icone(Ic.OLHO, 18.dp) }
 
+    /** Um botão de controle. Normal: toca e faz; segurando entra no modo arrumar (o olho: segurar é espiar). Arrumando: arrasta. */
+    @Composable
+    private fun Controle(id: String) {
+        val passo = with(androidx.compose.ui.platform.LocalDensity.current) { 48.dp.toPx() }
+        var pos by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        var tam by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+        var arr by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        val icone = when (id) { "olho" -> Ic.OLHO; "pausa" -> if (Nucleo.pausado) Ic.CONTINUAR else Ic.PAUSAR; "expandir" -> Ic.EXPANDIR; "minimizar" -> Ic.MINIMIZAR; else -> Ic.FECHAR }
+        fun acao() {
+            when (id) {
+                "pausa" -> { pausaAuto = false; Nucleo.pausar() }
+                "expandir" -> { cheio = !cheio; mudar("painel") }
+                "minimizar" -> mudar("balao")  // minimizar vira o balão de verdade (o mini painel abria no lugar)
+                else -> confirmar = true
+            }
+        }
+        val giro = if (Arrumar.editando) androidx.compose.animation.core.rememberInfiniteTransition(label = "tremer").animateFloat(initialValue = -2.5f, targetValue = 2.5f, animationSpec =
+            androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(110), androidx.compose.animation.core.RepeatMode.Reverse), label = "giro").value else 0f
+        val gesto = when {
+            Arrumar.editando -> Modifier.pointerInput(id, true) {
+                detectDragGestures(onDragEnd = { Arrumar.soltar(id, pos + androidx.compose.ui.geometry.Offset(tam.width / 2f, tam.height / 2f) + arr, passo, tam.width.toFloat()); arr = androidx.compose.ui.geometry.Offset.Zero },
+                    onDragCancel = { arr = androidx.compose.ui.geometry.Offset.Zero }) { ch, d -> ch.consume(); arr += d }
+            }
+            id == "olho" -> Modifier.pointerInput(id, false) { detectTapGestures(onPress = { vibrar(this@Balao); espiar = true; tryAwaitRelease(); espiar = false }) }
+            else -> Modifier.pointerInput(id, false) { detectTapGestures(onTap = { vibrar(this@Balao); acao() }, onLongPress = { vibrar(this@Balao); Arrumar.editando = true }) }
+        }
+        Box(Modifier.onGloballyPositioned { pos = it.positionInRoot(); tam = it.size }
+            .graphicsLayer { translationX = arr.x; translationY = arr.y; rotationZ = giro }
+            .size(40.dp).background(Cor.bloco, RoundedCornerShape(12.dp)).border(1.dp, if (Arrumar.editando) Cor.a2 else Cor.linha, RoundedCornerShape(12.dp))
+            .then(gesto), contentAlignment = Alignment.Center) {
+            Icone(icone, 18.dp)
+            if (id == "pausa" && pausaAuto && Nucleo.pausado) Text("A", color = Cor.a2, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 4.dp))
+        }
+    }
+
+    /** A barra de baixo (perto do teclado): os botões que a pessoa trouxe para cá; arrumando, aparece vazia com o "Pronto". */
+    @Composable
+    private fun BarraBaixo() {
+        if (Arrumar.baixo.isEmpty() && !Arrumar.editando) return
+        Row(Modifier.fillMaxWidth().onGloballyPositioned { Arrumar.areaBaixo = it.boundsInRoot() }
+            .then(if (Arrumar.editando) Modifier.background(Color(0x1F3B8CFF), RoundedCornerShape(14.dp)).border(1.dp, Color(0x6667C6FF), RoundedCornerShape(14.dp)).padding(4.dp) else Modifier),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Arrumar.baixo.forEach { Controle(it) }
+            if (Arrumar.editando) {
+                if (Arrumar.baixo.isEmpty()) Text("solte aqui", color = Cor.apagado, fontSize = 12.sp)
+                Spacer(Modifier.weight(1f))
+                Botao("Pronto", true) { Arrumar.editando = false; Arrumar.guardar(prefs) }
+            }
+        }
+    }
+
     /** O ⏸: toque é sempre seu (tira o "automático"); o "A" mostra que quem pausou foi a pausa automática. */
     @Composable
     private fun BotaoPausa() = Box {
@@ -196,6 +256,12 @@ class Balao : Service() {
     /** Opções (a primeira): a pausa automática. */
     @Composable
     private fun Opcoes() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Linha(Modifier.toque { tela = "autoteste" }) {
+            Column(Modifier.weight(1f)) {
+                Text("Relatório", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("autoteste e o que aconteceu, para compartilhar", color = Cor.apagado, fontSize = 12.sp)
+            }
+        }
         Rotulo("Pausa automática")
         listOf(
             Triple("nunca", "Desligada", "Só o ⏸ na mão (como hoje)."),
@@ -212,14 +278,82 @@ class Balao : Service() {
         }
         Text("Com o jogo pausado, um escudo invisível segura os toques no jogo: assim o Android não mostra \"não está respondendo\". Tocar no jogo continua ele.",
             color = Cor.apagado, fontSize = 12.sp)
+        // LABORATÓRIO: ferramentas de teste, fora da tela principal (o achar pelo nome e os caminhos já funcionam sozinhos)
+        if (Nucleo.jogo != null) {
+            Rotulo("Ferramentas de teste")
+            listOf(Triple("mudanca", "Busca por mudança", "valores que o jogo muda sozinho (foto, mudou, não mudou)"),
+                Triple("caminho", "Caminhos (ponteiros)", "conferir, exportar e importar à mão"),
+                Triple("lab", "Laboratório", "achar os salvos de novo pela assinatura")).forEach { (id, nome, txt) ->
+                Linha(Modifier.toque { tela = id }) {
+                    Column(Modifier.weight(1f)) {
+                        Text(nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                        Text(txt, color = Cor.apagado, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
     }
 
-    private fun mudar(m: String, lembrar: Boolean = true) { modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) }; if (lembrar) guardar() }
+    private fun mudar(m: String, lembrar: Boolean = true) { if (m != modo) Registro.add("outro", "Painel: ${mapOf("balao" to "balão", "mini" to "mini painel", "painel" to "painel")[m] ?: m}"); modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) }; if (lembrar) guardar() }
 
     @Composable
     private fun Conteudo() {
         // os salvos ao vivo enquanto o mini ou o painel está à vista
-        LaunchedEffect(modo) { while (modo != "balao") { Nucleo.atualizarSalvos(); delay(1000) } }
+        // também com o balão recolhido (o normal enquanto se joga): o último valor fica em dia para quando o jogo fechar
+        LaunchedEffect(modo) { while (true) { Nucleo.atualizarSalvos(); delay(if (modo == "balao") 3000 else 1000) } }
+        LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
+        // jogo minimizado (outro app na frente: compartilhar, arquivos, o próprio Unit…) → o Unit vira o balão; o jogo voltou
+        // → volta ao que estava (mini ou painel). Sem jogo (ou fechado): fica como está, para escolher ou reabrir
+        LaunchedEffect(Unit) {
+            var antes: String? = null  // o modo de antes de o jogo sair da frente (null = não recolhi nada)
+            while (true) {
+                val naFrente = if (Nucleo.jogo != null && !Nucleo.jogoFechou) Nucleo.jogoNaFrente() ?: true else true
+                if (!naFrente && antes == null) {
+                    antes = modo
+                    if (modo != "balao") mudar("balao", lembrar = false)
+                    Registro.add("outro", "Jogo minimizado: o Unit virou o balão")
+                } else if (naFrente && antes != null) {
+                    val m = antes ?: modo; antes = null
+                    if (modo == "balao" && m != "balao") mudar(m)  // se a pessoa mexeu no balão nesse meio tempo, respeita
+                    Registro.add("outro", "O jogo voltou para a frente: o Unit voltou como estava")
+                }
+                delay(1000)
+            }
+        }
+        // os Salvos ficam guardados no celular a cada mudança, e cada salvo novo ganha caminhos procurados sozinho
+        LaunchedEffect(Unit) {
+            Ponteiro.aoTerminar = { m -> android.widget.Toast.makeText(this@Balao, m, android.widget.Toast.LENGTH_SHORT).show() }
+            Registro.antesDeCompartilhar = { mudar("balao") }  // senão o painel fica na frente da tela de compartilhar
+            androidx.compose.runtime.snapshotFlow { Nucleo.salvos.toList() }.collect { l -> Nucleo.guardarSalvos(); l.forEach { Ponteiro.autoAchar(it) } }
+        }
+        LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); Nucleo.semAviso { Registro.pulso() } } }  // pulso a cada 5 min
+        // engasgos: com o painel aberto, mede o intervalo entre os quadros da tela; mais de 100 ms = a tela travou
+        androidx.compose.runtime.DisposableEffect(modo) {
+            val coreo = android.view.Choreographer.getInstance(); var ultimo = 0L; var ligado = modo != "balao"
+            val cb = object : android.view.Choreographer.FrameCallback {
+                override fun doFrame(t: Long) {
+                    if (!ligado) return
+                    if (ultimo > 0) { val ms = (t - ultimo) / 1_000_000; if (ms > 100) Registro.engasgo(ms) }
+                    ultimo = t; coreo.postFrameCallback(this)
+                }
+            }
+            if (ligado) coreo.postFrameCallback(cb)
+            onDispose { ligado = false; coreo.removeFrameCallback(cb) }
+        }
+        // navegação: cada troca de tela, com quanto tempo ficou na anterior
+        val desde = remember { longArrayOf(System.currentTimeMillis()) }
+        val anterior = remember { arrayOf(tela) }
+        LaunchedEffect(tela) {
+            if (anterior[0] != tela) Registro.add("tela", "${anterior[0]} → $tela (ficou ${(System.currentTimeMillis() - desde[0]) / 1000} s em ${anterior[0]})")
+            anterior[0] = tela; desde[0] = System.currentTimeMillis()
+        }
+        // o jogo fechou: abre o painel para perguntar; reabriu: volta a ser balão (senão o painel em tela cheia cobre o jogo)
+        val perguntou = remember { booleanArrayOf(false) }
+        LaunchedEffect(Nucleo.jogoFechou) {
+            if (Nucleo.jogoFechou) { if (modo != "painel") mudar("painel"); perguntou[0] = true }
+            else if (perguntou[0]) { perguntou[0] = false; if (Nucleo.jogo != null) { mudar("balao"); Registro.add("decisao", "O jogo reabriu: voltei para o balão, para o painel não cobrir o jogo") } }
+        }
+        LaunchedEffect(modo, cheio, tela, opcaoPausa) { Registro.painel = "modo=$modo · tela cheia=$cheio · tela=$tela · pausa automática=$opcaoPausa" }  // vai no relatório
         LaunchedEffect(Nucleo.pausado) { ligarEscudo(Nucleo.pausado); if (!Nucleo.pausado) pausaAuto = false }
         // pausa automática: entra ao digitar (ou com o painel aberto) e sai ao sair dessas telas / minimizar
         LaunchedEffect(modo, tela, opcaoPausa) {
@@ -237,7 +371,7 @@ class Balao : Service() {
                             vista?.let { wm.updateViewLayout(it, params) }; guardar()
                         }
                     }
-                    .pointerInput(Unit) { detectTapGestures(onTap = { vibrar(this@Balao); mudar(if (Nucleo.salvos.isEmpty()) "painel" else "mini") }, onLongPress = { mudar("painel") }) },
+                    .pointerInput(Unit) { detectTapGestures(onTap = { vibrar(this@Balao); mudar(if (Nucleo.salvos.isEmpty() || Ponteiro.duvida.isNotEmpty() || Ponteiro.precisaNumero.isNotEmpty()) "painel".also { tela = "inicio" } else "mini") }, onLongPress = { mudar("painel") }) },
                 contentAlignment = Alignment.Center
             ) { Text("U", color = Cor.a2, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp) }
             "mini" -> Mini()
@@ -259,12 +393,16 @@ class Balao : Service() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Nucleo.salvos.take(3).forEach { s ->
                 Column(Modifier.weight(1f).background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.linha, RoundedCornerShape(14.dp))
-                    .toque { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar"; mudar("painel") }.padding(8.dp)) {
+                    // perdido (endereço de antes de reabrir): vai para o Achar; editar escreveria num endereço que não vale mais
+                    .toque { if (s.perdido) tela = "achar" else { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" }; mudar("painel") }.padding(8.dp)) {
                     Text(s.nome + if (s.congelado) " · congelado" else "", color = Cor.apagado, fontSize = 11.sp, maxLines = 1)
-                    Text(s.valor, color = if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(s.valor, color = if (s.perdido) Cor.apagado else if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 }
             }
         }
+        if (Ponteiro.duvida.isNotEmpty() || Ponteiro.precisaNumero.isNotEmpty())  // depois de reabrir: chama para o painel
+            Text("${(Ponteiro.duvida.keys + Ponteiro.precisaNumero).distinct().joinToString()}: toque para confirmar o número", color = Cor.a2, fontSize = 13.sp,
+                modifier = Modifier.toque { tela = "inicio"; mudar("painel") })
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Botao("Achar", true) { tela = "achar"; mudar("painel") }
             Spacer(Modifier.weight(1f))
@@ -278,8 +416,15 @@ class Balao : Service() {
     private var tela by mutableStateOf("inicio")   // inicio | achar | editar | salvos
 
     @Composable
-    private fun Painel() = Column(
-        Modifier.fillMaxSize().alpha(if (espiar) 0f else 1f).background(Cor.vidro, RoundedCornerShape(28.dp)).border(1.dp, Cor.linha, RoundedCornerShape(28.dp)).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+    private fun Painel() = Box(Modifier.fillMaxSize().alpha(if (espiar) 0f else 1f).onGloballyPositioned { Arrumar.areaPainel = it.boundsInRoot() }) {
+        PainelConteudo()
+        // os botões soltos onde a pessoa deixou (arrastados para fora das barras)
+        Arrumar.livre.forEach { (id, p) -> Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(p.x.toInt(), p.y.toInt()) }) { Controle(id) } }
+    }
+
+    @Composable
+    private fun PainelConteudo() = Column(
+        Modifier.fillMaxSize().background(Cor.vidro, RoundedCornerShape(28.dp)).border(1.dp, Cor.linha, RoundedCornerShape(28.dp)).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // a barrinha de cima: segure e arraste para mudar o painel de lugar
@@ -289,13 +434,11 @@ class Balao : Service() {
         Row(Modifier.pointerInput(Unit) { detectDragGestures { ch, d -> ch.consume(); arrastar(d.x, d.y) } }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // em cima só os controles; o nome da tela aparece fora do início, com a seta para voltar
             if (tela != "inicio") Box(Modifier.toque { tela = "inicio" }) { Text("‹", color = Cor.texto, fontSize = 26.sp) }
-            Text(when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; else -> "" },
+            Text(if (Arrumar.editando) "Arrumar" else when (tela) { "achar" -> "Achar"; "editar" -> "Editar"; "salvos" -> "Salvos"; "jogos" -> "Jogos"; "nome" -> "Nome"; "opcoes" -> "Opções"; "lab" -> "Laboratório"; "volta" -> "Em volta"; "mudanca" -> "Busca por mudança"; "caminho" -> "Caminhos"; "autoteste" -> "Autoteste"; "registro" -> "Registro"; else -> "" },
                 color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
-            Olho()
-            BotaoPausa()
-            BotaoIcone(Ic.EXPANDIR) { cheio = !cheio; mudar("painel") }
-            BotaoIcone(Ic.MINIMIZAR) { mudar(if (Nucleo.salvos.isEmpty()) "balao" else "mini") }
-            BotaoIcone(Ic.FECHAR) { confirmar = true }
+            // os controles na ordem que a pessoa arrumou (Laboratório: Arrumar.kt)
+            Row(Modifier.onGloballyPositioned { Arrumar.areaCima = it.boundsInRoot() }.then(if (Arrumar.editando) Modifier.border(1.dp, Color(0x6667C6FF), RoundedCornerShape(12.dp)).padding(2.dp) else Modifier),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) { Arrumar.cima.forEach { Controle(it) } }
         }
         // o jogo ligado: tocar abre a lista para trocar de processo
         if (tela == "inicio") Linha(Modifier.toque { tela = "jogos" }) {
@@ -304,20 +447,67 @@ class Balao : Service() {
                 Text(Nucleo.jogo?.nome ?: "Escolher jogo", color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text(if (Nucleo.pausado) "jogo pausado" else Nucleo.jogo?.pacote ?: "toque para ver os jogos abertos", color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
             }
+            if (Nucleo.jogo != null && !Nucleo.jogoFechou) Box(Modifier.padding(end = 12.dp).toque { Nucleo.pedirFechar = true }) {  // sempre ativo; pede confirmação
+                Text("Fechar jogo", color = Cor.ruim, fontSize = 13.sp)  // fecha o jogo (o Unit pergunta se quer reabrir)
+            }
             Text("Trocar", color = Cor.a2, fontSize = 13.sp)
         }
         if (confirmar) ConfirmarFechar({ confirmar = false }) { stopSelf() }
+        if (Nucleo.pedirFechar && Nucleo.jogo != null) ConfirmarFechar({ Nucleo.pedirFechar = false }, "Fechar ${Nucleo.jogo?.nome}?",
+            "O que você não salvou no jogo se perde. Os valores salvos no Unit ficam.") { Nucleo.pedirFechar = false; Nucleo.fecharJogo() }
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
+        else if (Ponteiro.aviso.isNotBlank() && tela != "caminho") Text(Ponteiro.aviso, color = Cor.a2, fontSize = 13.sp)  // procura longa: diz o que está fazendo
+        // dúvida entre objetos achados pelo nome: um toque no número que está na tela resolve (sem digitar)
+        if (!Nucleo.jogoFechou && tela == "inicio" && Ponteiro.duvida.isNotEmpty()) {
+            // enquanto a pergunta está aberta: o jogo pausa (o número para de mudar) e os botões acompanham a memória a cada
+            // segundo. Respondeu, minimizou ou saiu do Início: o jogo volta
+            androidx.compose.runtime.DisposableEffect(Unit) { Nucleo.pausarPelaDuvida(); onDispose { Nucleo.soltarDuvida() } }
+            LaunchedEffect(Unit) { while (true) { Ponteiro.atualizarDuvida(); delay(1000) } }
+        }
+        if (!Nucleo.jogoFechou && tela == "inicio") Ponteiro.duvida.entries.toList().take(2).forEach { (nome, cands) ->
+            Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("$nome: qual destes números está na tela?", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                if (Nucleo.pausado) Text("jogo pausado para você comparar · volta ao tocar", color = Cor.apagado, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // sempre ativo: escolher não precisa do motor (antes ficava apagado durante as procuras)
+                    cands.take(4).forEach { (a, v) -> Botao(v, true, Modifier.weight(1f)) { Ponteiro.escolherNaTela(nome, a, v) } }
+                }
+                Text("nenhum: toque aqui para digitar", color = Cor.apagado, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp).toque { Ponteiro.confirmando = nome; tela = "caminho" })
+            }
+        }
+        // sem objetos para escolher (jogo que não é Unity): digitar o número da tela
+        val aConferir = Ponteiro.precisaNumero.filter { n -> n !in Ponteiro.duvida && Nucleo.salvos.none { it.nome == n && it.caminho } }
+        if (!Nucleo.jogoFechou && aConferir.isNotEmpty() && tela == "inicio") Linha(Modifier.toque { Ponteiro.confirmando = aConferir.first(); tela = "caminho" }) {
+            Text("${aConferir.joinToString()}: toque e digite o número que está na tela", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("›", color = Cor.a2, fontSize = 18.sp)
+        }
+        if (Nucleo.jogoFechou) Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${Nucleo.jogo?.nome ?: "O jogo"} fechou. Quer abrir de novo?", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Botao("Reabrir", true, Modifier.weight(1f), !Nucleo.ocupado) { Nucleo.reabrir(this@Balao) }
+                Botao("Agora não", false, Modifier.weight(1f)) { Nucleo.jogoFechou = false; Nucleo.jogo = null; Nucleo.salvos.clear(); Nucleo.zerar() }
+            }
+        }
         when (tela) {
             "achar" -> Achar()
             "editar" -> Editar()
             "salvos" -> Salvos()
             "jogos" -> Jogos()
             "nome" -> Nome()
+            "lab" -> Laboratorio.Tela(this@Balao)
+            "caminho" -> Ponteiro.Tela()
+            "autoteste" -> Registro.TelaAutoteste(this@Balao) { tela = "registro" }
+            "registro" -> Registro.TelaRegistro(this@Balao)
+            "mudanca" -> Mudanca.Tela(this@Balao) { a -> Nucleo.escolhido = a; tela = "editar" }
+            "volta" -> Nucleo.escolhido?.let { e -> EmVolta.Tela(e) { a -> Nucleo.escolhido = a; tela = "editar" } }
             "opcoes" -> Opcoes()
             else -> Inicio()
         }
+        // telas sem o teclado do Unit: a barra de baixo fica no pé do painel
+        if (tela != "achar" && tela != "editar") { Spacer(Modifier.weight(1f)); BarraBaixo() }
     }
 
     @Composable
@@ -329,22 +519,24 @@ class Balao : Service() {
         }
         if (Nucleo.salvos.isNotEmpty()) {
             Rotulo("Salvos")
-            Nucleo.salvos.take(4).forEach { s -> LinhaSalvo(s) }
+            Nucleo.salvos.forEach { s -> LinhaSalvo(s) }
         } else Text("Toque em Achar e digite um número que o jogo mostra.", color = Cor.apagado, fontSize = 13.sp)
         Linha(Modifier.toque { tela = "opcoes" }) {
             Column(Modifier.weight(1f)) {
                 Text("Opções", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                Text("pausa automática: " + mapOf("nunca" to "desligada", "digitar" to "ao digitar", "painel" to "ao abrir o painel")[opcaoPausa], color = Cor.apagado, fontSize = 12.sp)
+                Text("relatório, pausa automática e ferramentas de teste", color = Cor.apagado, fontSize = 12.sp)
             }
         }
     }
 
     @Composable
-    private fun LinhaSalvo(s: Salvo) = Linha(Modifier.toque { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" }) {
+    private fun LinhaSalvo(s: Salvo) = Linha(Modifier.toque { if (s.perdido) tela = "achar" else { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" } }) {
         Column(Modifier.weight(1f)) {
-            Text(s.nome, color = Cor.texto, fontSize = 15.sp)
-            Text((NOME_TIPO[s.tipo] ?: s.tipo) + if (s.congelado) " · congelado" else "", color = Cor.apagado, fontSize = 11.sp)
+            Text(s.nome, color = if (s.perdido) Cor.apagado else Cor.texto, fontSize = 15.sp)
+            Text(if (s.perdido) "endereço antigo · ache de novo (último: ${s.valor})" else (if (s.caminho) "voltou sozinho ✓" else Ponteiro.estadoAuto[s.addr] ?: (NOME_TIPO[s.tipo] ?: s.tipo)) + if (s.congelado) " · congelado" else "",
+                color = if (!s.caminho && Ponteiro.estadoAuto[s.addr] == Ponteiro.PREPARANDO) Cor.a2 else Cor.apagado, fontSize = 11.sp)
         }
+        if (s.perdido) { Box(Modifier.padding(start = 8.dp).toque { Nucleo.esquecerSalvo(s) }) { Text("Esquecer", color = Cor.ruim, fontSize = 12.sp) }; return@Linha }
         Text(s.valor, color = if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Box(Modifier.padding(start = 8.dp).toque { Nucleo.alternarCongelado(s) }) { Icone(Ic.CONGELAR, 20.dp, if (s.congelado) Cor.a2 else Cor.apagado) }
     }
@@ -352,33 +544,61 @@ class Balao : Service() {
     @Composable
     private fun Achar() {
         var campo by remember { mutableStateOf("") }
+        var selecionando by remember { mutableStateOf(false) }
+        val marcados = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+        LaunchedEffect(Unit) { while (true) { Nucleo.atualizarAchados(); delay(1000) } }  // a lista acompanha o jogo
+        // pausa no 1º número digitado (o valor da tela não muda enquanto digita); apagou tudo ou saiu sem buscar: solta
+        androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Nucleo.soltarDigitacao() } }
         ComTeclado({
             Teclado(if (Nucleo.total == null) "Buscar" else "Refinar", campo.isNotBlank() && !Nucleo.ocupado,
-                digitou = { if (it != "~" || "~" !in campo) campo += it }, apagou = { campo = campo.dropLast(1) }, confirmou = { Nucleo.buscar(campo); campo = "" }, faixa = true)
+                digitou = { if (campo.isEmpty()) Nucleo.pausarAoDigitar(); if (it != "~" || "~" !in campo.substringAfterLast(';')) campo += it },
+                apagou = { campo = campo.dropLast(1); if (campo.isEmpty()) Nucleo.soltarDigitacao() },
+                confirmou = { Nucleo.buscar(campo); campo = "" }, faixa = true)
         }) {
             CampoGrande(campo, if (Nucleo.total == null) "número na tela" else "número novo")
             Nucleo.total?.let { n ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${"%,d".format(n).replace(',', '.')} resultado${if (n == 1L) "" else "s"}", color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("começar de novo", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.toque { Nucleo.zerar(); campo = "" })
-                }
+                // número e "começar de novo" em linhas separadas: no painel estreito, lado a lado quebrava a palavra
+                Text("${"%,d".format(n).replace(',', '.')} resultado${if (n == 1L) "" else "s"}", color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text("começar de novo", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.toque { Nucleo.zerar(); campo = "" })
                 if (n > 1) Text("Mude o valor no jogo (ganhe ou gaste), digite o novo e refine.", color = Cor.apagado, fontSize = 12.sp)
             }
-            if (Nucleo.achados.size in 1..50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Nucleo.achados.take(20).forEach { a ->
-                    Linha(Modifier.toque { Nucleo.escolhido = a; tela = "editar" }) {
-                        Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
+            // os que já estão nos Salvos não voltam na lista da busca (ficam na tela de Salvos)
+            val novos = Nucleo.achados.filter { a -> Nucleo.salvos.none { it.addr == a.addr } }
+            // selecionar: marca resultados para apagar da busca (o próximo refino não traz de volta), salvar ou congelar
+            if (novos.size >= 2) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (selecionando) "${marcados.size} marcado(s)" else "", color = Cor.texto, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                if (selecionando) Text("Todos", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.padding(end = 14.dp).toque { marcados.clear(); marcados += novos.take(20).map { it.addr } })
+                Text(if (selecionando) "Pronto" else "Selecionar", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.toque { selecionando = !selecionando; marcados.clear() })
+            }
+            if (novos.isNotEmpty() && Nucleo.achados.size <= 50) Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                novos.take(20).forEach { a ->
+                    val marcado = a.addr in marcados
+                    Linha(Modifier.toque { if (selecionando) { if (marcado) marcados.remove(a.addr) else marcados += a.addr } else { Nucleo.escolhido = a; tela = "editar" } }) {
+                        if (selecionando) Box(Modifier.padding(end = 10.dp).size(20.dp).then(if (marcado) Modifier.background(Cor.a2, RoundedCornerShape(5.dp)) else Modifier.border(1.dp, Cor.linha, RoundedCornerShape(5.dp))))
+                        Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto, maxLines = 1); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1) }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp)
-                            if (a.tipo == Nucleo.aprendido) Text("o que você mais usa neste jogo", color = Cor.ok, fontSize = 11.sp)
+                            Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp, maxLines = 1)
+                            if (a.tipo == Nucleo.aprendido) Text("mais usado", color = Cor.ok, fontSize = 11.sp, maxLines = 1)  // curto: a linha é estreita deitado
                         }
                         val ja = Nucleo.salvos.any { it.addr == a.addr }
-                        Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(if (ja) Ic.SALVO else Ic.SALVAR, 20.dp, if (ja) Cor.a2 else Cor.icone) }
+                        if (!selecionando) {
+                            Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(if (ja) Ic.SALVO else Ic.SALVAR, 20.dp, if (ja) Cor.a2 else Cor.icone) }
+                            Box(Modifier.padding(start = 10.dp).toque { Nucleo.editar(a.addr, a.tipo, a.valor, true) }) { Icone(Ic.CONGELAR, 20.dp) }  // congela no valor de agora
+                        }
                     }
                 }
             }
-            if (Nucleo.achados.size in 2..20) Botao("Salvar todos (${Nucleo.achados.size})", false, Modifier.fillMaxWidth()) { Nucleo.achados.forEach(Nucleo::salvar) }
-            Nucleo.escolhido?.takeIf { Nucleo.total == 1L }?.let { a ->
+            if (selecionando && marcados.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val escolhidos = novos.filter { it.addr in marcados }
+                Botao("Apagar (${marcados.size})", false, Modifier.weight(1f), !Nucleo.ocupado) { Nucleo.apagar(marcados.toList()); marcados.clear() }
+                Botao("Salvar", false, Modifier.weight(1f)) { escolhidos.forEach(Nucleo::salvar); marcados.clear() }
+                Botao("Congelar", false, Modifier.weight(1f)) { escolhidos.forEach { Nucleo.editar(it.addr, it.tipo, it.valor, true) }; marcados.clear() }
+            }
+            if (!selecionando && novos.size in 2..20) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Botao("Salvar todos (${novos.size})", false, Modifier.weight(1f)) { novos.forEach(Nucleo::salvar) }
+                Botao("Congelar todos", false, Modifier.weight(1f)) { novos.forEach { Nucleo.editar(it.addr, it.tipo, it.valor, true) } }
+            }
+            Nucleo.escolhido?.takeIf { Nucleo.total == 1L && Nucleo.salvos.none { s -> s.addr == it.addr } }?.let { a ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val ja = Nucleo.salvos.any { it.addr == a.addr }
                     Botao(if (ja) "Salvo" else "Salvar", false, Modifier.weight(1f), ligado = !ja) { Nucleo.salvar(a) }
@@ -391,6 +611,7 @@ class Balao : Service() {
     @Composable
     private fun Editar() {
         val e = Nucleo.escolhido ?: run { tela = "inicio"; return }
+        LaunchedEffect(Unit) { while (true) { Nucleo.atualizarAchados(); delay(1000) } }  // o "agora" acompanha o jogo
         var campo by remember(e.addr) { mutableStateOf("") }
         var congelar by remember(e.addr) { mutableStateOf(Nucleo.salvos.any { it.addr == e.addr && it.congelado }) }
         val atual = Nucleo.salvos.firstOrNull { it.addr == e.addr }?.valor ?: e.valor
@@ -406,6 +627,8 @@ class Balao : Service() {
             Teclado("Aplicar", (campo.isNotBlank() || congelar) && !Nucleo.ocupado && !acima, digitou = { campo += it }, apagou = { campo = campo.dropLast(1) },
                 confirmou = { Nucleo.editar(e.addr, e.tipo, campo.ifBlank { atual }, congelar); campo = ""; tela = "inicio" })
         }) {
+          // rola quando não cabe (painel menor, deitado): antes o teclado e o Aplicar ficavam cortados
+          Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Linha(Modifier.toque { tela = "nome" }) {
                 Column(Modifier.weight(1f)) {
                     Rotulo("Nome")
@@ -414,7 +637,7 @@ class Balao : Service() {
                 Icone(Ic.EDITAR, 18.dp)
             }
             Rotulo("Ver como")
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 TIPOS.forEach { t -> Selo(NOME_TIPO[t] ?: t, e.tipo == t) { if (t != e.tipo) { congelar = false; Nucleo.trocarTipo(e.addr, t) } } }
             }
             vizinho?.let { v ->
@@ -443,6 +666,7 @@ class Balao : Service() {
                     contentAlignment = if (congelar) Alignment.CenterEnd else Alignment.CenterStart) { Box(Modifier.padding(3.dp).size(16.dp).background(Color.White, CircleShape)) }
                 Text("Congelar neste valor", color = Cor.texto, fontSize = 14.sp)
             }
+          }
         }
     }
 
@@ -452,18 +676,21 @@ class Balao : Service() {
         val deitado = androidx.compose.ui.platform.LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
         if (deitado) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp), content = conteudo)
-            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) { teclado() }
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) { BarraBaixo(); teclado() }
         } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            conteudo()
-            Spacer(Modifier.weight(1f))
+            // o conteúdo fica com todo o espaço acima do teclado. Antes havia um espaço vazio esticável aqui, e ele dividia a
+            // altura meio a meio com a lista que rola (Editar e Achar): o "Congelar neste valor" aparecia cortado na metade
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), content = conteudo)
+            BarraBaixo()
             teclado()
         }
     }
 
     /** Só nesta tela a janela pega o foco: o teclado do Android aparece para digitar o nome; ao sair, volta a não pegar. */
-    private fun tecladoDoAndroid(ligar: Boolean) {
+    private fun tecladoDoAndroid(ligar: Boolean, mostrar: Boolean = true) {
         params.flags = if (ligar) params.flags and LayoutParams.FLAG_NOT_FOCUSABLE.inv() else params.flags or LayoutParams.FLAG_NOT_FOCUSABLE
-        params.softInputMode = if (ligar) LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or LayoutParams.SOFT_INPUT_ADJUST_RESIZE else LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
+        params.softInputMode = if (ligar && mostrar) LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            else if (ligar) LayoutParams.SOFT_INPUT_STATE_HIDDEN or LayoutParams.SOFT_INPUT_ADJUST_RESIZE else LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
         vista?.let { wm.updateViewLayout(it, params) }
     }
 
@@ -503,8 +730,15 @@ class Balao : Service() {
 
     @Composable
     private fun Salvos() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Nucleo.salvos.forEach { s -> LinhaSalvo(s) }
-        Text("Toque num valor para editar; no floco, congela ou solta.", color = Cor.apagado, fontSize = 12.sp)
+        var apagando by remember { mutableStateOf(false) }
+        if (Nucleo.salvos.isNotEmpty()) Text(if (apagando) "Pronto" else "Apagar", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.align(Alignment.End).toque { apagando = !apagando })
+        Nucleo.salvos.toList().forEach { s ->
+            if (!apagando) LinhaSalvo(s) else Linha {
+                Text(s.nome, color = Cor.texto, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Box(Modifier.padding(start = 8.dp).toque { Nucleo.esquecerSalvo(s) }) { Text("Apagar", color = Cor.ruim, fontSize = 13.sp) }  // sempre ativo
+            }
+        }
+        Text(if (apagando) "Toque em Apagar no valor que quer tirar (se estiver congelado, solta antes)." else "Toque num valor para editar; no floco, congela ou solta.", color = Cor.apagado, fontSize = 12.sp)
     }
 
     /** Os jogos abertos, dentro do painel: tocar troca o processo (o Unit solta o jogo de antes). */
@@ -519,7 +753,10 @@ class Balao : Service() {
                         Text(j.nome, color = Cor.texto, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         Text(j.pacote, color = Cor.apagado, fontSize = 12.sp, maxLines = 1)
                     }
-                    if (Nucleo.jogo?.pacote == j.pacote) Selo("ligado", true)
+                    if (Nucleo.jogo?.pacote == j.pacote) {
+                        Selo("ligado", true)
+                        Box(Modifier.padding(start = 8.dp).toque { Nucleo.pedirFechar = true }) { Text("Fechar", color = Cor.ruim, fontSize = 13.sp) }
+                    }
                 }
             }
             if (Nucleo.ocupado && Nucleo.jogos.isEmpty()) Text("Procurando os jogos… Se aparecer o pedido de root, toque em Permitir.", color = Cor.a2, fontSize = 13.sp)
