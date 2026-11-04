@@ -225,6 +225,18 @@ object Nucleo {
             refinar && antes != null && total == antes && antes > 1 -> Registro.add("aviso", "Refinar $v não diminuiu nada ($antes): o valor pode não ter mudado no jogo")
             (total ?: 0) > 10_000_000 -> Registro.add("aviso", "Mais de 10 milhões de resultados: o próximo refino vai ser lento; use um número mais raro ou uma faixa menor")
         }
+        // 1ª busca sem nada: procura perto (n-1~n+1, todos os tipos) para dizer o porquê. Não decifra nada: valor
+        // codificado pelo jogo (proteção) ou que vem do servidor fica de fora, e a pessoa fica sabendo
+        val n = v.toDoubleOrNull()
+        fun t(d: Double) = if (d % 1.0 == 0.0) d.toLong().toString() else d.toString()
+        if (!refinar && total == 0L && n != null) {
+            val perto = runCatching { cmd { it.cmd("search ${t(n - 1)}~${t(n + 1)}") }.status.substringBefore(' ').toLongOrNull() }.getOrNull() ?: 0
+            total = null  // o próximo é um Buscar novo (refinar 0 resultados não serve)
+            val porque = if (perto > 0) "Nenhum $v exato, mas $perto número(s) perto (${t(n - 1)} a ${t(n + 1)}): o número pode ter mudado antes da busca. Mude o valor no jogo e busque o número novo."
+                else "Não há nenhum número perto de $v na memória, em nenhum tipo: este jogo provavelmente guarda esse valor codificado (proteção) ou ele vem do servidor. O Unit não mexe nesses valores."
+            Registro.add("aviso", "Por que não achou $v: $porque")
+            throw IllegalStateException(porque)
+        }
         // na tela (os resultados ficam): o certo pode ter ficado de fora dos 16 milhões
         if (cortou) throw IllegalStateException("Resultados demais: o valor certo pode ter ficado de fora. Mude o valor no jogo e busque o número novo.")
     }
