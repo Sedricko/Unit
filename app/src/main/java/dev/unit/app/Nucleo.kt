@@ -229,10 +229,11 @@ object Nucleo {
         // codificado pelo jogo (proteção) ou que vem do servidor fica de fora, e a pessoa fica sabendo
         val n = v.toDoubleOrNull()
         fun t(d: Double) = if (d % 1.0 == 0.0) d.toLong().toString() else d.toString()
-        if (!refinar && total == 0L && n != null) {
+        if (total == 0L && n != null) {  // também no Refinar: o número ainda existe na memória ou sumiu?
             val perto = runCatching { cmd { it.cmd("search ${t(n - 1)}~${t(n + 1)}") }.status.substringBefore(' ').toLongOrNull() }.getOrNull() ?: 0L
             total = null  // o próximo é um Buscar novo (refinar 0 resultados não serve)
-            val porque = if (perto > 0) "Nenhum $v exato, mas $perto número(s) perto (${t(n - 1)} a ${t(n + 1)}): o número pode ter mudado antes da busca. Mude o valor no jogo e busque o número novo."
+            val porque = if (perto > 0 && refinar) "Nenhum dos resultados ficou com $v, mas há $perto número(s) perto na memória: o valor pode ter mudado de novo antes do Refinar. Toque em Buscar com o número que está na tela agora."
+                else if (perto > 0) "Nenhum $v exato, mas $perto número(s) perto (${t(n - 1)} a ${t(n + 1)}): o número pode ter mudado antes da busca. Mude o valor no jogo e busque o número novo."
                 else "Não há nenhum número perto de $v na memória, em nenhum tipo: este jogo provavelmente guarda esse valor codificado (proteção) ou ele vem do servidor. O Unit não mexe nesses valores."
             Registro.add("aviso", "Por que não achou $v: $porque")
             throw IllegalStateException(porque)
