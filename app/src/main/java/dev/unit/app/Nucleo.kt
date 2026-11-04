@@ -251,6 +251,9 @@ object Nucleo {
         scope.launch { runCatching { cmd { it.cmd("resume") } } }
     }
 
+    /** O jogo escolhido está na frente (na tela)? null = não deu para saber. Prioridade 0 do Android = app na tela. */
+    suspend fun jogoNaFrente(): Boolean? = runCatching { cmd { it.cmd("frente") }.status.trim().toInt() <= 0 }.getOrNull()
+
     /** Começo da busca: o jogo para, para o valor não mudar no meio (o soltarSePausado solta no fim). */
     internal suspend fun pausarParaBuscar() {
         if (pausado || jogo == null) return

@@ -18,6 +18,7 @@
 //   classe ENDEREÇO            classe do Unity do objeto do valor; "texto OFF HEX" = assinatura -> ok CLASSE ESPAÇO CAMPO
 //   pelonome CLASSE ESPAÇO CAMPO [OFF=HEX,...]  o valor achado pelo nome da classe e a assinatura -> ok ACHADOS OBJETOS
 //   vivo / fechar              o jogo ainda está aberto? / fecha o jogo
+//   frente                     prioridade do jogo no Android (0 = na tela)                  -> ok N
 //   android DESDE PACOTE       o que o Android anotou (logcat) sobre o jogo, o Unit, ANR e falhas -> ok N
 //   tirar A1,A2,...            tira endereços dos resultados (apagados pela pessoa)        -> ok SOBRARAM TIRADOS
 //   info                       regiões, MB legíveis, memória do motor e do jogo (KB)       -> ok N MB KBMOTOR KBJOGO
@@ -1035,6 +1036,11 @@ int main(void) {
         else if (!strcmp(c, "classe")) cmd_classe(a1);
         else if (!strcmp(c, "pelonome")) { char ca[1200]; snprintf(ca, sizeof ca, "%s %s", a3, quarto); cmd_pelonome(a1, a2, ca); }
         else if (!strcmp(c, "vivo")) puts("ok");
+        else if (!strcmp(c, "frente")) {  // o jogo está na frente? prioridade do Android: 0 = app na tela; atrás de outro, sobe
+            char p[64]; snprintf(p, sizeof p, "/proc/%d/oom_score_adj", target); FILE *f = fopen(p, "r"); int v = 1000;
+            if (f) { if (fscanf(f, "%d", &v) != 1) v = 1000; fclose(f); }
+            printf("ok %d\n", v);
+        }
         else if (!strcmp(c, "tirar")) cmd_tirar(a1);
         else if (!strcmp(c, "android")) cmd_android(a1, a2);
         else if (!strcmp(c, "info")) {  // para o autoteste: quantas regiões e quantos MB do jogo o Unit consegue ler

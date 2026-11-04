@@ -66,6 +66,7 @@ echo "$got3"
 got4=$(printf 'attach %s\nptrscan %s 3\nptrscan %s 3\n' "$pid" "$acobre" "$aferro" | "$out/unitd")
 echo "$got4"
 cam=$(grep -m1 '^alvo+' <<<"$got4" || true)
+gotf=$(printf 'attach %s\nfrente\n' "$pid" | "$out/unitd" | tail -1)  # antes do got5, que fecha o alvo
 got5=$(printf 'attach %s\nptr %s\nptr naoexiste+10:8\nptr alvo+0:8\ninfo\nandroid 1;rm x\nandroid 100.5 com.jogo\nvivo\nfechar\nsleep 200\nvivo\n' "$pid" "$cam" | "$out/unitd")  # fechar por último: mata o alvo
 echo "$got5"
 got="$got
@@ -101,6 +102,7 @@ confere "ponteiro: salto longo da biblioteca para a tabela (Unity), item 700" ":
 if grep -qE '^ok [1-9][0-9]* [0-9]+ [1-9][0-9]* [1-9][0-9]*$' <<<"$got5"; then echo "OK   info: regiões e MB do jogo"; else echo "FALHA info: regiões e MB do jogo"; falhou=1; fi
 confere "android: recusa texto que iria para o sistema" "err uso: android SEGUNDOS PACOTE"
 confere "fechar: depois de fechar, o motor avisa" "err o jogo fechou"
+if grep -qE '^ok -?[0-9]+$' <<<"$gotf"; then echo "OK   frente: lê a prioridade do jogo ($gotf)"; else echo "FALHA frente: lê a prioridade do jogo ($gotf)"; falhou=1; fi
 confere "ponteiro: o que não é endereço (o cabeçalho do programa) quebra o caminho" "err o caminho quebrou (não é endereço)"
 confere "ponteiro: biblioteca que não existe, recusa" "err biblioteca naoexiste não está aberta"
 # ===== jogo grande: cenários tirados dos testes no Orecraft (só passa para o celular se todos passarem) =====

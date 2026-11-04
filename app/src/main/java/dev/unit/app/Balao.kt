@@ -302,6 +302,20 @@ class Balao : Service() {
         // também com o balão recolhido (o normal enquanto se joga): o último valor fica em dia para quando o jogo fechar
         LaunchedEffect(modo) { while (true) { Nucleo.atualizarSalvos(); delay(if (modo == "balao") 3000 else 1000) } }
         LaunchedEffect(Unit) { while (true) { Nucleo.verificar(); delay(2000) } }  // percebe quando o jogo fecha
+        // só em cima do jogo escolhido: outro app na frente (compartilhar, arquivos, o próprio Unit…) → o Unit some; o jogo
+        // voltou → reaparece como estava. Sem jogo (ou fechado): sempre à vista, para escolher ou reabrir
+        LaunchedEffect(Unit) {
+            var escondido = false
+            while (true) {
+                val naFrente = if (Nucleo.jogo != null && !Nucleo.jogoFechou) Nucleo.jogoNaFrente() ?: true else true
+                if (naFrente == escondido) {
+                    escondido = !naFrente
+                    vista?.visibility = if (escondido) android.view.View.GONE else android.view.View.VISIBLE
+                    Registro.add("outro", if (escondido) "Outro app na frente: escondi o Unit" else "O jogo voltou para a frente: o Unit voltou")
+                }
+                delay(1000)
+            }
+        }
         // os Salvos ficam guardados no celular a cada mudança, e cada salvo novo ganha caminhos procurados sozinho
         LaunchedEffect(Unit) {
             Ponteiro.aoTerminar = { m -> android.widget.Toast.makeText(this@Balao, m, android.widget.Toast.LENGTH_SHORT).show() }
