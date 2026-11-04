@@ -238,6 +238,19 @@ object Nucleo {
         scope.launch { runCatching { cmd { it.cmd("resume") } } }
     }
 
+    // a pergunta "qual destes números está na tela?" aberta: pausa para o número parar de mudar; quem pausou solta
+    private var porDuvida = false
+    fun pausarPelaDuvida() {
+        if (pausado || jogo == null) return
+        pausado = true; porDuvida = true; Registro.add("jogo", "Pausou para você comparar os números da pergunta")
+        scope.launch { runCatching { cmd { it.cmd("pause") } }.onFailure { if (porDuvida) { pausado = false; porDuvida = false } } }
+    }
+    fun soltarDuvida() {
+        if (!porDuvida || !pausado) { porDuvida = false; return }
+        porDuvida = false; pausado = false; Registro.add("jogo", "Soltou: a pergunta foi respondida ou fechada")
+        scope.launch { runCatching { cmd { it.cmd("resume") } } }
+    }
+
     /** Começo da busca: o jogo para, para o valor não mudar no meio (o soltarSePausado solta no fim). */
     internal suspend fun pausarParaBuscar() {
         if (pausado || jogo == null) return

@@ -440,12 +440,20 @@ class Balao : Service() {
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
         else if (Ponteiro.aviso.isNotBlank() && tela != "caminho") Text(Ponteiro.aviso, color = Cor.a2, fontSize = 13.sp)  // procura longa: diz o que está fazendo
         // dúvida entre objetos achados pelo nome: um toque no número que está na tela resolve (sem digitar)
+        if (!Nucleo.jogoFechou && tela == "inicio" && Ponteiro.duvida.isNotEmpty()) {
+            // enquanto a pergunta está aberta: o jogo pausa (o número para de mudar) e os botões acompanham a memória a cada
+            // segundo. Respondeu, minimizou ou saiu do Início: o jogo volta
+            androidx.compose.runtime.DisposableEffect(Unit) { Nucleo.pausarPelaDuvida(); onDispose { Nucleo.soltarDuvida() } }
+            LaunchedEffect(Unit) { while (true) { Ponteiro.atualizarDuvida(); delay(1000) } }
+        }
         if (!Nucleo.jogoFechou && tela == "inicio") Ponteiro.duvida.entries.toList().take(2).forEach { (nome, cands) ->
             Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("$nome: qual destes números está na tela?", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                if (Nucleo.pausado) Text("jogo pausado para você comparar · volta ao tocar", color = Cor.apagado, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    cands.take(4).forEach { (a, v) -> Botao(v, true, Modifier.weight(1f), !Nucleo.ocupado) { Ponteiro.escolherNaTela(nome, a, v) } }
+                    // sempre ativo: escolher não precisa do motor (antes ficava apagado durante as procuras)
+                    cands.take(4).forEach { (a, v) -> Botao(v, true, Modifier.weight(1f)) { Ponteiro.escolherNaTela(nome, a, v) } }
                 }
                 Text("nenhum: toque aqui para digitar", color = Cor.apagado, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp).toque { Ponteiro.confirmando = nome; tela = "caminho" })
             }

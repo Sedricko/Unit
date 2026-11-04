@@ -385,6 +385,16 @@ object Ponteiro {
     /** Dúvida entre objetos achados pelo nome (nome → endereço e número de cada um): o painel mostra os números para tocar. */
     val duvida = androidx.compose.runtime.mutableStateMapOf<String, List<Pair<String, String>>>()
 
+    /** Relê os números dos botões da pergunta (o jogo muda o valor enquanto a pessoa olha). */
+    suspend fun atualizarDuvida() {
+        val pacote = Nucleo.jogo?.pacote ?: return
+        for ((nome, cands) in duvida.toMap()) {
+            val tipo = lista(pacote).firstOrNull { it.nome == nome }?.tipo ?: continue
+            val novos = cands.map { (a, v) -> a to (runCatching { Nucleo.cmd { m -> m.cmd("read $a $tipo") }.status }.getOrNull() ?: v) }
+            if (novos != cands && nome in duvida) duvida[nome] = novos
+        }
+    }
+
     /** A pessoa tocou no número que está na tela: é esse objeto. */
     fun escolherNaTela(nome: String, addr: String, v: String) = Nucleo.rodar {
         val j = Nucleo.jogo ?: return@rodar
