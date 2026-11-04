@@ -254,6 +254,12 @@ object Ponteiro {
                     else -> "fiquei com $escolhido: é o mais perto do último valor (${c.valor})"
                 }, cands.map { "${it.first} = ${it.second ?: "?"}" })
             }
+            if (escolhido == null && achados.size in 2..64) {
+                val nums = achados.mapNotNull { a -> runCatching { Nucleo.cmd { it.cmd("read $a ${c.tipo}") }.status }.getOrNull()?.let { a to it } }
+                    .distinctBy { it.second }  // dois com o mesmo número não ajudam a escolher: aparece um botão por número
+                if (nums.size in 2..4) duvida[c.nome] = nums
+            }
+            if (escolhido != null) duvida.remove(c.nome)
             if (escolhido == null) {
                 Registro.add("decisao", "${c.nome}: pelo nome (${rotuloUnity(c.unity)}) achei ${if (r == null) "nada (a classe ainda não carregou?)" else "${achados.size} objeto(s)"}; sigo pelos caminhos")
                 continue
@@ -339,11 +345,27 @@ object Ponteiro {
     var aoTerminar: ((String) -> Unit)? = null
     const val AUTO = 3000  // todos os que o motor acha (o limite dele): o certo pode não estar entre os primeiros; depois sobram até RESERVA
 
+    const val PREPARANDO = "preparando para voltar sozinho…"
+    /** Dúvida entre objetos achados pelo nome (nome → endereço e número de cada um): o painel mostra os números para tocar. */
+    val duvida = androidx.compose.runtime.mutableStateMapOf<String, List<Pair<String, String>>>()
+
+    /** A pessoa tocou no número que está na tela: é esse objeto. */
+    fun escolherNaTela(nome: String, addr: String, v: String) = Nucleo.rodar {
+        val j = Nucleo.jogo ?: return@rodar
+        val tipo = lista(j.pacote).firstOrNull { it.nome == nome }?.tipo ?: return@rodar
+        gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(conferido = true, valor = v) else it })
+        val s = Salvo(addr, tipo, nome, v, false, caminho = true)
+        val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
+        if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+        achado[nome] = j.pid to addr; duvida.remove(nome); precisaNumero.remove(nome)
+        Registro.add("caminho", "$nome: você tocou em $v · é o objeto $addr")
+    }
+
     fun autoAchar(s: Salvo) {
         val j = Nucleo.jogo ?: return
         // procura mesmo se já houver um "a conferir" com esse nome: a nova procura cruza com a anterior (fundir)
         if (s.caminho || s.perdido || !autoFeitos.add(s.addr) || lista(j.pacote).any { it.nome == s.nome && it.conferido }) return
-        estadoAuto[s.addr] = "procurando caminhos…"
+        estadoAuto[s.addr] = PREPARANDO
         Nucleo.semAviso {
             val t0 = System.currentTimeMillis()
             // jogo Unity: de que objeto o valor faz parte (classe + campo + os textos dele). Ao reabrir, acha pelo nome
@@ -353,7 +375,7 @@ object Ponteiro {
             if (unity != null) Registro.add("caminho", "${s.nome}: é um objeto do Unity (${rotuloUnity(unity)}) · ao reabrir acho pelo nome", listOf(unity) + rc?.linhas.orEmpty())
             val c = runCatching { Nucleo.cmd { it.cmd("ptrscan ${s.addr} 8") }.linhas.filter { '+' in it }.take(AUTO) }.getOrDefault(emptyList())
             if (c.isEmpty() && unity == null) {
-                estadoAuto[s.addr] = "nenhum caminho achado"; aoTerminar?.invoke("${s.nome}: nenhum caminho achado")
+                estadoAuto[s.addr] = "não volta sozinho: ache de novo ao reabrir"; aoTerminar?.invoke("${s.nome}: não vai voltar sozinho ao reabrir")
                 Registro.add("caminho", "${s.nome}: nenhum caminho achado sozinho (vai precisar achar de novo ao reabrir)"); return@semAviso
             }
             var nome = Nucleo.salvos.firstOrNull { it.addr == s.addr }?.nome ?: s.nome  // pode ter sido renomeado enquanto procurava
@@ -370,8 +392,8 @@ object Ponteiro {
             }
             gravar(j.pacote, juntar(lista(j.pacote), listOf(Caminho(nome, s.tipo, c, valor = s.valor, conferido = false, pid = j.pid, unity = unity ?: ""))))
             Registro.add("caminho", "$nome: ${c.size} caminhos guardados sozinhos (${(System.currentTimeMillis() - t0) / 1000} s) · confiro na próxima abertura", lista5(c, "+ achado"))
-            estadoAuto[s.addr] = (if (unity != null) "pelo nome ✓ · " else "") + "${c.size} caminhos guardados · confere ao reabrir"
-            aoTerminar?.invoke("$nome: " + if (unity != null) "achado pelo nome ✓" else "caminhos guardados ✓")
+            estadoAuto[s.addr] = "pronto: volta sozinho ao reabrir ✓"
+            aoTerminar?.invoke("$nome: pronto, volta sozinho ao reabrir")
         }
     }
 

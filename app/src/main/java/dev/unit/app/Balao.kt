@@ -256,6 +256,12 @@ class Balao : Service() {
     /** Opções (a primeira): a pausa automática. */
     @Composable
     private fun Opcoes() = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Linha(Modifier.toque { tela = "autoteste" }) {
+            Column(Modifier.weight(1f)) {
+                Text("Relatório", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Text("autoteste e o que aconteceu, para compartilhar", color = Cor.apagado, fontSize = 12.sp)
+            }
+        }
         Rotulo("Pausa automática")
         listOf(
             Triple("nunca", "Desligada", "Só o ⏸ na mão (como hoje)."),
@@ -272,6 +278,20 @@ class Balao : Service() {
         }
         Text("Com o jogo pausado, um escudo invisível segura os toques no jogo: assim o Android não mostra \"não está respondendo\". Tocar no jogo continua ele.",
             color = Cor.apagado, fontSize = 12.sp)
+        // LABORATÓRIO: ferramentas de teste, fora da tela principal (o achar pelo nome e os caminhos já funcionam sozinhos)
+        if (Nucleo.jogo != null) {
+            Rotulo("Ferramentas de teste")
+            listOf(Triple("mudanca", "Busca por mudança", "valores que o jogo muda sozinho (foto, mudou, não mudou)"),
+                Triple("caminho", "Caminhos (ponteiros)", "conferir, exportar e importar à mão"),
+                Triple("lab", "Laboratório", "achar os salvos de novo pela assinatura")).forEach { (id, nome, txt) ->
+                Linha(Modifier.toque { tela = id }) {
+                    Column(Modifier.weight(1f)) {
+                        Text(nome, color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                        Text(txt, color = Cor.apagado, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
     }
 
     private fun mudar(m: String, lembrar: Boolean = true) { if (m != modo) Registro.add("outro", "Painel: ${mapOf("balao" to "balão", "mini" to "mini painel", "painel" to "painel")[m] ?: m}"); modo = m; posicionar(); vista?.let { wm.updateViewLayout(it, params) }; if (lembrar) guardar() }
@@ -411,10 +431,21 @@ class Balao : Service() {
         if (confirmar) ConfirmarFechar({ confirmar = false }) { stopSelf() }
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
-        // valor a conferir depois de reabrir: convida a digitar o número da tela (certeza; sem isso, a votação continua sozinha)
-        val aConferir = Ponteiro.precisaNumero.filter { n -> Nucleo.salvos.none { it.nome == n && it.caminho } }  // só depois das 3 tentativas sozinho
+        // dúvida entre objetos achados pelo nome: um toque no número que está na tela resolve (sem digitar)
+        if (!Nucleo.jogoFechou) Ponteiro.duvida.entries.toList().take(2).forEach { (nome, cands) ->
+            Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("$nome: qual destes números está na tela?", color = Cor.texto, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    cands.take(4).forEach { (a, v) -> Botao(v, true, Modifier.weight(1f), !Nucleo.ocupado) { Ponteiro.escolherNaTela(nome, a, v) } }
+                }
+                Text("nenhum: toque aqui para digitar", color = Cor.apagado, fontSize = 12.sp, modifier = Modifier.toque { tela = "caminho" })
+            }
+        }
+        // sem objetos para escolher (jogo que não é Unity): digitar o número da tela
+        val aConferir = Ponteiro.precisaNumero.filter { n -> n !in Ponteiro.duvida && Nucleo.salvos.none { it.nome == n && it.caminho } }
         if (!Nucleo.jogoFechou && aConferir.isNotEmpty() && tela != "caminho") Linha(Modifier.toque { tela = "caminho" }) {
-            Text("${aConferir.joinToString()}: digite o número que está na tela para confirmar", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("${aConferir.joinToString()}: toque e digite o número que está na tela", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Text("›", color = Cor.a2, fontSize = 18.sp)
         }
         if (Nucleo.jogoFechou) Column(Modifier.fillMaxWidth().background(Cor.bloco, RoundedCornerShape(14.dp)).border(1.dp, Cor.a2, RoundedCornerShape(14.dp)).padding(12.dp),
@@ -451,41 +482,14 @@ class Balao : Service() {
             Bloco(Ic.EDITAR, "Editar", Nucleo.escolhido != null, Modifier.weight(1f)) { tela = "editar" }
             Bloco(Ic.SALVOS, "Salvos", Nucleo.salvos.isNotEmpty(), Modifier.weight(1f)) { tela = "salvos" }
         }
-        // LABORATÓRIO (teste: assinaturas). Some junto com o Laboratorio.kt se não der certo
-        if (Nucleo.jogo != null) Linha(Modifier.toque { tela = "lab" }) {
-            Column(Modifier.weight(1f)) {
-                Text("Laboratório", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                Text("teste: achar os salvos de novo depois de reabrir o jogo", color = Cor.apagado, fontSize = 12.sp)
-            }
-        }
-        if (Nucleo.jogo != null) Linha(Modifier.toque { tela = "caminho" }) {
-            Column(Modifier.weight(1f)) {
-                Text("Caminhos (ponteiros)", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                Text("teste: achar sempre, conferir, exportar e importar", color = Cor.apagado, fontSize = 12.sp)
-            }
-        }
-        // LABORATÓRIO (teste: busca por mudança). Some junto com o Mudanca.kt se não der certo
-        if (Nucleo.jogo != null) Linha(Modifier.toque { tela = "mudanca" }) {
-            Column(Modifier.weight(1f)) {
-                Text("Busca por mudança", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                Text("teste: valores que o jogo muda sozinho (foto, mudou, não mudou)", color = Cor.apagado, fontSize = 12.sp)
-            }
-        }
         if (Nucleo.salvos.isNotEmpty()) {
             Rotulo("Salvos")
-            Nucleo.salvos.take(4).forEach { s -> LinhaSalvo(s) }
+            Nucleo.salvos.forEach { s -> LinhaSalvo(s) }
         } else Text("Toque em Achar e digite um número que o jogo mostra.", color = Cor.apagado, fontSize = 13.sp)
-        // LABORATÓRIO: o que acontece dentro do Unit, para compartilhar. Some junto com o Registro.kt se não der certo
-        Linha(Modifier.toque { tela = "autoteste" }) {
-            Column(Modifier.weight(1f)) {
-                Text("Autoteste e registro", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                Text("confere o Unit e compartilha o que aconteceu", color = Cor.apagado, fontSize = 12.sp)
-            }
-        }
         Linha(Modifier.toque { tela = "opcoes" }) {
             Column(Modifier.weight(1f)) {
                 Text("Opções", color = Cor.texto, fontWeight = FontWeight.SemiBold)
-                Text("pausa automática: " + mapOf("nunca" to "desligada", "digitar" to "ao digitar", "painel" to "ao abrir o painel")[opcaoPausa], color = Cor.apagado, fontSize = 12.sp)
+                Text("relatório, pausa automática e ferramentas de teste", color = Cor.apagado, fontSize = 12.sp)
             }
         }
     }
@@ -494,8 +498,8 @@ class Balao : Service() {
     private fun LinhaSalvo(s: Salvo) = Linha(Modifier.toque { if (s.perdido) tela = "achar" else { Nucleo.escolhido = Achado(s.addr, s.tipo, s.valor); tela = "editar" } }) {
         Column(Modifier.weight(1f)) {
             Text(s.nome, color = if (s.perdido) Cor.apagado else Cor.texto, fontSize = 15.sp)
-            Text(if (s.perdido) "endereço antigo · ache de novo (último: ${s.valor})" else (NOME_TIPO[s.tipo] ?: s.tipo) + (if (s.caminho) " · pelo caminho ✓" else Ponteiro.estadoAuto[s.addr]?.let { " · $it" } ?: "") + if (s.congelado) " · congelado" else "",
-                color = if (!s.caminho && Ponteiro.estadoAuto[s.addr] == "procurando caminhos…") Cor.a2 else Cor.apagado, fontSize = 11.sp)
+            Text(if (s.perdido) "endereço antigo · ache de novo (último: ${s.valor})" else (if (s.caminho) "voltou sozinho ✓" else Ponteiro.estadoAuto[s.addr] ?: (NOME_TIPO[s.tipo] ?: s.tipo)) + if (s.congelado) " · congelado" else "",
+                color = if (!s.caminho && Ponteiro.estadoAuto[s.addr] == Ponteiro.PREPARANDO) Cor.a2 else Cor.apagado, fontSize = 11.sp)
         }
         if (s.perdido) { Box(Modifier.padding(start = 8.dp).toque { Nucleo.esquecerSalvo(s) }) { Text("Esquecer", color = Cor.ruim, fontSize = 12.sp) }; return@Linha }
         Text(s.valor, color = if (s.congelado) Cor.a2 else Cor.texto, fontSize = 19.sp, fontWeight = FontWeight.Bold)
