@@ -258,7 +258,7 @@ object Registro {
 
             parte(5, "VALORES")
             if (Nucleo.salvos.isEmpty()) appendLine("nenhum salvo")
-            Nucleo.salvos.forEach { s -> appendLine("${s.nome} · ${s.addr} · ${NOME_TIPO[s.tipo] ?: s.tipo} · ${s.valor}" + (if (s.congelado) " · congelado" else "") + if (s.caminho) " · pelo caminho" else "") }
+            Nucleo.salvos.forEach { s -> appendLine("${s.nome} · ${s.addr} · ${NOME_TIPO[s.tipo] ?: s.tipo} · ${s.valor}" + (if (s.congelado) " · congelado" else "") + if (s.caminho) " · voltou sozinho" else if (s.perdido) " · endereço antigo" else "") }
             appendLine("Congelados no motor (${congeladosMotor.size}): ${congeladosMotor.joinToString()}")
 
             parte(6, "BUSCA")

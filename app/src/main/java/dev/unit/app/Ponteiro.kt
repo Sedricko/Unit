@@ -267,7 +267,7 @@ object Ponteiro {
             if (ja != null && ja.first == j.pid) { pelonome[c.nome] = ja.second; continue }
             faltaNome += c.nome  // sai daqui quando achar; senão as tentativas de 20 s e 60 s procuram de novo
             val r = runCatching { Nucleo.cmd { it.cmd("pelonome ${c.unity}") } }.getOrNull()
-            val achados = r?.linhas.orEmpty().filter { it.isNotBlank() }
+            val achados = r?.linhas.orEmpty().filter { it.isNotBlank() && it !in zerados }
             var escolhido = achados.singleOrNull()
             // vários com a mesma assinatura (no Orecraft: 2 "Item" apontam para a definição da Barra de Cobre): desempata
             if (escolhido == null && achados.size in 2..64) {
@@ -516,7 +516,20 @@ object Ponteiro {
     /** Outro processo do jogo (escolheu ou reabriu): o que era da abertura anterior não vale mais. */
     fun novaAbertura() {
         achado.clear(); duvida.clear(); precisaNumero.clear(); faltaNome.clear(); renovados.clear(); autoFeitos.clear(); estadoAuto.clear()
-        confirmando = null
+        confirmando = null; zerados.clear(); abriuEm = System.currentTimeMillis()
+    }
+
+    // objetos que foram para 0 logo depois de escolhidos (nesta abertura): a cópia do save que o jogo zera depois de montar o
+    // inventário de verdade (o relatório: escolheu 31/32/102 iguais ao último valor e logo os três foram para 0)
+    private val zerados = mutableSetOf<String>()
+    private var abriuEm = 0L
+    /** Um valor que voltou pelo nome caiu de repente para 0 nos primeiros minutos: escolhe de novo, sem esse objeto. */
+    fun caiuParaZero(nome: String, addr: String) {
+        val j = Nucleo.jogo ?: return
+        if (System.currentTimeMillis() - abriuEm > 5 * 60_000L || achado[nome] != (j.pid to addr) || !zerados.add(addr)) return
+        achado.remove(nome)
+        Registro.add("decisao", "$nome: o objeto escolhido ($addr) foi para 0 logo depois de abrir (era a cópia do save?): escolhendo de novo")
+        aplicar()
     }
 
     /** Apagou o valor dos Salvos: some também o que ajudava a achar ele de novo (caminhos, nome, dúvida, aviso). */

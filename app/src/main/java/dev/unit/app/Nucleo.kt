@@ -138,7 +138,7 @@ object Nucleo {
     /** A cada 2 s (balão aberto): o jogo ainda está aberto? Sem aviso na tela; só liga o jogoFechou. */
     fun verificar() = scope.launch {
         if (jogo == null || ocupado || jogoFechou) return@launch
-        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou") { jogo?.let { Ponteiro.lembrarValores(it.pacote, salvos.toList()) }; jogoFechou = true; pausado = false; Registro.add("jogo", "${jogo?.nome} fechou"); Registro.lerAndroid() } }  // o Android diz por quê
+        runCatching { cmd { it.cmd("vivo") } }.onFailure { if (it.message == "o jogo fechou" && !jogoFechou) {  // um aviso só (vários pedidos esperando) jogo?.let { Ponteiro.lembrarValores(it.pacote, salvos.toList()) }; jogoFechou = true; pausado = false; Registro.add("jogo", "${jogo?.nome} fechou"); Registro.lerAndroid() } }  // o Android diz por quê
     }
 
     /**
@@ -357,7 +357,14 @@ object Nucleo {
             val novos = salvos.toList().filterNot { it.perdido }.map { s -> s.copy(valor = runCatching { cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }
                 .onFailure { e -> if (falhouLer.add(s.addr)) Registro.add("aviso", "Não consegui ler ${s.nome} (${s.addr}): ${e.message} · o endereço pode ter morrido") }
                 .getOrDefault(s.valor)) }
-            novos.forEach { n -> val i = salvos.indexOfFirst { it.addr == n.addr }; if (i >= 0 && salvos[i].valor != n.valor) salvos[i] = salvos[i].copy(valor = n.valor) }
+            novos.forEach { n ->
+                val i = salvos.indexOfFirst { it.addr == n.addr }
+                if (i < 0 || salvos[i].valor == n.valor) return@forEach
+                val antes = salvos[i]
+                salvos[i] = antes.copy(valor = n.valor)
+                // voltou pelo nome e caiu de repente para 0: pode ter sido a cópia do save (o Ponteiro decide se refaz)
+                if (antes.caminho && n.valor.toDoubleOrNull() == 0.0 && (antes.valor.toDoubleOrNull() ?: 0.0) > 0.0) Ponteiro.caiuParaZero(antes.nome, antes.addr)
+            }
         }
     }
 }

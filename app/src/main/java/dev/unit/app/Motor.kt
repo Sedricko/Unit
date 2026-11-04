@@ -14,7 +14,9 @@ class Motor(caminho: String) {
         entrada.write("exec $caminho\n")
         entrada.flush()
         ola = saida.readLine() ?: throw IOException("Sem root: o su recusou ou não existe.")
-        if (!ola.startsWith("ok unitd")) throw IOException("O motor não respondeu: $ola")
+        if (!ola.startsWith("ok unitd")) throw IOException(
+            if ("denied" in ola.lowercase() || "permission" in ola.lowercase()) "Root recusado: abra o Magisk (ou o seu gerenciador de root) e permita o Unit."
+            else "O motor não respondeu: $ola")
     }
 
     class Resposta(val linhas: List<String>, val status: String)
