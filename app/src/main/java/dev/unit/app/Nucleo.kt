@@ -300,6 +300,16 @@ object Nucleo {
         if (i >= 0) salvos[i] = salvos[i].copy(valor = v, congelado = congelar)
         else salvos += Salvo(addr, tipo, nomeLivre(), v, congelar)
         escolhido = escolhido?.takeIf { it.addr == addr }?.copy(valor = v)
+        if (congelar) return@rodar
+        // o jogo escreveu por cima? (Grim Soul: escreveu 99, o item seguiu em 12: era só uma cópia, o valor de verdade
+        // fica em outro lugar). Confere e diz, em vez de mostrar 99 nos Salvos
+        kotlinx.coroutines.delay(1500)
+        val agora = runCatching { cmd { it.cmd("read $addr $tipo") }.status }.getOrNull() ?: return@rodar
+        if ((agora.toDoubleOrNull() ?: return@rodar) == v.toDoubleOrNull()) return@rodar
+        salvos.indexOfFirst { it.addr == addr && !it.perdido }.let { k -> if (k >= 0) salvos[k] = salvos[k].copy(valor = agora) }
+        val porque = "O jogo voltou o valor para $agora logo depois de escrever $v: esse endereço é uma cópia (a da tela, por exemplo) e o valor de verdade fica em outro lugar, que pode estar codificado. Tente congelar ou outro resultado da busca."
+        Registro.add("aviso", "Escrita não segurou ($addr): $porque")
+        throw IllegalStateException(porque)
     }
 
     fun alternarCongelado(s: Salvo) = rodar {
