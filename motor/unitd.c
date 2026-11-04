@@ -772,6 +772,9 @@ static void cmd_classe(const char *addr) {
     for (uint64_t off = 0; off <= 0x1000 && off <= base; off += 8) {
         uint64_t k; if (ler(base - off, &k, 8) || !nome_classe(k, nome, esp)) continue;
         if (!strcmp(nome, "String") && !strcmp(esp, "System")) break;  // caiu dentro de um texto: não é objeto do jogo
+        // lista de números do sistema (Int32, Single…: no Grim Soul o valor estava a +8a0 de um "Int32") ou longe demais
+        // do começo do objeto: a assinatura pegaria os vizinhos e a procura pelo nome não acharia nada
+        if (!strcmp(esp, "System") || !strncmp(esp, "System.", 7) || off > 0x400) break;
         uint64_t obj = base - off; char nums[1024] = "", est[1200] = ""; int nn = 0, ln = 0, le = 0;
         for (uint64_t f = 0x10; f < 0x200; f += 8) {  // os campos que apontam para textos, até o começo do próximo objeto
             uint64_t p; char hex[130], cn[64], ce[64];

@@ -79,6 +79,14 @@ static char *itens_unity(size_t tam, size_t campo, float valor, int marca, int s
 void *arena_base(void) { return arena; }
 float *montar(char cenario, unsigned semente, float valor, void **nos) {
     sx = semente; usado = 16 * (semente % 64);
+    // h: o valor dentro de uma lista de números do sistema (Int32, +8a0, como no Grim Soul); i: num objeto do jogo, mas a
+    // +8a0 do começo. Os dois têm que dar erro no "classe" (não dá para achar pelo nome)
+    if (cenario == 'h' || cenario == 'i') {
+        cls_texto = ficha("String", "System", 0);
+        char *o = novo(0x1000); liga(o, 0, cenario == 'h' ? ficha("Int32", "System", 0) : ficha("ItemRecurso", "Jogo", 0), 0);
+        liga(o, 0x10, texto("Cobre", 0), 0);
+        float *v = (float *)(o + 0x8a0); *v = valor; nos[0] = nos[1] = nos[2] = nos[3] = nos[4] = nos[5] = o; return v;
+    }
     if (cenario == 'a' || cenario == 'c' || cenario == 'd' || cenario == 'e' || cenario == 'f' || cenario == 'g') {
         char *classe = novo(0x200), *estaticos = novo(0x40), *ger = novo(0x1000), *lista = novo(0x40), *itens = novo(0x80), *item = cenario == 'e' ? itens_unity(0x40, 0x18, valor, 0, 1) : cenario == 'f' ? itens_unity(0x40, 0x18, valor, 0, 2) : cenario == 'g' ? itens_unity(0x40, 0x18, valor, 0, 3) : itens_unity(0x60, 0x30, valor, 0, 0);
         liga(classe, 0xb8, estaticos, 0); liga(estaticos, 0x10, ger, 0); liga(ger, 0xd38, lista, 0);

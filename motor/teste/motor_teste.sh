@@ -234,6 +234,14 @@ gr=$(printf 'attach %s\npelonome ItemRecurso Jogo 18 %s\n' "$gp" "$gass" | "$out
 testa "nome G: devolve os 2 objetos da mesma definição, e o cobre está entre eles" "grep -qE '^ok 2 ' <<<\"\$gr\" && grep -qx '$gcobre' <<<\"\$gr\""
 fecha
 
+# H/I: o valor numa lista de números do sistema (como no Grim Soul: "Int32" a +8a0) ou longe do começo do objeto: erro claro
+for hi in h i; do
+    abre $hi 15
+    hr=$(printf 'attach %s\nclasse %s\n' "$gp" "$gcobre" | "$out/unitd" | tail -n +3)
+    testa "nome ${hi^^}: valor fora de um objeto do jogo dá erro (não monta assinatura com os vizinhos)" "grep -qx 'err o valor não está dentro de um objeto do Unity' <<<\"\$hr\""
+    fecha
+done
+
 # E: 200 mil objetos da classe do item (cabeçalhos apontando para a ficha): no Orecraft isso afogou a procura (8 min)
 cenario E e 9 ':b8:10:d38:10:38:18' '[anon:libc_malloc]'
 ecab=$(grep -o 'cabecalhos=[0-9]*' <<<"$gres" | cut -d= -f2)
