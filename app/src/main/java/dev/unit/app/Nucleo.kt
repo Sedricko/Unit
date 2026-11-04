@@ -201,7 +201,9 @@ object Nucleo {
         val v = texto.trim().replace(',', '.')
         val refinar = total != null; val t0 = System.currentTimeMillis(); val antes = total
         pausarParaBuscar()
-        cmd { it.cmd(if (!refinar) "search $v" else "refine $v") }
+        val rb = cmd { it.cmd(if (!refinar) "search $v" else "refine $v") }
+        val cortou = "cortado" in rb.status  // o motor guardou só os primeiros 16 milhões
+        if (cortou) Registro.add("aviso", "Busca de $v: resultados demais, guardei só os primeiros 16 milhões")
         val r = cmd { it.cmd("list 50") }
         total = r.status.toLongOrNull()
         achados.clear()
@@ -223,19 +225,23 @@ object Nucleo {
             refinar && antes != null && total == antes && antes > 1 -> Registro.add("aviso", "Refinar $v não diminuiu nada ($antes): o valor pode não ter mudado no jogo")
             (total ?: 0) > 10_000_000 -> Registro.add("aviso", "Mais de 10 milhões de resultados: o próximo refino vai ser lento; use um número mais raro ou uma faixa menor")
         }
+        // na tela (os resultados ficam): o certo pode ter ficado de fora dos 16 milhões
+        if (cortou) throw IllegalStateException("Resultados demais: o valor certo pode ter ficado de fora. Mude o valor no jogo e busque o número novo.")
     }
 
     private var buscaDesde = 0L; private var passos = 0  // tempo e refinos do primeiro Buscar até sobrar 1
+    private var pausaJob: kotlinx.coroutines.Job? = null  // a última pausa automática a caminho do motor
     private var porDigitar = false  // quem pausou foi o 1º número digitado no Achar (sair sem buscar solta)
     fun pausarAoDigitar() {
         if (pausado || jogo == null) return
         pausado = true; porDigitar = true; Registro.add("jogo", "Pausou ao digitar no Achar")
-        scope.launch { runCatching { cmd { it.cmd("pause") } }.onFailure { if (porDigitar) { pausado = false; porDigitar = false } } }
+        pausaJob = scope.launch { runCatching { cmd { it.cmd("pause") } }.onFailure { if (porDigitar) { pausado = false; porDigitar = false } } }
     }
     fun soltarDigitacao() {
         if (!porDigitar || !pausado) { porDigitar = false; return }
         porDigitar = false; pausado = false; Registro.add("jogo", "Soltou: apagou tudo ou saiu do Achar sem buscar")
-        scope.launch { runCatching { cmd { it.cmd("resume") } } }
+        val antes = pausaJob
+        scope.launch { antes?.join(); runCatching { cmd { it.cmd("resume") } } }  // nunca chega ao motor antes da pausa
     }
 
     // a pergunta "qual destes números está na tela?" aberta: pausa para o número parar de mudar; quem pausou solta
@@ -243,12 +249,13 @@ object Nucleo {
     fun pausarPelaDuvida() {
         if (pausado || jogo == null) return
         pausado = true; porDuvida = true; Registro.add("jogo", "Pausou para você comparar os números da pergunta")
-        scope.launch { runCatching { cmd { it.cmd("pause") } }.onFailure { if (porDuvida) { pausado = false; porDuvida = false } } }
+        pausaJob = scope.launch { runCatching { cmd { it.cmd("pause") } }.onFailure { if (porDuvida) { pausado = false; porDuvida = false } } }
     }
     fun soltarDuvida() {
         if (!porDuvida || !pausado) { porDuvida = false; return }
         porDuvida = false; pausado = false; Registro.add("jogo", "Soltou: a pergunta foi respondida ou fechada")
-        scope.launch { runCatching { cmd { it.cmd("resume") } } }
+        val antes = pausaJob
+        scope.launch { antes?.join(); runCatching { cmd { it.cmd("resume") } } }
     }
 
     /** O jogo escolhido está na frente (na tela)? null = não deu para saber. Prioridade 0 do Android = app na tela. */
@@ -285,7 +292,7 @@ object Nucleo {
     fun alternarCongelado(s: Salvo) = rodar {
         if (s.perdido) throw IllegalStateException("${s.nome}: o endereço é de antes de reabrir o jogo. Ache de novo para congelar.")
         if (s.congelado) cmd { it.cmd("unfreeze ${s.addr}") } else { cmd { it.cmd("freeze ${s.addr} ${s.tipo} ${s.valor}") }; aprender(s.tipo, 2) }
-        val i = salvos.indexOfFirst { it.addr == s.addr }
+        val i = salvos.indexOfFirst { it.addr == s.addr && !it.perdido }
         if (i >= 0) salvos[i] = salvos[i].copy(congelado = !s.congelado)
     }
 
@@ -293,14 +300,14 @@ object Nucleo {
     fun renomear(a: Achado, nome: String) {
         val n = nome.trim().ifEmpty { return }
         salvos.removeAll { it.perdido && it.nome == n && it.addr != a.addr }  // o "Cobre" de antes (sem endereço) dá lugar ao novo
-        val i = salvos.indexOfFirst { it.addr == a.addr }
+        val i = salvos.indexOfFirst { it.addr == a.addr && !it.perdido }  // um perdido no mesmo endereço é de outra abertura
         if (i >= 0) Ponteiro.renomear(salvos[i].nome, n)  // o caminho guardado (conferido ou ainda a conferir) muda de nome junto
         if (i >= 0) salvos[i] = salvos[i].copy(nome = n) else salvos += Salvo(a.addr, a.tipo, n, a.valor, false)
     }
 
     /** "Ver como": lê e escreve o mesmo endereço em outro tipo. Congelado no tipo antigo solta (o valor seria outro). */
     fun trocarTipo(addr: String, novo: String) = rodar {
-        val i = salvos.indexOfFirst { it.addr == addr }
+        val i = salvos.indexOfFirst { it.addr == addr && !it.perdido }
         if (i >= 0 && salvos[i].congelado) cmd { it.cmd("unfreeze $addr") }
         val v = cmd { it.cmd("read $addr $novo") }.status
         if (i >= 0) salvos[i] = salvos[i].copy(tipo = novo, valor = v, congelado = false)
@@ -335,7 +342,7 @@ object Nucleo {
 
     // troca o estado na hora e manda o estado de agora: dois toques seguidos (ou a pausa automática) nunca invertem a tela e o jogo
     fun pausar() {
-        pausado = !pausado
+        pausado = !pausado; porDigitar = false; porDuvida = false  // agora a pausa (ou a soltura) é da pessoa
         Registro.add("jogo", if (pausado) "Você pausou o jogo (⏸)" else "Você soltou o jogo (▷)")
         rodar { val quer = pausado; try { cmd { it.cmd(if (quer) "pause" else "resume") } } catch (e: Exception) { if (pausado == quer) pausado = !quer; throw e } }
     }
@@ -370,12 +377,14 @@ object Nucleo {
     // mesmo com o Unit ocupado: o último valor tem que estar em dia quando o jogo fechar (desempata ao reabrir)
     private fun lerSalvosAgora() = scope.launch {
         if (jogo == null || jogoFechou) return@launch
+        val pid = jogo?.pid
         runCatching {
             val novos = salvos.toList().filterNot { it.perdido }.map { s -> s.copy(valor = runCatching { cmd { it.cmd("read ${s.addr} ${s.tipo}") }.status }
                 .onFailure { e -> if (falhouLer.add(s.addr)) Registro.add("aviso", "Não consegui ler ${s.nome} (${s.addr}): ${e.message} · o endereço pode ter morrido") }
                 .getOrDefault(s.valor)) }
+            if (jogo?.pid != pid) return@runCatching  // escolheu/reabriu no meio: as leituras eram da abertura de antes
             novos.forEach { n ->
-                val i = salvos.indexOfFirst { it.addr == n.addr }
+                val i = salvos.indexOfFirst { it.addr == n.addr && !it.perdido }
                 if (i < 0 || salvos[i].valor == n.valor) return@forEach
                 val antes = salvos[i]
                 salvos[i] = antes.copy(valor = n.valor)

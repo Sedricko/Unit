@@ -453,7 +453,7 @@ class Balao : Service() {
             Text("Trocar", color = Cor.a2, fontSize = 13.sp)
         }
         if (confirmar) ConfirmarFechar({ confirmar = false }) { stopSelf() }
-        if (Nucleo.pedirFechar && Nucleo.jogo != null) ConfirmarFechar({ Nucleo.pedirFechar = false }, "Fechar ${Nucleo.jogo?.nome}?",
+        if (Nucleo.pedirFechar && Nucleo.jogo != null && !Nucleo.jogoFechou) ConfirmarFechar({ Nucleo.pedirFechar = false }, "Fechar ${Nucleo.jogo?.nome}?",
             "O que você não salvou no jogo se perde. Os valores salvos no Unit ficam.") { Nucleo.pedirFechar = false; Nucleo.fecharJogo() }
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
@@ -563,7 +563,7 @@ class Balao : Service() {
                 if (n > 1) Text("Mude o valor no jogo (ganhe ou gaste), digite o novo e refine.", color = Cor.apagado, fontSize = 12.sp)
             }
             // os que já estão nos Salvos não voltam na lista da busca (ficam na tela de Salvos)
-            val novos = Nucleo.achados.filter { a -> Nucleo.salvos.none { it.addr == a.addr } }
+            val novos = Nucleo.achados.filter { a -> Nucleo.salvos.none { it.addr == a.addr && !it.perdido } }
             // selecionar: marca resultados para apagar da busca (o próximo refino não traz de volta), salvar ou congelar
             if (novos.size >= 2) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(if (selecionando) "${marcados.size} marcado(s)" else "", color = Cor.texto, fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -580,7 +580,7 @@ class Balao : Service() {
                             Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp, maxLines = 1)
                             if (a.tipo == Nucleo.aprendido) Text("mais usado", color = Cor.ok, fontSize = 11.sp, maxLines = 1)  // curto: a linha é estreita deitado
                         }
-                        val ja = Nucleo.salvos.any { it.addr == a.addr }
+                        val ja = Nucleo.salvos.any { it.addr == a.addr && !it.perdido }
                         if (!selecionando) {
                             Box(Modifier.padding(start = 10.dp).toque { Nucleo.salvar(a) }) { Icone(if (ja) Ic.SALVO else Ic.SALVAR, 20.dp, if (ja) Cor.a2 else Cor.icone) }
                             Box(Modifier.padding(start = 10.dp).toque { Nucleo.editar(a.addr, a.tipo, a.valor, true) }) { Icone(Ic.CONGELAR, 20.dp) }  // congela no valor de agora
@@ -600,7 +600,7 @@ class Balao : Service() {
             }
             Nucleo.escolhido?.takeIf { Nucleo.total == 1L && Nucleo.salvos.none { s -> s.addr == it.addr } }?.let { a ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val ja = Nucleo.salvos.any { it.addr == a.addr }
+                    val ja = Nucleo.salvos.any { it.addr == a.addr && !it.perdido }
                     Botao(if (ja) "Salvo" else "Salvar", false, Modifier.weight(1f), ligado = !ja) { Nucleo.salvar(a) }
                     Botao("Editar este valor", true, Modifier.weight(1f)) { tela = "editar" }
                 }
@@ -614,7 +614,7 @@ class Balao : Service() {
         LaunchedEffect(Unit) { while (true) { Nucleo.atualizarAchados(); delay(1000) } }  // o "agora" acompanha o jogo
         var campo by remember(e.addr) { mutableStateOf("") }
         var congelar by remember(e.addr) { mutableStateOf(Nucleo.salvos.any { it.addr == e.addr && it.congelado }) }
-        val atual = Nucleo.salvos.firstOrNull { it.addr == e.addr }?.valor ?: e.valor
+        val atual = Nucleo.salvos.firstOrNull { it.addr == e.addr && !it.perdido }?.valor ?: e.valor
         val origem = remember(e.addr) { e.tipo }  // o tipo com que o valor foi achado
         val acima = passaLimite(e.tipo, campo)
         var vizinho by remember(e.addr, e.tipo) { mutableStateOf<String?>(null) }
@@ -632,7 +632,7 @@ class Balao : Service() {
             Linha(Modifier.toque { tela = "nome" }) {
                 Column(Modifier.weight(1f)) {
                     Rotulo("Nome")
-                    Text(Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome ?: "sem nome", color = Cor.texto, fontSize = 17.sp)
+                    Text(Nucleo.salvos.firstOrNull { it.addr == e.addr && !it.perdido }?.nome ?: "sem nome", color = Cor.texto, fontSize = 17.sp)
                 }
                 Icone(Ic.EDITAR, 18.dp)
             }
@@ -643,7 +643,7 @@ class Balao : Service() {
             vizinho?.let { v ->
                 Aviso(Cor.atencao) {
                     Text("${NOME_TIPO[e.tipo]} escreve 8 bytes: muda também o vizinho em +0x4 (agora: $v)." +
-                        if (v == "0") " Vizinho 0 costuma ser seguro." else " Confira no Em volta antes.", color = Cor.texto, fontSize = 12.sp)
+                        if (v == "0") " Vizinho 0 costuma ser seguro." else " Confira antes de aplicar.", color = Cor.texto, fontSize = 12.sp)
                 }
             }
             Text("agora: $atual · ${NOME_TIPO[e.tipo]}", color = Cor.apagado, fontSize = 13.sp)
@@ -697,7 +697,7 @@ class Balao : Service() {
     @Composable
     private fun Nome() {
         val e = Nucleo.escolhido ?: run { tela = "inicio"; return }
-        var campo by remember(e.addr) { mutableStateOf(Nucleo.salvos.firstOrNull { it.addr == e.addr }?.nome?.takeUnless { it.startsWith("Valor ") } ?: "") }
+        var campo by remember(e.addr) { mutableStateOf(Nucleo.salvos.firstOrNull { it.addr == e.addr && !it.perdido }?.nome?.takeUnless { it.startsWith("Valor ") } ?: "") }
         val foco = remember { androidx.compose.ui.focus.FocusRequester() }
         androidx.compose.runtime.DisposableEffect(Unit) { tecladoDoAndroid(true); onDispose { tecladoDoAndroid(false) } }
         LaunchedEffect(Unit) { delay(150); runCatching { foco.requestFocus() } }

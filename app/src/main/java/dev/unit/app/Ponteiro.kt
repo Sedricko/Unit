@@ -58,7 +58,7 @@ object Ponteiro {
     // ---- guardar: JSON por jogo (pacote → lista) ----
     fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido).put("fixo", c.fixo).put("falhas", JSONObject(c.falhas)).put("pid", c.pid).put("unity", c.unity) })
     private val TIPOS = setOf("i32", "f32", "i64", "f64")
-    private val SEGURO = Regex("[A-Za-z0-9_.+:-]+")  // caminho "lib+OFF:o1:...": só isso (sem espaço nem quebra de linha)
+    private val SEGURO = Regex("[A-Za-z0-9_.+:@-]+")  // caminho "lib+OFF:o1:...": só isso (sem espaço nem quebra de linha)
     /** Do arquivo (que pode ter vindo de outro celular): fica só o que é seguro mandar ao motor. */
     fun valido(c: Caminho) = c.tipo in TIPOS && c.caminhos.all { '+' in it && SEGURO.matches(it) } && c.unity.none { it == '\n' || it == '\r' }
     fun deJson(a: JSONArray) = (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
@@ -196,7 +196,7 @@ object Ponteiro {
                 val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
                 if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
                 precisaNumero.remove(nome)
-                achado[nome] = j.pid to addr
+                achado[nome] = j.pid to addr; pelaPessoa += nome
                 Registro.add("caminho", "$nome: confirmado pelo número da tela (${EmVolta.texto(tela)}) entre ${achados.size} objetos achados pelo nome")
                 recarga++
                 return@rodar
@@ -209,7 +209,7 @@ object Ponteiro {
         val bons = chegam.map { it.first }
         val (_, addr, v) = chegam[0]
         gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(caminhos = bons.take(RESERVA), conferido = true, valor = v) else it })
-        achado[nome] = j.pid to addr  // as tentativas de 20 s e 60 s não decidem de novo por cima do que você confirmou
+        achado[nome] = j.pid to addr; pelaPessoa += nome  // as tentativas de 20 s e 60 s não decidem de novo por cima do que você confirmou
         val s = Salvo(addr, c.tipo, nome, v, false, caminho = true)
         val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
         if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
@@ -292,9 +292,18 @@ object Ponteiro {
                 Registro.add("decisao", "${c.nome}: pelo nome (${rotuloUnity(c.unity)}) achei ${if (r == null) "nada (a classe ainda não carregou?)" else "${achados.size} objeto(s)"}; sigo pelos caminhos")
                 continue
             }
-            val addr = escolhido
-            if (!vale(c.nome)) continue
-            val v = runCatching { Nucleo.cmd { it.cmd("read $addr ${c.tipo}") }.status }.getOrNull() ?: continue
+            var addr: String = escolhido
+            // a pessoa já escolheu (tocou ou digitou) enquanto esta procura rodava: não escreve por cima
+            if (!vale(c.nome) || achado[c.nome]?.first == j.pid) continue
+            var v = runCatching { Nucleo.cmd { it.cmd("read $addr ${c.tipo}") }.status }.getOrNull() ?: continue
+            // escolhendo de novo porque o objeto foi para 0: o novo tem que ter número (senão o 0 era de verdade, ex.: gastou
+            // tudo; volta para o de antes)
+            refeito.remove(c.nome)?.let { velho ->
+                if ((v.toDoubleOrNull() ?: 0.0) <= 0.0) {
+                    zerados.remove(velho); addr = velho; v = runCatching { Nucleo.cmd { it.cmd("read $velho ${c.tipo}") }.status }.getOrDefault("0")
+                    Registro.add("decisao", "${c.nome}: o outro objeto também está em 0: o 0 era de verdade, fiquei com o de antes")
+                }
+            }
             val congela = c.congelar && c.valor.isNotEmpty()
             if (congela) runCatching { Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") } }
             val s = Salvo(addr, c.tipo, c.nome, if (congela) c.valor else v, congela, caminho = true)
@@ -315,7 +324,8 @@ object Ponteiro {
             .map { c -> valorAgora[c.nome]?.let { v -> c.copy(valor = v) } ?: c }  // a cada abertura sobram só os vivos
         // sobre a lista de AGORA: o que mudou durante a procura (apagou, renomeou, escolheu na tela, guardou o último valor)
         // não é desfeito; o que foi apagado não volta
-        if (Nucleo.jogo?.pid == j.pid) gravar(j.pacote, mesclar(todos, lista(j.pacote), calculados))
+        // (com os nomes repetidos de antes fundidos num só, como no começo)
+        if (Nucleo.jogo?.pid == j.pid) gravar(j.pacote, mesclar(todos, lista(j.pacote).groupBy { it.nome }.values.map { it.reduce(::fundir) }, calculados))
         for ((c, ch) in limpos) {
             val vivo = vivos(ch).toSet(); val mortos = ch.filter { it.first !in vivo }
             val votos = ch.mapNotNull { it.second }.groupingBy { it }.eachCount()
@@ -325,7 +335,7 @@ object Ponteiro {
                 lista5(mortos.map { "${it.first}  (${if (it.second == null) "quebrou" else "chegou em outro lugar"})" }, "– saiu"))
         }
         for ((c, ch) in limpos) {
-            if (c.nome in pelonome) continue  // já voltou pelo nome
+            if (c.nome in pelonome || achado[c.nome]?.first == j.pid) continue  // já voltou pelo nome (ou a pessoa escolheu)
             val cam = vivos(ch).firstOrNull() ?: continue
             val (addr, v) = seguir(cam, c.tipo) ?: continue
             if (!vale(c.nome)) continue
@@ -350,7 +360,9 @@ object Ponteiro {
             aviso = "Renovando os caminhos de ${c.nome}… (até 1 minuto)"
             Registro.add("caminho", "${c.nome}: só ${addr.value} vivo(s) → renovando")
             val t0 = System.currentTimeMillis()
+            if (Nucleo.jogo?.pid != j.pid) { aviso = ""; break }  // outra abertura: o endereço é da de antes
             val novos = runCatching { Nucleo.cmd { it.cmd("ptrscan ${addr.key} 8") }.linhas.filter { '+' in it } }.getOrDefault(emptyList())
+            if (Nucleo.jogo?.pid != j.pid) { aviso = ""; break }
             val atual = lista(j.pacote).firstOrNull { it.nome == c.nome } ?: run { aviso = ""; null } ?: continue
             val depois = alimentar(atual.caminhos, novos)
             gravar(j.pacote, juntar(lista(j.pacote), listOf(atual.copy(caminhos = depois))))
@@ -392,7 +404,7 @@ object Ponteiro {
         for ((nome, cands) in duvida.toMap()) {
             val tipo = lista(pacote).firstOrNull { it.nome == nome }?.tipo ?: continue
             val novos = cands.map { (a, v) -> a to (runCatching { Nucleo.cmd { m -> m.cmd("read $a $tipo") }.status }.getOrNull() ?: v) }
-            if (novos != cands && nome in duvida) duvida[nome] = novos
+            if (novos != cands && duvida[nome] == cands) duvida[nome] = novos  // ainda é a mesma pergunta
         }
     }
 
@@ -404,7 +416,7 @@ object Ponteiro {
         val s = Salvo(addr, tipo, nome, v, false, caminho = true)
         val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
         if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
-        achado[nome] = j.pid to addr; duvida.remove(nome); precisaNumero.remove(nome)
+        achado[nome] = j.pid to addr; pelaPessoa += nome; duvida.remove(nome); precisaNumero.remove(nome)
         Registro.add("caminho", "$nome: você tocou em $v · é o objeto $addr")
     }
 
@@ -527,18 +539,22 @@ object Ponteiro {
     /** Outro processo do jogo (escolheu ou reabriu): o que era da abertura anterior não vale mais. */
     fun novaAbertura() {
         achado.clear(); duvida.clear(); precisaNumero.clear(); faltaNome.clear(); renovados.clear(); autoFeitos.clear(); estadoAuto.clear()
-        confirmando = null; zerados.clear(); abriuEm = System.currentTimeMillis()
+        confirmando = null; zerados.clear(); refeito.clear(); pelaPessoa.clear(); abriuEm = System.currentTimeMillis()
+        Nucleo.pedirFechar = false  // o "Fechar X?" de antes não vale para o processo novo
     }
 
     // objetos que foram para 0 logo depois de escolhidos (nesta abertura): a cópia do save que o jogo zera depois de montar o
     // inventário de verdade (o relatório: escolheu 31/32/102 iguais ao último valor e logo os três foram para 0)
     private val zerados = mutableSetOf<String>()
+    private val refeito = mutableMapOf<String, String>()  // nome → o objeto que foi para 0 (volta para ele se o novo também estiver em 0)
+    private val pelaPessoa = mutableSetOf<String>()  // escolhidos pela pessoa nesta abertura (tocou ou digitou)
     private var abriuEm = 0L
     /** Um valor que voltou pelo nome caiu de repente para 0 nos primeiros minutos: escolhe de novo, sem esse objeto. */
     fun caiuParaZero(nome: String, addr: String) {
         val j = Nucleo.jogo ?: return
-        if (System.currentTimeMillis() - abriuEm > 5 * 60_000L || achado[nome] != (j.pid to addr) || !zerados.add(addr)) return
-        achado.remove(nome)
+        // a pessoa escolheu esse objeto (tocou ou digitou): o 0 é de verdade (gastou), não refaz
+        if (System.currentTimeMillis() - abriuEm > 5 * 60_000L || nome in pelaPessoa || achado[nome] != (j.pid to addr) || !zerados.add(addr)) return
+        achado.remove(nome); refeito[nome] = addr
         Registro.add("decisao", "$nome: o objeto escolhido ($addr) foi para 0 logo depois de abrir (era a cópia do save?): escolhendo de novo")
         // vários caem juntos (a cópia do save inteira é zerada): uma escolha só para todos (antes eram 4 escolhas, cada
         // uma refazendo os 4: a mesma decisão 18 vezes no registro)
@@ -572,6 +588,8 @@ object Ponteiro {
         marcados.groupBy({ it.first }, { it.second }).forEach { (pacote, novos) ->
             gravar(pacote, if (substituir) novos else juntar(lista(pacote), novos))
         }
+        // já importado: tira o nome de importar (senão o arquivo de fora escondia o automático nas próximas vezes)
+        runCatching { if (arquivoImportar.exists()) arquivoImportar.renameTo(File(pasta, "unit-importado.json")) }
         aplicar()
     }
 
@@ -635,7 +653,7 @@ object Ponteiro {
         Rotulo("Guardados neste jogo")
         @Suppress("UNUSED_EXPRESSION") recarga  // relê a lista quando fixa/desfixa
         val guardados = j?.let { lista(it.pacote) }.orEmpty()
-        if (guardados.isEmpty()) Text("Nenhum ainda. No Editar de um valor, toque em Achar o caminho.", color = Cor.apagado, fontSize = 12.sp)
+        if (guardados.isEmpty()) Text("Nenhum ainda. Salve um valor: o Unit procura os caminhos sozinho.", color = Cor.apagado, fontSize = 12.sp)
         var numero by remember { mutableStateOf("") }
         confirmando?.let { nome ->
             Rotulo("Confirmar $nome")

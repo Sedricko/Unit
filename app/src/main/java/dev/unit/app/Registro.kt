@@ -115,7 +115,7 @@ object Registro {
     private var comandos = 0L; private var erros = 0L; private var somaMs = 0L; private var maxMs = 0L
     @Volatile var aberturas = 0  // quantas vezes o motor abriu (mais de 1 = ele caiu e voltou)
     private var ultimaChave = ""; private var repetidas = 0
-    private val REPETITIVOS = setOf("read", "vivo", "bytes", "frozen", "sleep", "info", "ptr")
+    private val REPETITIVOS = setOf("read", "vivo", "bytes", "frozen", "sleep", "info", "ptr", "frente")
     @Synchronized fun comando(cmd: String, resposta: String, ms: Long, erro: Boolean) {
         comandos++; somaMs += ms; if (ms > maxMs) maxMs = ms; if (erro) erros++
         val verbo = cmd.substringBefore(' ')

@@ -116,9 +116,12 @@ static int codificar(int t, const char *s, unsigned char *b) {
     return 0;
 }
 
+static int cortado;  // a última busca passou do teto e ficou com parte dos resultados
 static void guardar(uint64_t a, int t) {
     // teto: buscar "0" ou "1" num jogo grande passava de centenas de milhões e o motor caía com o jogo parado
-    if (nres >= 50000000) return;  // shortcut: o excesso fica de fora (refinar acha o certo entre os 50 milhões), sobe se precisar
+    // 16 milhões (256 MB): no celular quem passa disso é morto pelo Android (o realloc dobra e copia); a busca avisa
+    // "cortado" e o app pede um número mais específico (o valor certo pode ter ficado de fora)
+    if (nres >= 16000000) { cortado = 1; return; }
     if (nres == cap) {
         hit_t *n = realloc(res, (cap ? cap * 2 : 4096) * sizeof *res);
         if (!n) { if (target) kill(target, SIGCONT); puts("err sem memória"); exit(1); }  // nunca sai com o jogo parado
@@ -167,7 +170,7 @@ static void cmd_grupo(const char *texto, int refinar) {
     #define JA(a) (!refinar || bsearch(&(uint64_t){a}, antes, na, 8, cmpu64))
     uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
     if (nr < 0) { puts("err não li o mapa de memória do jogo"); free(antes); return; }
-    nres = 0;
+    nres = 0; cortado = 0;
     enum { BLOCO = 1 << 20 };
     unsigned char *buf = malloc(BLOCO + 8);
     if (!buf) { free(ini); free(fim); puts("err sem memória"); return; }
@@ -196,7 +199,7 @@ static void cmd_grupo(const char *texto, int refinar) {
         }
     #undef JA
     free(buf); free(ini); free(fim); free(antes);
-    printf("ok %zu\n", nres);
+    printf("ok %zu%s\n", nres, cortado ? " cortado" : "");
 }
 
 static void cmd_search(const char *valor, const char *tipos) {
@@ -211,7 +214,7 @@ static void cmd_search(const char *valor, const char *tipos) {
     if (!al.faixa && want != floor(want)) usar[T_I32] = usar[T_I64] = 0;
     uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
     if (nr < 0) { puts("err não li o mapa de memória do jogo"); return; }
-    nres = 0;
+    nres = 0; cortado = 0;
     enum { BLOCO = 1 << 20 };
     unsigned char *buf = malloc(BLOCO + 8);
     if (!buf) { free(ini); free(fim); puts("err sem memória"); return; }
@@ -227,7 +230,7 @@ static void cmd_search(const char *valor, const char *tipos) {
             }
         }
     free(buf); free(ini); free(fim);
-    printf("ok %zu\n", nres);
+    printf("ok %zu%s\n", nres, cortado ? " cortado" : "");
 }
 
 static void cmd_refine(const char *valor) {
