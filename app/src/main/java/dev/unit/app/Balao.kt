@@ -458,6 +458,8 @@ class Balao : Service() {
         if (tela == "inicio" && Atualizador.pronto) Text("Atualização ${Atualizador.nova} baixada: feche o Unit (✕) para atualizar.", color = Cor.a2, fontSize = 12.sp)
         if (Nucleo.aviso.isNotBlank()) Text(Nucleo.aviso, color = Cor.ruim, fontSize = 13.sp)
         else if (Ponteiro.aviso.isNotBlank() && tela != "caminho") Text(Ponteiro.aviso, color = Cor.a2, fontSize = 13.sp)  // procura longa: diz o que está fazendo
+        // botão apagado sem explicação (o relatório: "por que o botão não deixa pesquisar?")
+        else if (Nucleo.ocupado && (tela == "achar" || tela == "editar")) Text("Aguarde: o Unit está terminando uma tarefa. Os botões voltam sozinhos.", color = Cor.a2, fontSize = 13.sp)
         // dúvida entre objetos achados pelo nome: um toque no número que está na tela resolve (sem digitar)
         if (!Nucleo.jogoFechou && tela == "inicio" && Ponteiro.duvida.isNotEmpty()) {
             // enquanto a pergunta está aberta: o jogo pausa (o número para de mudar) e os botões acompanham a memória a cada

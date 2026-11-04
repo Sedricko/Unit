@@ -253,7 +253,12 @@ object Ponteiro {
     /** Jogo escolhido: cada valor guardado aparece nos Salvos pelo caminho da maioria; os caminhos mortos são apagados. */
     /** Um aplicar por vez: as tentativas de 20 s e 60 s chegavam com o anterior ainda rodando e gravavam por cima. */
     private val trava = kotlinx.coroutines.sync.Mutex()
-    fun aplicar() = Nucleo.rodar { trava.withLock { aplicarJa() } }
+    // a procura dos salvos deixa os botões apagados por até 1 minuto: diz na tela o que está fazendo
+    fun aplicar() = Nucleo.rodar { trava.withLock {
+        val msg = "Procurando os valores salvos… os botões voltam sozinhos."
+        val meu = aviso.isBlank(); if (meu) aviso = msg
+        try { aplicarJa() } finally { if (meu && aviso == msg) aviso = "" }
+    } }
     private suspend fun aplicarJa() {
         refazer = false  // a escolha pedida começou: os que caíram até aqui entram nela
         val j = Nucleo.jogo ?: return
