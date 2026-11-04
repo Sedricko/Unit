@@ -35,6 +35,8 @@ read $avida f32
 search 123456780~123456800 i32
 search 9876543210 i64
 search 4321 f64
+search 4321 f32
+list 5
 freeze $aouro i32 555
 write $aouro i32 1
 sleep 400
@@ -79,6 +81,7 @@ ordem: $(tr '\n' ' ' <<<"$got2")"  # numa linha só, para conferir a ordem das r
 confere "sem jogo, recusa" "err escolha o jogo primeiro"
 confere "attach" "ok $pid"
 confere "acha o ouro (Dword)" "$aouro i32 987654321"
+confere "a tela corta o número com vírgula (4321,5 aparece como 4321): a busca acha" "${aferro#0x} f32 4321.5"
 confere "lê o que escreveu" "ok 987654321"
 confere "acha a vida (Float)" "$avida f32 87.5"
 confere "escreve Float" "ok 99.25"

@@ -79,11 +79,12 @@ static void texto(int t, const unsigned char *b, char *out, size_t n) {
     else if (t == T_I64) { int64_t v; memcpy(&v, b, 8); snprintf(out, n, "%" PRId64, v); }
     else snprintf(out, n, "%.9g", numero(t, b));
 }
-// o número da tela bate com o da memória? inteiro: igual; com vírgula: a tela arredonda (87,5 / 87.49999)
+// o número da tela bate com o da memória? inteiro: igual; com vírgula: a tela arredonda (87,5 / 87.49999) ou corta
+// (muitos jogos mostram 425 para 425,8: o Orecraft acumula recursos com vírgula)
 static int bate(int t, double mem, double want) {
     if (t == T_I32 || t == T_I64) return mem == want;
     if (isnan(mem) || isinf(mem)) return 0;
-    return fabs(mem - want) <= fmax(1e-4, fabs(want) * 1e-6) || (want == floor(want) && mem >= want - 0.5 && mem < want + 0.5 && fabs(mem) > 1e-3);
+    return fabs(mem - want) <= fmax(1e-4, fabs(want) * 1e-6) || (want == floor(want) && mem >= want - 0.5 && mem < want + 1 && fabs(mem) > 1e-3);
 }
 // valor "N" ou faixa "A~B" (o ~ do GameGuardian). Na faixa os tipos com vírgula pensam como a tela: "100~100" pega
 // tudo que aparece como 100 (de 99,5 até antes de 100,5).
@@ -103,7 +104,7 @@ static int confere(int t, double mem, const alvo_t *a) {
     if (!a->faixa) return bate(t, mem, a->v);
     if (t == T_I32 || t == T_I64) return mem >= a->lo && mem <= a->hi;
     if (isnan(mem) || isinf(mem)) return 0;
-    return mem >= a->lo - 0.5 && mem < a->hi + 0.5;
+    return mem >= a->lo - 0.5 && mem < a->hi + 1;
 }
 
 static int codificar(int t, const char *s, unsigned char *b) {

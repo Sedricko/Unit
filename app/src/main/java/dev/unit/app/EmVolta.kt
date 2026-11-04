@@ -30,6 +30,7 @@ import kotlinx.coroutines.delay
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.round
 
 /**
@@ -56,7 +57,7 @@ object EmVolta {
                 put("i32", bb.getInt(i).toDouble()); put("f32", bb.getFloat(i).toDouble())
                 if (i + 8 <= bytes.size) { put("i64", bb.getLong(i).toDouble()); put("f64", bb.getDouble(i)) }
             }
-            fun bate(t: String, v: Double) = if (t.startsWith("f")) v.isFinite() && abs(v - procura!!) < 0.5 else v == procura
+            fun bate(t: String, v: Double) = if (t.startsWith("f")) v.isFinite() && (abs(v - procura!!) < 0.5 || (procura!! == floor(procura!!) && v - procura!! in 0.0..<1.0)) else v == procura
             if (procura != null) {
                 for ((t, v) in vals) if ((tipo == "auto" || t == tipo) && bate(t, v)) out += Vizinho(d, a, t, texto(v))
             } else if (tipo == "auto") {

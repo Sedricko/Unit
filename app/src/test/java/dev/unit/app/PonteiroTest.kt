@@ -66,6 +66,9 @@ class PonteiroTest {
     @Test fun bateComOArredondamentoDaTela() {
         assertTrue(Ponteiro.bate("f32", "100.37", 100.0))
         assertFalse(Ponteiro.bate("f32", "101", 100.0))
+        assertTrue(Ponteiro.bate("f32", "100.8", 100.0))  // a tela corta (425,8 aparece 425)
+        assertFalse(Ponteiro.bate("f32", "99.4", 100.0))
+        assertFalse(Ponteiro.bate("f32", "88.3", 87.5))  // com vírgula na tela: só o arredondamento
         assertTrue(Ponteiro.bate("i32", "57", 57.0))
         assertFalse(Ponteiro.bate("i32", "58", 57.0))
         assertFalse(Ponteiro.bate("i32", "?", 57.0))

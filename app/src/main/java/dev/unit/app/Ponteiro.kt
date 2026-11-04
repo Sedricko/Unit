@@ -26,6 +26,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlinx.coroutines.sync.withLock
 
 /** Um valor achado pelo caminho: o nome, o tipo, os caminhos que ainda valem e se volta congelado. */
@@ -157,7 +158,8 @@ object Ponteiro {
     /** O número da tela bate com o da memória? (Float da tela vem arredondado.) */
     fun bate(tipo: String, memoria: String, tela: Double): Boolean {
         val m = memoria.toDoubleOrNull() ?: return false
-        return if (tipo.startsWith("f")) abs(m - tela) < 0.5 || abs(m - tela) < 1e-4 else m == tela
+        // a tela arredonda ou corta (425,8 aparece como 425 em muitos jogos), como no motor
+        return if (tipo.startsWith("f")) abs(m - tela) < 0.5 || (tela == floor(tela) && m - tela in 0.0..<1.0) else m == tela
     }
 
     // ---- motor ----
@@ -194,7 +196,7 @@ object Ponteiro {
                 gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(conferido = true, valor = v) else it })
                 val s = Salvo(addr, c.tipo, nome, v, false, caminho = true)
                 val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
-                if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+                trocarSalvo(i, s)
                 precisaNumero.remove(nome)
                 achado[nome] = j.pid to addr; pelaPessoa += nome
                 Registro.add("caminho", "$nome: confirmado pelo número da tela (${EmVolta.texto(tela)}) entre ${achados.size} objetos achados pelo nome")
@@ -212,7 +214,7 @@ object Ponteiro {
         achado[nome] = j.pid to addr; pelaPessoa += nome  // as tentativas de 20 s e 60 s não decidem de novo por cima do que você confirmou
         val s = Salvo(addr, c.tipo, nome, v, false, caminho = true)
         val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
-        if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+        trocarSalvo(i, s)
         precisaNumero.remove(nome)
         Registro.add("caminho", "$nome: confirmado pelo número da tela (${EmVolta.texto(tela)}) · ${bons.size} de ${c.caminhos.size} caminhos chegam nele",
             lista5(c.caminhos - bons.toSet(), "– saiu"))
@@ -308,7 +310,7 @@ object Ponteiro {
             if (congela) runCatching { Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") } }
             val s = Salvo(addr, c.tipo, c.nome, if (congela) c.valor else v, congela, caminho = true)
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
-            if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+            trocarSalvo(i, s)
             pelonome[c.nome] = addr; faltaNome -= c.nome; achado[c.nome] = j.pid to addr
             if (!congela) valorAgora[c.nome] = v  // o último valor conhecido (desempata na próxima abertura)
             Registro.add("caminho", "${c.nome} pelo nome (${rotuloUnity(c.unity)}) = ${s.valor} · sem caminho e sem digitar")
@@ -342,7 +344,7 @@ object Ponteiro {
             if (c.congelar && c.valor.isNotEmpty()) runCatching { Nucleo.cmd { it.cmd("freeze $addr ${c.tipo} ${c.valor}") } }
             val s = Salvo(addr, c.tipo, c.nome, if (c.congelar && c.valor.isNotEmpty()) c.valor else v, c.congelar && c.valor.isNotEmpty(), caminho = true)
             val i = Nucleo.salvos.indexOfFirst { it.addr == addr || it.nome == c.nome }
-            if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+            trocarSalvo(i, s)
             Registro.add("caminho", "${c.nome} pelo caminho $cam = ${s.valor}")
         }
         // auto-alimentar: com poucos caminhos vivos, procura caminhos novos a partir do endereço que um vivo achou agora
@@ -415,7 +417,7 @@ object Ponteiro {
         gravar(j.pacote, lista(j.pacote).map { if (it.nome == nome) it.copy(conferido = true, valor = v) else it })
         val s = Salvo(addr, tipo, nome, v, false, caminho = true)
         val i = Nucleo.salvos.indexOfFirst { it.nome == nome || it.addr == addr }
-        if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+        trocarSalvo(i, s)
         achado[nome] = j.pid to addr; pelaPessoa += nome; duvida.remove(nome); precisaNumero.remove(nome)
         Registro.add("caminho", "$nome: você tocou em $v · é o objeto $addr")
     }
@@ -475,7 +477,7 @@ object Ponteiro {
         val bons = ok.filter { it.second!!.first == melhor.key }.map { it.first }
         val s = Salvo(melhor.key, c.tipo, c.nome, valor!!, false, caminho = true)
         val i = Nucleo.salvos.indexOfFirst { it.nome == c.nome || it.addr == melhor.key }
-        if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+        trocarSalvo(i, s)
         Registro.add("decisao", "${c.nome}: conferi sozinho · ${melhor.value} de ${c.caminhos.size} caminhos chegam em ${melhor.key} (valor $valor)",
             votos.entries.sortedByDescending { it.value }.take(5).map { "${it.key}: ${it.value} voto(s)" })
         return c.copy(caminhos = bons.take(RESERVA), conferido = true)
@@ -549,6 +551,13 @@ object Ponteiro {
     private val refeito = mutableMapOf<String, String>()  // nome → o objeto que foi para 0 (volta para ele se o novo também estiver em 0)
     private val pelaPessoa = mutableSetOf<String>()  // escolhidos pela pessoa nesta abertura (tocou ou digitou)
     private var abriuEm = 0L
+    // troca o Salvo de lugar; o endereço antigo, se congelado, é solto (o relatório: o Mithril foi escolhido de novo e o
+    // motor seguiu escrevendo 999 no objeto antigo, que ninguém via)
+    private suspend fun trocarSalvo(i: Int, s: Salvo) {
+        val velho = Nucleo.salvos.getOrNull(i)
+        if (i >= 0) Nucleo.salvos[i] = s else Nucleo.salvos += s
+        if (velho != null && velho.congelado && velho.addr != s.addr) runCatching { Nucleo.cmd { it.cmd("unfreeze ${velho.addr}") } }
+    }
     /** Um valor que voltou pelo nome caiu de repente para 0 nos primeiros minutos: escolhe de novo, sem esse objeto. */
     fun caiuParaZero(nome: String, addr: String) {
         val j = Nucleo.jogo ?: return
