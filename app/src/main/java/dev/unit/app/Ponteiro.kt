@@ -64,7 +64,10 @@ object Ponteiro {
     fun valido(c: Caminho) = c.tipo in TIPOS && c.caminhos.all { '+' in it && SEGURO.matches(it) } && c.unity.none { it == '\n' || it == '\r' }
     fun deJson(a: JSONArray) = (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
         Caminho(o.getString("nome"), o.getString("tipo"), o.getJSONArray("caminhos").let { c -> (0 until c.length()).map(c::getString) }, o.optBoolean("congelar"), o.optString("valor"), o.optBoolean("conferido", true), o.optBoolean("fixo"),
-            o.optJSONObject("falhas")?.let { f -> f.keys().asSequence().associateWith { k -> f.getInt(k) } }.orEmpty(), o.optInt("pid"), o.optString("unity")) } }
+            o.optJSONObject("falhas")?.let { f -> f.keys().asSequence().associateWith { k -> f.getInt(k) } }.orEmpty(), o.optInt("pid"), o.optString("unity").takeIf(::unityBom).orEmpty()) } }
+    // guardado antes da 0.4.1: o "classe" aceitava lista de números do sistema (Grim Soul: "Int32 System 8a0") e a procura
+    // pelo nome rodava a cada abertura sem achar nada. O motor de agora recusa os mesmos casos
+    fun unityBom(u: String) = u.split(' ').let { p -> p.size < 3 || (p[1] != "System" && !p[1].startsWith("System.") && (p[2].toLongOrNull(16) ?: 0) <= 0x400) }
     fun lista(pacote: String) = runCatching { deJson(JSONArray(prefs.getString(pacote, "[]"))) }.getOrDefault(emptyList())
     // o arquivo (unit-ponteiros.json) acompanha sempre: limpou os mortos, usou, importou, renomeou → já sai atualizado
     private fun gravar(pacote: String, l: List<Caminho>) { prefs.edit().putString(pacote, paraJson(l).toString()).commit(); runCatching { exportar() } }

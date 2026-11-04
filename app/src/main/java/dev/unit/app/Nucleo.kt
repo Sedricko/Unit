@@ -351,6 +351,7 @@ object Nucleo {
     fun soltarAoFechar() {
         pausado = false
         val m = motor ?: return; motor = null
+        Registro.aberturas = 0  // fechado pelo ✕: abrir de novo não é "o motor caiu"
         Thread { runCatching { m.cmd("unfreeze all") }; runCatching { m.cmd("resume") }; m.fechar() }.start()
         salvos.replaceAll { it.copy(congelado = false) }
     }

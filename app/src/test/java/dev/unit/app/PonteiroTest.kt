@@ -63,6 +63,13 @@ class PonteiroTest {
         assertEquals(1, r2.falhas["ruim"])
     }
 
+    @Test fun unityDeListaDoSistemaEDescartado() {
+        assertFalse(Ponteiro.unityBom("Int32 System 8a0 48=6163"))
+        assertFalse(Ponteiro.unityBom("Item - 8a0 10=43"))
+        assertTrue(Ponteiro.unityBom("Item - 18 10>20=7465"))
+        assertTrue(Ponteiro.unityBom(""))
+    }
+
     @Test fun bateComOArredondamentoDaTela() {
         assertTrue(Ponteiro.bate("f32", "100.37", 100.0))
         assertFalse(Ponteiro.bate("f32", "101", 100.0))
