@@ -289,7 +289,10 @@ object Registro {
     private var ultimosTestes: List<Teste>? = null
 
     /** Abre a lista do Android (WhatsApp, e-mail, copiar…) e guarda uma cópia em relatorio-unit.txt. */
+    /** O painel do Unit fica por cima de tudo: antes de abrir a tela de compartilhar, ele vira o balão (o Balao liga isto). */
+    var antesDeCompartilhar: (() -> Unit)? = null
     fun compartilhar(ctx: Context, testes: List<Teste>?) = Nucleo.rodar {
+        antesDeCompartilhar?.invoke()
         val txt = texto(testes ?: ultimosTestes)
         runCatching { File(pasta, "relatorio-unit.txt").writeText(txt) }
         val envio = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "Relatório do Unit").putExtra(Intent.EXTRA_TEXT, txt)

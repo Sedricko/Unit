@@ -305,6 +305,7 @@ class Balao : Service() {
         // os Salvos ficam guardados no celular a cada mudança, e cada salvo novo ganha caminhos procurados sozinho
         LaunchedEffect(Unit) {
             Ponteiro.aoTerminar = { m -> android.widget.Toast.makeText(this@Balao, m, android.widget.Toast.LENGTH_SHORT).show() }
+            Registro.antesDeCompartilhar = { mudar("balao") }  // senão o painel fica na frente da tela de compartilhar
             androidx.compose.runtime.snapshotFlow { Nucleo.salvos.toList() }.collect { l -> Nucleo.guardarSalvos(); l.forEach { Ponteiro.autoAchar(it) } }
         }
         LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); Nucleo.semAviso { Registro.pulso() } } }  // pulso a cada 5 min
