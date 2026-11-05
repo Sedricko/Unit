@@ -58,7 +58,7 @@ object Ponteiro {
 
     // ---- guardar: JSON por jogo (pacote → lista) ----
     fun paraJson(l: List<Caminho>) = JSONArray(l.map { c -> JSONObject().put("nome", c.nome).put("tipo", c.tipo).put("caminhos", JSONArray(c.caminhos)).put("congelar", c.congelar).put("valor", c.valor).put("conferido", c.conferido).put("fixo", c.fixo).put("falhas", JSONObject(c.falhas)).put("pid", c.pid).put("unity", c.unity) })
-    private val TIPOS = setOf("i32", "f32", "i64", "f64")
+    private val TIPOS = setOf("i32", "f32", "i64", "f64", "i16", "i8")
     private val SEGURO = Regex("[A-Za-z0-9_.+:@-]+")  // caminho "lib+OFF:o1:...": só isso (sem espaço nem quebra de linha)
     /** Do arquivo (que pode ter vindo de outro celular): fica só o que é seguro mandar ao motor. */
     fun valido(c: Caminho) = c.tipo in TIPOS && c.caminhos.all { '+' in it && SEGURO.matches(it) } && c.unity.none { it == '\n' || it == '\r' }

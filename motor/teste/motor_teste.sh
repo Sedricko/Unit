@@ -37,6 +37,11 @@ search 9876543210 i64
 search 4321 f64
 search 4321 f32
 list 5
+write $arec i16 -12345
+search -12345 i16,i8
+list 5
+read $arec i16
+write $arec f32 0
 freeze $aouro i32 555
 write $aouro i32 1
 sleep 400
@@ -81,6 +86,7 @@ ordem: $(tr '\n' ' ' <<<"$got2")"  # numa linha só, para conferir a ordem das r
 confere "sem jogo, recusa" "err escolha o jogo primeiro"
 confere "attach" "ok $pid"
 confere "acha o ouro (Dword)" "$aouro i32 987654321"
+confere "acha um número de 2 bytes (Word), só quando pedido" "${arec#0x} i16 -12345"
 confere "a tela corta o número com vírgula (4321,5 aparece como 4321): a busca acha" "${aferro#0x} f32 4321.5"
 confere "lê o que escreveu" "ok 987654321"
 confere "acha a vida (Float)" "$avida f32 87.5"

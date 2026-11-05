@@ -30,17 +30,18 @@ fun juntar(l: List<Achado>) = l.filterNot { q ->
 /** O tipo que já funcionou neste jogo vem primeiro; sem nada aprendido, a ordem do motor fica como está. */
 fun ordenar(l: List<Achado>, aprendido: String?) = if (aprendido == null) l else l.sortedBy { if (it.tipo == aprendido) 0 else 1 }
 
-val TIPOS = listOf("i32", "f32", "i64", "f64")
-val TAMANHO = mapOf("i32" to 4, "f32" to 4, "i64" to 8, "f64" to 8)
+val TIPOS = listOf("i32", "f32", "i64", "f64", "i16", "i8")
+val TAMANHO = mapOf("i32" to 4, "f32" to 4, "i64" to 8, "f64" to 8, "i16" to 2, "i8" to 1)
 
 /** O máximo do Dword (o jogo cortaria um número maior); Qword e Float aguentam muito mais. */
 const val MAX_DWORD = 2147483647L
 fun passaLimite(tipo: String, texto: String): Boolean {
     val v = texto.replace(',', '.').toDoubleOrNull() ?: return false
-    return tipo == "i32" && (v > MAX_DWORD || v < -MAX_DWORD - 1) || tipo == "i64" && kotlin.math.abs(v) > 9.2e18
+    return tipo == "i32" && (v > MAX_DWORD || v < -MAX_DWORD - 1) || tipo == "i64" && kotlin.math.abs(v) > 9.2e18 ||
+        tipo == "i16" && (v > 32767 || v < -32768) || tipo == "i8" && (v > 127 || v < -128)
 }
 
-val NOME_TIPO = mapOf("i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double")
+val NOME_TIPO = mapOf("i32" to "Dword", "f32" to "Float", "i64" to "Qword", "f64" to "Double", "i16" to "Word", "i8" to "Byte")
 
 /**
  * O estado do Unit, um só para a tela do app e o balão sobre o jogo: o jogo escolhido, a busca, os salvos. Toda conversa
@@ -197,11 +198,12 @@ object Nucleo {
 
     /** A 1ª vez busca; depois refina com o número novo da tela. Com 1 sobrando, ele já fica escolhido. */
     fun buscar(texto: String) = rodar { try { buscarJa(texto) } finally { soltarSePausado() } }
-    private suspend fun buscarJa(texto: String) {
+    // tipos: "" = Auto (Dword, Float, Qword, Double); "i16,i8" = Word e Byte, que o Auto não olha (dariam milhões)
+    private suspend fun buscarJa(texto: String, tipos: String = "") {
         val v = texto.trim().replace(',', '.')
         val refinar = total != null; val t0 = System.currentTimeMillis(); val antes = total
         pausarParaBuscar()
-        val rb = cmd { it.cmd(if (!refinar) "search $v" else "refine $v") }
+        val rb = cmd { it.cmd(if (!refinar) "search $v $tipos".trim() else "refine $v") }
         val cortou = "cortado" in rb.status  // o motor guardou só os primeiros 16 milhões
         if (cortou) Registro.add("aviso", "Busca de $v: resultados demais, guardei só os primeiros 16 milhões")
         val r = cmd { it.cmd("list 50") }
@@ -229,6 +231,11 @@ object Nucleo {
         // codificado pelo jogo (proteção) ou que vem do servidor fica de fora, e a pessoa fica sabendo
         val n = v.toDoubleOrNull()
         fun t(d: Double) = if (d % 1.0 == 0.0) d.toLong().toString() else d.toString()
+        // inteiro sem nada no Auto: procura sozinho em Word e Byte (quantidades pequenas às vezes ficam em 1 ou 2 bytes)
+        if (total == 0L && !refinar && tipos.isEmpty() && n != null && n % 1.0 == 0.0 && n in -32768.0..65535.0) {
+            Registro.add("decisao", "Nada em Dword/Float/Qword/Double para $v: procurando em Word e Byte")
+            total = null; return buscarJa(texto, "i16,i8")
+        }
         if (total == 0L && n != null) {  // também no Refinar: o número ainda existe na memória ou sumiu?
             val perto = runCatching { cmd { it.cmd("search ${t(n - 1)}~${t(n + 1)}") }.status.substringBefore(' ').toLongOrNull() }.getOrNull() ?: 0L
             total = null  // o próximo é um Buscar novo (refinar 0 resultados não serve)
@@ -307,9 +314,15 @@ object Nucleo {
         val agora = runCatching { cmd { it.cmd("read $addr $tipo") }.status }.getOrNull() ?: return@rodar
         if ((agora.toDoubleOrNull() ?: return@rodar) == v.toDoubleOrNull()) return@rodar
         salvos.indexOfFirst { it.addr == addr && !it.perdido }.let { k -> if (k >= 0) salvos[k] = salvos[k].copy(valor = agora) }
-        val porque = "O jogo voltou o valor para $agora logo depois de escrever $v: esse endereço é uma cópia (a da tela, por exemplo) e o valor de verdade fica em outro lugar, que pode estar codificado. Tente congelar ou outro resultado da busca."
-        Registro.add("aviso", "Escrita não segurou ($addr): $porque")
-        throw IllegalStateException(porque)
+        Registro.add("aviso", "Escrita não segurou ($addr): o jogo voltou para $agora logo depois de escrever $v · é uma cópia; procuro o de verdade em Word e Byte")
+        // o de verdade pode estar num tipo que o Auto não olha: procura sozinho o número de agora em Word e Byte
+        val achou = if (agora.toDoubleOrNull()?.let { it % 1.0 == 0.0 && it in -32768.0..65535.0 } == true) {
+            zerar()
+            try { runCatching { buscarJa(agora, "i16,i8") }; total ?: 0L } finally { soltarSePausado() }
+        } else 0L
+        throw IllegalStateException("O jogo voltou o valor para $agora logo depois de escrever $v: esse endereço é só uma cópia (a da tela). " +
+            if (achou > 0) "Procurei $agora em Word e Byte: $achou resultado(s) no Achar. Mude o valor no jogo e refine."
+            else "Não há $agora em Word nem Byte: o valor de verdade fica em outro lugar, que pode estar codificado.")
     }
 
     fun alternarCongelado(s: Salvo) = rodar {

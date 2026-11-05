@@ -40,9 +40,11 @@
 #include <time.h>
 #include <unistd.h>
 
-enum { T_I32, T_F32, T_I64, T_F64, NT };
-static const char *TNAME[NT] = {"i32", "f32", "i64", "f64"};
-static const int TSIZE[NT] = {4, 4, 8, 8};
+// Word e Byte (i16, i8) só quando pedidos: no Auto um número pequeno daria centenas de milhões de resultados
+enum { T_I32, T_F32, T_I64, T_F64, T_I16, T_I8, NT, NAUTO = T_I16 };
+static const char *TNAME[NT] = {"i32", "f32", "i64", "f64", "i16", "i8"};
+static const int TSIZE[NT] = {4, 4, 8, 8, 2, 1};
+#define INTEIRO(t) ((t) == T_I32 || (t) == T_I64 || (t) == T_I16 || (t) == T_I8)
 
 typedef struct { uint64_t addr; uint8_t type; } hit_t;
 static pid_t target;
@@ -71,18 +73,21 @@ static double numero(int t, const unsigned char *b) {
     case T_I32: { int32_t v; memcpy(&v, b, 4); return v; }
     case T_F32: { float v; memcpy(&v, b, 4); return v; }
     case T_I64: { int64_t v; memcpy(&v, b, 8); return (double)v; }
+    case T_I16: { int16_t v; memcpy(&v, b, 2); return v; }
+    case T_I8: return (int8_t)b[0];
     default: { double v; memcpy(&v, b, 8); return v; }
     }
 }
 static void texto(int t, const unsigned char *b, char *out, size_t n) {
     if (t == T_I32) { int32_t v; memcpy(&v, b, 4); snprintf(out, n, "%" PRId32, v); }
     else if (t == T_I64) { int64_t v; memcpy(&v, b, 8); snprintf(out, n, "%" PRId64, v); }
+    else if (t == T_I16 || t == T_I8) snprintf(out, n, "%d", (int)numero(t, b));
     else snprintf(out, n, "%.9g", numero(t, b));
 }
 // o número da tela bate com o da memória? inteiro: igual; com vírgula: a tela arredonda (87,5 / 87.49999) ou corta
 // (muitos jogos mostram 425 para 425,8: o Orecraft acumula recursos com vírgula)
 static int bate(int t, double mem, double want) {
-    if (t == T_I32 || t == T_I64) return mem == want;
+    if (INTEIRO(t)) return mem == want;
     if (isnan(mem) || isinf(mem)) return 0;
     return fabs(mem - want) <= fmax(1e-4, fabs(want) * 1e-6) || (want == floor(want) && mem >= want - 0.5 && mem < want + 1 && fabs(mem) > 1e-3);
 }
@@ -102,7 +107,7 @@ static int alvo(const char *s, alvo_t *a) {
 }
 static int confere(int t, double mem, const alvo_t *a) {
     if (!a->faixa) return bate(t, mem, a->v);
-    if (t == T_I32 || t == T_I64) return mem >= a->lo && mem <= a->hi;
+    if (INTEIRO(t)) return mem >= a->lo && mem <= a->hi;
     if (isnan(mem) || isinf(mem)) return 0;
     return mem >= a->lo - 0.5 && mem < a->hi + 1;
 }
@@ -112,6 +117,8 @@ static int codificar(int t, const char *s, unsigned char *b) {
     if (e == s || *e) return -1;
     if (t == T_I32) { if (d != floor(d) || d < INT32_MIN || d > UINT32_MAX) return -1; int32_t v = (int32_t)(int64_t)d; memcpy(b, &v, 4); }
     else if (t == T_I64) { if (d != floor(d)) return -1; int64_t v = (int64_t)d; memcpy(b, &v, 8); }
+    else if (t == T_I16) { if (d != floor(d) || d < INT16_MIN || d > UINT16_MAX) return -1; int16_t v = (int16_t)(int32_t)d; memcpy(b, &v, 2); }
+    else if (t == T_I8) { if (d != floor(d) || d < INT8_MIN || d > UINT8_MAX) return -1; b[0] = (unsigned char)(int)d; }
     else if (t == T_F32) { float v = (float)d; memcpy(b, &v, 4); }
     else memcpy(b, &d, 8);
     return 0;
@@ -180,7 +187,7 @@ static void cmd_grupo(const char *texto, int refinar) {
             size_t n = fim[r] - a < BLOCO ? fim[r] - a : BLOCO;
             if (ler(a, buf, n)) continue;
             for (size_t o = 0; o + 4 <= n; o += 4)
-                for (int t0 = 0; t0 < NT; t0++) {
+                for (int t0 = 0; t0 < NAUTO; t0++) {
                     if (o + TSIZE[t0] > n || !confere(t0, numero(t0, buf + o), &it[0]) || !JA(a + o)) continue;
                     if ((t0 == T_I32 || t0 == T_I64) && !it[0].faixa && it[0].v != floor(it[0].v)) continue;
                     uint64_t mem[8]; int tp[8]; mem[0] = a + o; tp[0] = t0; int ok = 1;
@@ -189,7 +196,7 @@ static void cmd_grupo(const char *texto, int refinar) {
                         size_t de = o > (size_t)dist ? o - dist : 0, ate = o + dist < n ? o + dist : n;
                         for (size_t q = de; q + 4 <= ate && !ok; q += 4) {
                             if (q == o) continue;
-                            for (int t = 0; t < NT && !ok; t++)
+                            for (int t = 0; t < NAUTO && !ok; t++)
                                 if (q + TSIZE[t] <= n && confere(t, numero(t, buf + q), &it[j]) && JA(a + q)) { mem[j] = a + q; tp[j] = t; ok = 1; }
                         }
                     }
@@ -209,10 +216,10 @@ static void cmd_search(const char *valor, const char *tipos) {
     alvo_t al; if (alvo(valor, &al)) { printf("err valor inválido: %s\n", valor); return; }
     double want = al.v;
     int usar[NT] = {0};
-    if (!tipos || !*tipos || !strcmp(tipos, "auto")) for (int t = 0; t < NT; t++) usar[t] = 1;
+    if (!tipos || !*tipos || !strcmp(tipos, "auto")) for (int t = 0; t < NAUTO; t++) usar[t] = 1;
     else { char tmp[64]; snprintf(tmp, sizeof tmp, "%s", tipos); char *sv; for (char *s = strtok_r(tmp, ",", &sv); s; s = strtok_r(NULL, ",", &sv)) { int t = tipo(s); if (t >= 0) usar[t] = 1; } }
     // inteiro só se o número for inteiro (0,5 não está guardado em Dword)
-    if (!al.faixa && want != floor(want)) usar[T_I32] = usar[T_I64] = 0;
+    if (!al.faixa && want != floor(want)) usar[T_I32] = usar[T_I64] = usar[T_I16] = usar[T_I8] = 0;
     uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
     if (nr < 0) { puts("err não li o mapa de memória do jogo"); return; }
     nres = 0; cortado = 0;
