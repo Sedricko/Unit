@@ -10,8 +10,8 @@ android {
         applicationId = "dev.unit.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 119
-        versionName = "0.4.10"
+        versionCode = 120
+        versionName = "0.4.11"
     }
     // chave fixa: sem ela cada build do GitHub assina diferente e o Android nao deixa atualizar por cima
     // shortcut: chave de estudo no repositorio, trocar por uma nos Secrets do GitHub se o app um dia for distribuido

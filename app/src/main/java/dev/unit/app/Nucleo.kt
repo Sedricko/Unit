@@ -204,6 +204,8 @@ object Nucleo {
         val refinar = total != null; val t0 = System.currentTimeMillis(); val antes = total
         pausarParaBuscar()
         val rb = cmd { it.cmd(if (!refinar) "search $v $tipos".trim() else "refine $v") }
+        val manteve = refinar && rb.status.startsWith("0 manteve")  // nenhum bateu: o motor guardou os de antes
+        val repetiu = v == ultimoV; ultimoV = v
         val cortou = "cortado" in rb.status  // o motor guardou só os primeiros 16 milhões
         if (cortou) Registro.add("aviso", "Busca de $v: resultados demais, guardei só os primeiros 16 milhões")
         val r = cmd { it.cmd("list 50") }
@@ -224,7 +226,15 @@ object Nucleo {
         Registro.add("busca", "${if (refinar) "Refinar" else "Buscar"} $v → ${total ?: 0} resultado(s) (${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s, jogo pausado durante a busca)")
         when {
             total == 0L -> Registro.add("aviso", "Nenhum resultado para $v: o número pode estar em outro tipo, ter mudado antes da busca, ou ser só desenho na tela")
-            refinar && antes != null && total == antes && antes > 1 -> Registro.add("aviso", "Refinar $v não diminuiu nada ($antes): o valor pode não ter mudado no jogo")
+            manteve -> {
+                // o relatório (Obsidian Knight): refinava, dava 0 e perdia tudo; o número da tela já tinha mudado de novo
+                val agora = achados.take(5).joinToString { it.valor }
+                val porque = "Nenhum dos $antes ficou com $v. Eles continuam na lista com o número de agora" +
+                    (if (agora.isNotEmpty()) " ($agora)" else "") + ": confira qual bate com a tela e refine com ele."
+                Registro.add("aviso", porque); throw IllegalStateException(porque)
+            }
+            // mesmo número de novo e nada saiu: o valor não mudou (com número novo e todos seguindo, está certo)
+            refinar && repetiu && antes != null && total == antes && antes > 1 -> Registro.add("aviso", "Refinar $v de novo não diminuiu nada ($antes): mude o valor no jogo antes de refinar")
             (total ?: 0) > 10_000_000 -> Registro.add("aviso", "Mais de 10 milhões de resultados: o próximo refino vai ser lento; use um número mais raro ou uma faixa menor")
         }
         // 1ª busca sem nada: procura perto (n-1~n+1, todos os tipos) para dizer o porquê. Não decifra nada: valor
@@ -249,6 +259,7 @@ object Nucleo {
         if (cortou) throw IllegalStateException("Resultados demais: o valor certo pode ter ficado de fora. Mude o valor no jogo e busque o número novo.")
     }
 
+    private var ultimoV = ""  // o número do último Buscar/Refinar (refinar com o mesmo não ajuda)
     private var buscaDesde = 0L; private var passos = 0  // tempo e refinos do primeiro Buscar até sobrar 1
     private var pausaJob: kotlinx.coroutines.Job? = null  // a última pausa automática a caminho do motor
     private var porDigitar = false  // quem pausou foi o 1º número digitado no Achar (sair sem buscar solta)

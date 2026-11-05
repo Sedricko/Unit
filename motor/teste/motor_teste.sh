@@ -27,6 +27,8 @@ search 123456789
 write $aouro i32 987654321
 refine 987654321
 list 5
+refine 5555
+list 5
 read $aouro i32
 search 87.5
 list 50
@@ -86,6 +88,7 @@ ordem: $(tr '\n' ' ' <<<"$got2")"  # numa linha só, para conferir a ordem das r
 confere "sem jogo, recusa" "err escolha o jogo primeiro"
 confere "attach" "ok $pid"
 confere "acha o ouro (Dword)" "$aouro i32 987654321"
+confere "refino sem nenhum: os de antes ficam" "ok 0 manteve 1"
 confere "acha um número de 2 bytes (Word), só quando pedido" "${arec#0x} i16 -12345"
 confere "a tela corta o número com vírgula (4321,5 aparece como 4321): a busca acha" "${aferro#0x} f32 4321.5"
 confere "lê o que escreveu" "ok 987654321"

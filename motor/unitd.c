@@ -248,6 +248,8 @@ static void cmd_refine(const char *valor) {
     size_t k = 0; unsigned char b[8];
     for (size_t i = 0; i < nres; i++)
         if (!ler(res[i].addr, b, TSIZE[res[i].type]) && confere(res[i].type, numero(res[i].type, b), &al)) res[k++] = res[i];
+    // nenhum bateu: os de antes ficam (o "list" mostra quanto valem agora; o certo pode ter mudado de novo)
+    if (!k && nres) { printf("ok 0 manteve %zu\n", nres); return; }
     nres = k;
     printf("ok %zu\n", nres);
 }
