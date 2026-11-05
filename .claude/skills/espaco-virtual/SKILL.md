@@ -37,13 +37,8 @@ description: Começa e continua o projeto "espaço virtual" do usuário - um app
    - F3: juntar o motor/tela do Unit ao hospedeiro (ou o Unit falar com o hospedeiro).
    - F4: prova em jogo real (Orecraft, DYSMANTLE) e no celular de verdade, quando o usuário autorizar.
 
-## Regras que nunca mudam (as mesmas do Unit)
-- Só jogos **offline single-player**. Nada para jogos online / que o servidor controla.
-- Nunca liberar nada pago com **dinheiro real** (compras, VIP, premium, remover anúncios), nem como teste.
-- Nunca pular anúncio com recompensa nem tocar em anúncios.
-- Nada para esconder do jogo / passar por proteção **anti-trapaça** (o espaço virtual é para ler memória sem root, não
-  para enganar detecção).
-- Não rodar código de terceiros sem ler; downloads são não confiáveis.
+## Regras do projeto
+- As do `PLANO.md` do Unit ("Regras do projeto (fixas)").
 - Commits terminam com as linhas de atribuição que a sessão informar; nada de ids de modelo no código.
 
 ## Onde guardar
