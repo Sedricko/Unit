@@ -139,11 +139,14 @@ static void guardar(uint64_t a, int t) {
 }
 
 // regiões onde o jogo guarda dados: as que ele pode ler e escrever (pula as de vídeo e de sistema)
-// a busca olha toda memória que o jogo pode mudar (rw). Fora: só leitura (código, constantes), memória da placa de vídeo
-// (kgsl, mali, dri), [vvar] e fontes. /dev/ashmem (memória compartilhada) entra: o GameGuardian tem a faixa "As" para ela
+// a busca olha toda memória que o jogo pode mudar (rw): as faixas Jh, J, Ch, Ca, Cd, Cb, A, S, As e O do GameGuardian
+// (as mesmas do Tinker). Fora: só leitura (código, constantes), placa de vídeo (V: kgsl, mali, dri, dmabuf), [vvar],
+// fontes e a memória herdada do Zygote / imagens do sistema (igual em todo app, criada antes do jogo: valor do jogo nunca
+// fica nela; só deixava a busca mais lenta e com números falsos, o "Pular Zygote" do GameGuardian)
 static int busca_aqui(const char *perms, const char *name) {
     if (perms[0] != 'r' || perms[1] != 'w') return 0;
-    return !((strstr(name, "/dev/") && !strstr(name, "/dev/ashmem")) || strstr(name, "[vvar") || strstr(name, "kgsl") || strstr(name, "mali") || strstr(name, ".ttf"));
+    if (strstr(name, "dalvik-zygote") || strstr(name, "/system/framework/") || strstr(name, "boot.art") || strstr(name, "boot-framework.art")) return 0;
+    return !((strstr(name, "/dev/") && !strstr(name, "/dev/ashmem")) || strstr(name, "dmabuf") || strstr(name, "[vvar") || strstr(name, "kgsl") || strstr(name, "mali") || strstr(name, ".ttf"));
 }
 static int regioes(uint64_t **ini, uint64_t **fim) {
     char p[64]; snprintf(p, sizeof p, "/proc/%d/maps", target);
@@ -1080,7 +1083,7 @@ int main(void) {
             if ((f = fopen("/proc/self/status", "r"))) { while (fgets(ln, sizeof ln, f)) sscanf(ln, "VmRSS: %ld", &rm); fclose(f); }
             snprintf(st, sizeof st, "/proc/%d/status", target);
             if ((f = fopen(st, "r"))) { while (fgets(ln, sizeof ln, f)) sscanf(ln, "VmRSS: %ld", &rj); fclose(f); }
-            // o que fica fora da busca, para o relatório: só leitura e rw da placa de vídeo/sistema
+            // o que fica fora da busca, para o relatório: só leitura e rw da placa de vídeo / Zygote
             uint64_t so = 0, sis = 0; char mp[64], ml[512]; snprintf(mp, sizeof mp, "/proc/%d/maps", target);
             if ((f = fopen(mp, "r"))) {
                 while (fgets(ml, sizeof ml, f)) {
@@ -1090,7 +1093,7 @@ int main(void) {
                 }
                 fclose(f);
             }
-            printf("ok %d %" PRIu64 " %ld %ld fora: so_leitura=%" PRIu64 "MB video_sistema=%" PRIu64 "MB\n", nr, tot >> 20, rm, rj, so >> 20, sis >> 20);
+            printf("ok %d %" PRIu64 " %ld %ld fora: so_leitura=%" PRIu64 "MB video_zygote=%" PRIu64 "MB\n", nr, tot >> 20, rm, rj, so >> 20, sis >> 20);
         }  // o teste "o jogo fechou" já foi feito acima, antes de qualquer comando
         else if (!strcmp(c, "fechar")) { kill(target, SIGCONT); puts(kill(target, SIGKILL) ? "err não fechei o jogo" : "ok"); }
         else if (!strcmp(c, "read") || !strcmp(c, "write") || !strcmp(c, "freeze")) {
