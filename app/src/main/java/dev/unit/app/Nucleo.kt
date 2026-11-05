@@ -267,7 +267,7 @@ object Nucleo {
             total = null  // o próximo é um Buscar novo (refinar 0 resultados não serve)
             val porque = if (perto > 0 && refinar) "Nenhum dos resultados ficou com $v, mas há $perto número(s) perto na memória: o valor pode ter mudado de novo antes do Refinar. Toque em Buscar com o número que está na tela agora."
                 else if (perto > 0) "Nenhum $v exato, mas $perto número(s) perto (${t(n - 1)} a ${t(n + 1)}): o número pode ter mudado antes da busca. Mude o valor no jogo e busque o número novo."
-                else "Não há nenhum número perto de $v na memória, em nenhum tipo: este jogo provavelmente guarda esse valor codificado (proteção) ou ele vem do servidor. O Unit não mexe nesses valores."
+                else "Não há nenhum número perto de $v na memória, em nenhum tipo: o jogo pode guardar de outro jeito (fração, dano recebido, vezes 10): tente a Busca por mudança no Achar. Se nem ela achar, está codificado ou vem do servidor, e o Unit não mexe nesses."
             Registro.add("aviso", "Por que não achou $v: $porque")
             throw IllegalStateException(porque)
         }
@@ -349,7 +349,7 @@ object Nucleo {
         } else 0L
         throw IllegalStateException("O jogo voltou o valor para $agora logo depois de escrever $v: esse endereço é só uma cópia (a da tela). " +
             if (achou > 0) "Procurei $agora em Word e Byte: $achou resultado(s) no Achar. Mude o valor no jogo e refine."
-            else "Não há $agora em Word nem Byte: o valor de verdade fica em outro lugar, que pode estar codificado.")
+            else "Não há $agora em Word nem Byte: o de verdade pode estar guardado de outro jeito (fração, dano recebido). Tente a Busca por mudança no Achar.")
     }
 
     fun alternarCongelado(s: Salvo) = rodar {

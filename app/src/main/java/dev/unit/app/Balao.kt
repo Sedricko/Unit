@@ -563,6 +563,12 @@ class Balao : Service() {
                 confirmou = { Nucleo.buscar(campo); campo = "" }, faixa = true)
         }) {
             CampoGrande(campo, if (Nucleo.total == null) "número na tela" else "número novo")
+            // sem número para digitar (barra, porcentagem) ou a busca pelo número não achou o de verdade: a busca por mudança
+            // acha o valor guardado de outro jeito (fração, dano recebido, vezes 10). Antes ficava escondida em Opções
+            if (Nucleo.total == null && campo.isEmpty()) Linha(Modifier.toque { tela = "mudanca" }) {
+                Text("Não acha pelo número? (barra, porcentagem, edição que não pega) Busca por mudança", color = Cor.a2, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("›", color = Cor.a2, fontSize = 18.sp)
+            }
             Nucleo.total?.let { n ->
                 // número e "começar de novo" em linhas separadas: no painel estreito, lado a lado quebrava a palavra
                 Text("${"%,d".format(n).replace(',', '.')} resultado${if (n == 1L) "" else "s"}", color = Cor.texto, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
