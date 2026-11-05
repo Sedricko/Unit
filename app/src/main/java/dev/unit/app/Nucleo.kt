@@ -253,8 +253,7 @@ object Nucleo {
             refinar && repetiu && antes != null && total == antes && antes > 1 -> Registro.add("aviso", "Refinar $v de novo não diminuiu nada ($antes): mude o valor no jogo antes de refinar")
             (total ?: 0) > 10_000_000 -> Registro.add("aviso", "Mais de 10 milhões de resultados: o próximo refino vai ser lento; use um número mais raro ou uma faixa menor")
         }
-        // 1ª busca sem nada: procura perto (n-1~n+1, todos os tipos) para dizer o porquê. Não decifra nada: valor
-        // codificado pelo jogo (proteção) ou que vem do servidor fica de fora, e a pessoa fica sabendo
+        // busca sem nada: procura perto (n-1~n+1, todos os tipos) para dizer o porquê
         val n = v.toDoubleOrNull()
         fun t(d: Double) = if (d % 1.0 == 0.0) d.toLong().toString() else d.toString()
         // inteiro sem nada no Auto: procura sozinho em Word e Byte (quantidades pequenas às vezes ficam em 1 ou 2 bytes)
@@ -267,7 +266,7 @@ object Nucleo {
             total = null  // o próximo é um Buscar novo (refinar 0 resultados não serve)
             val porque = if (perto > 0 && refinar) "Nenhum dos resultados ficou com $v, mas há $perto número(s) perto na memória: o valor pode ter mudado de novo antes do Refinar. Toque em Buscar com o número que está na tela agora."
                 else if (perto > 0) "Nenhum $v exato, mas $perto número(s) perto (${t(n - 1)} a ${t(n + 1)}): o número pode ter mudado antes da busca. Mude o valor no jogo e busque o número novo."
-                else "Não há nenhum número perto de $v na memória, em nenhum tipo: o jogo pode guardar de outro jeito (fração, dano recebido, vezes 10): tente a Busca por mudança no Achar. Se nem ela achar, está codificado ou vem do servidor, e o Unit não mexe nesses."
+                else "Não há nenhum número perto de $v na memória, em nenhum tipo: o jogo pode guardar de outro jeito (fração, dano recebido, vezes 10): tente a Busca por mudança no Achar. Se nem ela achar, o valor está codificado ou vem do servidor."
             Registro.add("aviso", "Por que não achou $v: $porque")
             throw IllegalStateException(porque)
         }
