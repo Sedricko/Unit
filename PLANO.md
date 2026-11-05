@@ -69,6 +69,11 @@ Todo o resto é aberto: moedas e recursos do jogo, vida, XP, tempo, velocidade, 
   nome (Unity) que volta sozinho ao reabrir, pergunta "qual destes números" com o jogo pausado, valor que vai para 0
   logo depois de abrir escolhe de novo, tela simples, Fechar jogo com confirmação, fora do jogo vira balão, as 14
   correções da revisão com 4 agentes. Ferramentas de teste ficam em Opções. Motor: 128 testes
+- **0.4.1 a 0.4.15 (04–05/11):** testes no Grim Soul, Obsidian Knight e Vampire's Fall 2. Word e Byte; busca com número
+  cortado pela tela; refino que zera mantém os de antes; busca diz o porquê quando não acha; escrita que o jogo desfaz é
+  avisada; classe de cada resultado no Achar (cópia da tela marcada); faixas de memória iguais às do Tinker (com
+  /dev/ashmem, sem Zygote); procura dos salvos em segundo plano e "Procurar de novo"; atalho da Busca por mudança no
+  Achar. Motor: 133 testes. Detalhes na skill `.claude/skills/unit/SKILL.md`
 - **Próximo, em ordem:** 2.3 editar todos → 2.5 lista que continua → 2.7 DYSMANTLE → 0.3 jogo de teste → **Unit 1.0**
 - Regra: peça fora de ordem só entra como Laboratório, num ramo separado
 
