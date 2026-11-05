@@ -13,7 +13,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Um lugar achado na memória: endereço (hex), tipo (i32/f32/i64/f64) e o valor de agora. */
-data class Achado(val addr: String, val tipo: String, val valor: String)
+// classe: de que objeto do Unity o resultado faz parte ("" = não é objeto, ou ainda não olhado); tela = parte da tela
+data class Achado(val addr: String, val tipo: String, val valor: String, val classe: String = "", val tela: Boolean = false)
+
+/** A barra, o texto e a animação mostram uma cópia do valor (o Vampire's Fall 2: Slider, CharacterBar, TweenerCore;
+ * o de verdade era CharacterStats). Editar a cópia não muda o jogo. */
+fun daTela(nome: String, esp: String) = esp.startsWith("UnityEngine.UI") || esp.startsWith("TMPro") || esp.startsWith("DG.Tweening") ||
+    listOf("Slider", "Bar", "Tween", "Text", "Label", "Image", "View", "Display", "Animator", "UI").any { it in nome }
 /** perdido = veio guardado de uma abertura anterior e o endereço ainda não foi achado de novo (sem caminho que chegue). */
 data class Salvo(val addr: String, val tipo: String, val nome: String, val valor: String, val congelado: Boolean, val caminho: Boolean = false, val perdido: Boolean = false)
 data class Jogo(val pid: Int, val pacote: String, val nome: String)
@@ -220,7 +226,14 @@ object Nucleo {
             if (juntos.size < crus.size) Registro.add("decisao", "Juntei ${crus.size - juntos.size} resultado(s) Dword/Qword repetidos (mesmo endereço e número)")
             val ordem = ordenar(juntos, aprendido)
             if (aprendido != null && ordem.firstOrNull()?.tipo == aprendido && juntos.firstOrNull()?.tipo != aprendido) Registro.add("decisao", "Mostrei ${NOME_TIPO[aprendido] ?: aprendido} primeiro: é o tipo que você mais usa neste jogo")
-            achados += ordem
+            // de que objeto é cada um (rápido: ~20 ms): o que é do jogo primeiro, as cópias da tela depois
+            val comClasse = if (ordem.size <= 20) ordem.map { a ->
+                val p = runCatching { cmd { it.cmd("classe ${a.addr}") }.status.split(' ') }.getOrNull()
+                if (p == null || p.size < 2) a else a.copy(classe = p[0], tela = daTela(p[0], p[1]))
+            }.sortedBy { if (it.tela) 1 else 0 } else ordem
+            if (comClasse.any { it.tela } && comClasse.any { !it.tela && it.classe.isNotEmpty() })
+                Registro.add("decisao", "Pus primeiro os do jogo; ${comClasse.count { it.tela }} são da tela (barra, texto, animação)", comClasse.map { "${it.addr} ${it.classe}${if (it.tela) " (tela)" else ""}" })
+            achados += comClasse
         }
         if (!refinar) { buscaDesde = t0; passos = 0 } else passos++
         if (total == 1L && buscaDesde > 0) { Registro.add("busca", "Achou o valor em ${passos} refino(s), ${(System.currentTimeMillis() - buscaDesde) / 1000} s desde o primeiro Buscar"); buscaDesde = 0 }

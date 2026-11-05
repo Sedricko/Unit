@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -581,7 +582,11 @@ class Balao : Service() {
                     val marcado = a.addr in marcados
                     Linha(Modifier.toque { if (selecionando) { if (marcado) marcados.remove(a.addr) else marcados += a.addr } else { Nucleo.escolhido = a; tela = "editar" } }) {
                         if (selecionando) Box(Modifier.padding(end = 10.dp).size(20.dp).then(if (marcado) Modifier.background(Cor.a2, RoundedCornerShape(5.dp)) else Modifier.border(1.dp, Cor.linha, RoundedCornerShape(5.dp))))
-                        Column(Modifier.weight(1f)) { Text(a.valor, color = Cor.texto, maxLines = 1); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1) }
+                        Column(Modifier.weight(1f)) {
+                            Text(a.valor, color = Cor.texto, maxLines = 1); Text("0x${a.addr}", color = Cor.apagado, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+                            // de que objeto é: a cópia da tela (barra, texto) não muda o jogo
+                            if (a.classe.isNotEmpty()) Text(if (a.tela) "${a.classe} · cópia da tela" else a.classe, color = if (a.tela) Cor.apagado else Cor.ok, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                         Column(horizontalAlignment = Alignment.End) {
                             Text(NOME_TIPO[a.tipo] ?: a.tipo, color = Cor.a2, fontSize = 12.sp, maxLines = 1)
                             if (a.tipo == Nucleo.aprendido) Text("mais usado", color = Cor.ok, fontSize = 11.sp, maxLines = 1)  // curto: a linha é estreita deitado
