@@ -139,6 +139,12 @@ static void guardar(uint64_t a, int t) {
 }
 
 // regiões onde o jogo guarda dados: as que ele pode ler e escrever (pula as de vídeo e de sistema)
+// a busca olha toda memória que o jogo pode mudar (rw). Fora: só leitura (código, constantes), memória da placa de vídeo
+// (kgsl, mali, dri), [vvar] e fontes. /dev/ashmem (memória compartilhada) entra: o GameGuardian tem a faixa "As" para ela
+static int busca_aqui(const char *perms, const char *name) {
+    if (perms[0] != 'r' || perms[1] != 'w') return 0;
+    return !((strstr(name, "/dev/") && !strstr(name, "/dev/ashmem")) || strstr(name, "[vvar") || strstr(name, "kgsl") || strstr(name, "mali") || strstr(name, ".ttf"));
+}
 static int regioes(uint64_t **ini, uint64_t **fim) {
     char p[64]; snprintf(p, sizeof p, "/proc/%d/maps", target);
     FILE *f = fopen(p, "r"); if (!f) return -1;
@@ -147,8 +153,7 @@ static int regioes(uint64_t **ini, uint64_t **fim) {
     while (fgets(line, sizeof line, f)) {
         uint64_t a, b; char perms[8] = "", name[400] = "";
         if (sscanf(line, "%" SCNx64 "-%" SCNx64 " %7s %*s %*s %*s %399[^\n]", &a, &b, perms, name) < 3) continue;
-        if (perms[0] != 'r' || perms[1] != 'w') continue;
-        if (strstr(name, "/dev/") || strstr(name, "[vvar") || strstr(name, "kgsl") || strstr(name, "mali") || strstr(name, ".ttf")) continue;
+        if (!busca_aqui(perms, name)) continue;
         if (n == c) { c = c ? c * 2 : 256; *ini = realloc(*ini, c * 8); *fim = realloc(*fim, c * 8); }
         (*ini)[n] = a; (*fim)[n] = b; n++;
     }
@@ -222,23 +227,29 @@ static void cmd_search(const char *valor, const char *tipos) {
     if (!al.faixa && want != floor(want)) usar[T_I32] = usar[T_I64] = usar[T_I16] = usar[T_I8] = 0;
     uint64_t *ini, *fim; int nr = regioes(&ini, &fim);
     if (nr < 0) { puts("err não li o mapa de memória do jogo"); return; }
-    nres = 0; cortado = 0;
+    nres = 0; cortado = 0; uint64_t naoleu = 0;
     enum { BLOCO = 1 << 20 };
     unsigned char *buf = malloc(BLOCO + 8);
     if (!buf) { free(ini); free(fim); puts("err sem memória"); return; }
     for (int r = 0; r < nr; r++)
         for (uint64_t a = ini[r]; a < fim[r]; a += BLOCO) {
             size_t n = fim[r] - a < BLOCO ? fim[r] - a : BLOCO;
-            if (ler(a, buf, n)) continue;  // página sem mapa no meio: pula o bloco
-            for (int t = 0; t < NT; t++) {
-                if (!usar[t]) continue;
-                int sz = TSIZE[t];
-                for (size_t o = 0; o + sz <= n; o += sz)
-                    if (confere(t, numero(t, buf + o), &al)) guardar(a + o, t);
+            // uma página que não dá para ler no meio: lê de página em página e perde só ela (antes perdia 1 MB)
+            size_t passo = ler(a, buf, n) ? 4096 : n;
+            for (size_t p = 0; p < n; p += passo) {
+                size_t m = n - p < passo ? n - p : passo;
+                if (passo < n && ler(a + p, buf, m)) { naoleu += m; continue; }
+                for (int t = 0; t < NT; t++) {
+                    if (!usar[t]) continue;
+                    int sz = TSIZE[t];
+                    for (size_t o = 0; o + sz <= m; o += sz)
+                        if (confere(t, numero(t, buf + o), &al)) guardar(a + p + o, t);
+                }
             }
         }
     free(buf); free(ini); free(fim);
-    printf("ok %zu%s\n", nres, cortado ? " cortado" : "");
+    // naoleu: o que não deu para ler (o relatório mostra; se for muito, o valor pode estar ali)
+    printf("ok %zu%s naoleu=%" PRIu64 "KB\n", nres, cortado ? " cortado" : "", naoleu >> 10);
 }
 
 static void cmd_refine(const char *valor) {
@@ -1069,7 +1080,17 @@ int main(void) {
             if ((f = fopen("/proc/self/status", "r"))) { while (fgets(ln, sizeof ln, f)) sscanf(ln, "VmRSS: %ld", &rm); fclose(f); }
             snprintf(st, sizeof st, "/proc/%d/status", target);
             if ((f = fopen(st, "r"))) { while (fgets(ln, sizeof ln, f)) sscanf(ln, "VmRSS: %ld", &rj); fclose(f); }
-            printf("ok %d %" PRIu64 " %ld %ld\n", nr, tot >> 20, rm, rj);
+            // o que fica fora da busca, para o relatório: só leitura e rw da placa de vídeo/sistema
+            uint64_t so = 0, sis = 0; char mp[64], ml[512]; snprintf(mp, sizeof mp, "/proc/%d/maps", target);
+            if ((f = fopen(mp, "r"))) {
+                while (fgets(ml, sizeof ml, f)) {
+                    uint64_t x, y; char pe[8] = "", nm[400] = "";
+                    if (sscanf(ml, "%" SCNx64 "-%" SCNx64 " %7s %*s %*s %*s %399[^\n]", &x, &y, pe, nm) < 3 || pe[0] != 'r') continue;
+                    if (pe[1] != 'w') so += y - x; else if (!busca_aqui(pe, nm)) sis += y - x;
+                }
+                fclose(f);
+            }
+            printf("ok %d %" PRIu64 " %ld %ld fora: so_leitura=%" PRIu64 "MB video_sistema=%" PRIu64 "MB\n", nr, tot >> 20, rm, rj, so >> 20, sis >> 20);
         }  // o teste "o jogo fechou" já foi feito acima, antes de qualquer comando
         else if (!strcmp(c, "fechar")) { kill(target, SIGCONT); puts(kill(target, SIGKILL) ? "err não fechei o jogo" : "ok"); }
         else if (!strcmp(c, "read") || !strcmp(c, "write") || !strcmp(c, "freeze")) {

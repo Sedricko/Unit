@@ -208,6 +208,9 @@ object Nucleo {
         val repetiu = v == ultimoV; ultimoV = v
         val cortou = "cortado" in rb.status  // o motor guardou só os primeiros 16 milhões
         if (cortou) Registro.add("aviso", "Busca de $v: resultados demais, guardei só os primeiros 16 milhões")
+        // páginas que o motor não conseguiu ler (o valor pode estar ali): o relatório mostra
+        Regex("naoleu=(\\d+)KB").find(rb.status)?.groupValues?.get(1)?.toLongOrNull()?.takeIf { it > 0 }?.let { kb ->
+            Registro.add("aviso", "Busca de $v: ${kb / 1024} MB do jogo não deram para ler (páginas protegidas ou que sumiram durante a busca)") }
         val r = cmd { it.cmd("list 50") }
         total = r.status.toLongOrNull()
         achados.clear()

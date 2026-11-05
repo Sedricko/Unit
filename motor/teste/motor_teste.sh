@@ -111,7 +111,7 @@ confere "ponteiro: acha um caminho a partir do programa" "alvo+"
 confere "ponteiro: o caminho termina em +40 e +8" ":40:8"
 confere "ponteiro: seguir o caminho chega no cobre" "ok $acobre"
 confere "ponteiro: salto longo da biblioteca para a tabela (Unity), item 700" ":15e0:30"
-if grep -qE '^ok [1-9][0-9]* [0-9]+ [1-9][0-9]* [1-9][0-9]*$' <<<"$got5"; then echo "OK   info: regiões e MB do jogo"; else echo "FALHA info: regiões e MB do jogo"; falhou=1; fi
+if grep -qE '^ok [1-9][0-9]* [0-9]+ [1-9][0-9]* [1-9][0-9]* fora: so_leitura=[0-9]+MB video_sistema=[0-9]+MB$' <<<"$got5"; then echo "OK   info: regiões e MB do jogo"; else echo "FALHA info: regiões e MB do jogo"; falhou=1; fi
 confere "android: recusa texto que iria para o sistema" "err uso: android SEGUNDOS PACOTE"
 confere "fechar: depois de fechar, o motor avisa" "err o jogo fechou"
 if grep -qE '^ok -?[0-9]+$' <<<"$gotf"; then echo "OK   frente: lê a prioridade do jogo ($gotf)"; else echo "FALHA frente: lê a prioridade do jogo ($gotf)"; falhou=1; fi
